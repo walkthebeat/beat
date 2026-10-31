@@ -43,6 +43,8 @@
       # Git revision of this build: only in the top-level derivation (beat-sensor), which is a thin wrapper;
       # in an inner one (beat-probe) every commit would force its rebuild with identical code.
       rev = self.shortRev or self.dirtyShortRev or "unknown";
+      # The release: the tag v<release> publishes it (.github/workflows/release.yml checks they agree).
+      release = "0.1.0";
 
       # WASM tools for probes (wasm/README.md).
       wasm = import ./wasm { inherit pkgs crane; rust-bin = rust-overlay.lib.mkRustBin { } pkgs; };
@@ -53,8 +55,8 @@
       # derivation (probeDeps, rebuilt only when Cargo.lock changes); the package skips the tests, which are the check
       # beat-probe-test: the probes in probe/tests against a fixture host, with the real tools behind pipe() and
       # osqueryi behind osq().
-      probeArgs = { pname = "beat-probe"; version = "0.1.0"; src = ./probe; strictDeps = true; };
-      sensorArgs = { pname = "beat-sensor-bin"; version = "0.1.0"; src = ./sensor; strictDeps = true; };
+      probeArgs = { pname = "beat-probe"; version = release; src = ./probe; strictDeps = true; };
+      sensorArgs = { pname = "beat-sensor-bin"; version = release; src = ./sensor; strictDeps = true; };
       probeDeps = craneLib.buildDepsOnly probeArgs;
       sensorDeps = craneLib.buildDepsOnly sensorArgs;
       probe = craneLib.buildPackage (probeArgs // { cargoArtifacts = probeDeps; doCheck = false; });
@@ -79,7 +81,7 @@
       libbpfTools = pkgs.callPackage ./sensor/libbpf-tools.nix { }; # the catalog behind trace()
       sensor = pkgs.stdenvNoCC.mkDerivation {
         pname = "beat-sensor";
-        version = "0.1.0+g${rev}";
+        version = "${release}+g${rev}";
         dontUnpack = true;
         installPhase = ''
           mkdir -p $out/bin $out/share/beat-sensor/placeholders/dir
@@ -129,7 +131,7 @@
         beat-probe = probe;
         # The sensor as an image for hosts without Nix (packaging/sensor).
         beat-sensor-image = import ./packaging/sensor/image.nix {
-          inherit pkgs sensor sensorBin probe; tools = wasm.tools; base = "https://walkthebeat.ai/sensor";
+          inherit pkgs sensor sensorBin probe; tools = wasm.tools; base = "https://github.com/walkthebeat/beat/releases/download/v${release}";
         };
         libbpf-tools = libbpfTools;
         wasm-tools = wasm.tools; # every tool behind pipe(), one directory

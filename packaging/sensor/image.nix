@@ -1,4 +1,4 @@
-# The sensor for hosts without Nix (docs/security.md M16): what https://walkthebeat.ai/sensor/VERSION/ serves.
+# The sensor for hosts without Nix (docs/security.md M16): the files of a GitHub release (base: its download URL).
 #   install.sh                        curl -fsSL BASE/install.sh | sudo sh: checks the host, installs, closed
 #   beat-sensor.raw (+ .verity, .roothash)
 #                                     the sensor's /nix/store closure as a squashfs; systemd mounts it at /nix/store in
@@ -36,6 +36,6 @@ pkgs.runCommand "beat-sensor-image-${version}" { nativeBuildInputs = [ pkgs.squa
   (cd $out && sha256sum beat-sensor.raw beat-sensor.verity beat-sensor.roothash beat-sensor.service beat-sensor) \
     > sums
   substitute ${./install.sh} $out/install.sh --replace-fail @version@ '${version}' \
-    --replace-fail @base@ '${base}/${version}' --replace-fail @shell@ ${pkgs.runtimeShell} \
+    --replace-fail @base@ '${base}' --replace-fail @shell@ ${pkgs.runtimeShell} \
     --replace-fail @sums@ "$(cat sums)"
 ''

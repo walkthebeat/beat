@@ -1,0 +1,47 @@
+# A tag v<release> (flake.nix `release`) publishes the sensor's image and installer as a GitHub release. The image is
+# built to be reproducible: anyone can build `.#beat-sensor-image` at the tag and compare beat-sensor.roothash.
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write      # the release
+  id-token: write      # build attestations (public repos only, below)
+  attestations: write
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', '**/Cargo.lock', 'uv.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 8G
+      - run: nix flake check -L
+      - name: build the image
+        run: |
+          nix build .#beat-sensor-image -L
+          release="$(nix eval --raw .#beat-sensor.version)"
+          case "$release" in "${GITHUB_REF_NAME#v}+g"*) ;; *) echo "tag $GITHUB_REF_NAME, flake $release" >&2; exit 1 ;; esac
+          mkdir dist && cp -L result/* dist/
+          echo "RELEASE=$release" >> "$GITHUB_ENV"
+      - name: attest the files
+        if: github.event.repository.visibility == 'public'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<NOTES
+          beat-sensor $RELEASE. Install on a host (x86_64, systemd 247 or later):
+
+              curl -fsSL https://github.com/${{ github.repository }}/releases/download/$GITHUB_REF_NAME/install.sh | sudo sh
+
+          The image's root hash: \`$(cat dist/beat-sensor.roothash)\`. Build \`.#beat-sensor-image\` at this tag and
+          compare: equal hashes mean this image is what the source builds.
+          NOTES
+          gh release create "$GITHUB_REF_NAME" dist/* --title "beat-sensor $RELEASE" --notes-file notes.md

@@ -24,8 +24,14 @@ own. The account page shows the org's id; you will not need to type it.
 
 ## 2. Install beat on your laptop
 
-**Not yet**: `uv tool install` from PyPI. It installs two commands, `beat` and `beat-mcp`, needs no root, and
-configures nothing.
+With [uv](https://docs.astral.sh/uv/), from the repository (PyPI later):
+
+```
+uv tool install git+https://github.com/walkthebeat/beat
+```
+
+It installs two commands, `beat` and `beat-mcp`, needs no root, and configures nothing. While the repository is
+private, git uses your GitHub login (`gh auth setup-git` once, if git does not already have it).
 
 ## 3. Sign in from the laptop
 
@@ -53,11 +59,19 @@ holds no secret. Copy it for step 6.
 
 ## 5. Install the sensor on a host
 
-**Not yet** (built and tried, not published):
+```
+curl -fsSL https://github.com/walkthebeat/beat/releases/latest/download/install.sh | sudo sh
+```
+
+**While the repository is private** (until its first public release), downloads need your GitHub login, so fetch
+the release with the GitHub CLI and install from the files:
 
 ```
-curl -fsSL https://walkthebeat.ai/sensor/install.sh | sudo sh
+gh release download -R walkthebeat/beat -D beat-sensor
+sudo BEAT_SENSOR_BASE=file://$PWD/beat-sensor sh beat-sensor/install.sh
 ```
+
+Each release lists its files and the image's root hash; `docs/security.md` says how to check it against the source.
 
 The host needs x86_64 and systemd 247 or later: Ubuntu 22.04 and newer, Debian 12, RHEL 9 and its rebuilds
 (AlmaLinux, Rocky), Amazon Linux 2023. The installer checks that first and says what is missing. It puts the sensor
