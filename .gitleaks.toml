@@ -1,0 +1,9 @@
+# For secret scanners run over this repository (gitleaks; reviewers may run their own): the default rules, less two
+# files that hold secret-shaped data on purpose. The test vectors carry credentials signed by test keys; the
+# sensor's own secret-detection rules contain the patterns they detect.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "fixtures and detection rules"
+paths = ['''tests/seal_vectors\.json''', '''probe/rules/.*\.json''']

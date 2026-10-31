@@ -1,0 +1,11 @@
+Oct  7 09:00:01 legacy-web-1 sshd[1201]: Invalid user admin from 203.0.113.9
+Oct  7 09:00:01 legacy-web-1 sshd[1201]: Failed password for invalid user admin from 203.0.113.9 port 50122 ssh2
+Oct  7 09:00:07 legacy-web-1 sshd[1207]: Invalid user oracle from 203.0.113.9
+Oct  7 09:00:07 legacy-web-1 sshd[1207]: Failed password for invalid user oracle from 203.0.113.9 port 50388 ssh2
+Oct  7 09:01:15 legacy-web-1 sshd[1230]: Accepted publickey for ops from 10.20.30.5 port 41022 ssh2
+Oct  7 09:01:15 legacy-web-1 sshd[1230]: pam_unix(sshd:session): session opened for user ops by (uid=0)
+Oct  7 09:03:40 legacy-web-1 sshd[1230]: pam_unix(sshd:session): session closed for user ops
+Oct  7 09:05:02 legacy-web-1 sshd[1262]: Invalid user  0101 from 198.51.100.4
+Oct  7 09:05:02 legacy-web-1 sshd[1262]: Failed password for invalid user 0101 from 198.51.100.4 port 61001 ssh2
+Oct  7 09:10:00 legacy-web-1 CRON[1300]: pam_unix(cron:session): session opened for user root by (uid=0)
+Oct  7 09:10:01 legacy-web-1 CRON[1300]: pam_unix(cron:session): session closed for user root

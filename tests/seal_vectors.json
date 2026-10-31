@@ -1,0 +1,102 @@
+{
+ "_": "seal.py and sensor/src/seal.rs: signatures and sealing agree (tests/test_seal.py, cargo test). Regenerate only when the rules change.",
+ "seed": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+ "public": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+ "signed": [
+  {
+   "kind": "ask",
+   "headers": {
+    "Beat-Survey": "20261015T100000Z-abcdef",
+    "Beat-Question": "d14e620b318c249f70966ad22785c51b179b8e1c4ed7afb98825ea2c8a71e535",
+    "Beat-Key": "AAAA",
+    "Beat-Timeout": "60",
+    "Beat-Issued": "2026-10-15T10:00:00Z",
+    "Beat-Deadline": "2026-10-15T10:01:55Z",
+    "Beat-Targets": "a,b",
+    "Beat-Signature": "hGdjTE8eUxzlrhG3Ef6ehDn4U3fXBAcRlHiNCID3qeaUSbMi1etw9gquD91i5o4vSu4Ids3g11kO/z9yKsj8AQ=="
+   },
+   "payload": "{\"libraries\":{},\"name\":\"a.star\",\"params\":{},\"source\":\"def main(): pass\",\"v\":1}",
+   "signed_bytes": "{\"headers\":{\"Beat-Deadline\":\"2026-10-15T10:01:55Z\",\"Beat-Issued\":\"2026-10-15T10:00:00Z\",\"Beat-Key\":\"AAAA\",\"Beat-Question\":\"d14e620b318c249f70966ad22785c51b179b8e1c4ed7afb98825ea2c8a71e535\",\"Beat-Survey\":\"20261015T100000Z-abcdef\",\"Beat-Targets\":\"a,b\",\"Beat-Timeout\":\"60\"},\"kind\":\"ask\",\"payload\":\"d14e620b318c249f70966ad22785c51b179b8e1c4ed7afb98825ea2c8a71e535\",\"v\":1}"
+  },
+  {
+   "kind": "ack",
+   "headers": {
+    "Beat-Survey": "20261015T100000Z-abcdef",
+    "Beat-Question": "d14e620b318c249f70966ad22785c51b179b8e1c4ed7afb98825ea2c8a71e535",
+    "Beat-Target": "a",
+    "Beat-Answer-By": "2026-10-15T10:01:15Z",
+    "Beat-Sensor": "beat-sensor/0.1.0",
+    "Beat-Signature": "0O8qQnMOouTv10lMpuRtNFXGb/ziCkj1D2rECdoj7Lc7uoQeq1gm25JfHomIR31SLEDrljDw6dm+y5JHXwD+Dw=="
+   },
+   "payload": "",
+   "signed_bytes": "{\"headers\":{\"Beat-Answer-By\":\"2026-10-15T10:01:15Z\",\"Beat-Question\":\"d14e620b318c249f70966ad22785c51b179b8e1c4ed7afb98825ea2c8a71e535\",\"Beat-Sensor\":\"beat-sensor/0.1.0\",\"Beat-Survey\":\"20261015T100000Z-abcdef\",\"Beat-Target\":\"a\"},\"kind\":\"ack\",\"payload\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"v\":1}"
+  },
+  {
+   "kind": "answer",
+   "headers": {
+    "Beat-Survey": "20261015T100000Z-abcdef",
+    "Beat-Question": "d14e620b318c249f70966ad22785c51b179b8e1c4ed7afb98825ea2c8a71e535",
+    "Beat-Target": "a",
+    "Beat-Outcome": "ok",
+    "Beat-Started": "2026-10-15T10:00:01Z",
+    "Beat-Finished": "2026-10-15T10:00:02Z",
+    "Beat-Sensor": "beat-sensor/0.1.0",
+    "Beat-Signature": "zp5920rFe7Mvde6bg1TB4d8OlhQyKuafy2PksNdICYrFQGqLT5LC/0HM+0iOvKvBQoVBduodAcOEq1TWJ4mkDQ=="
+   },
+   "payload": "sealed bytes stand in",
+   "signed_bytes": "{\"headers\":{\"Beat-Finished\":\"2026-10-15T10:00:02Z\",\"Beat-Outcome\":\"ok\",\"Beat-Question\":\"d14e620b318c249f70966ad22785c51b179b8e1c4ed7afb98825ea2c8a71e535\",\"Beat-Sensor\":\"beat-sensor/0.1.0\",\"Beat-Started\":\"2026-10-15T10:00:01Z\",\"Beat-Survey\":\"20261015T100000Z-abcdef\",\"Beat-Target\":\"a\"},\"kind\":\"answer\",\"payload\":\"20c77950461a2233698e8c8f1498be060d60ab9725abfc55188bfd7a3604aadc\",\"v\":1}"
+  }
+ ],
+ "sealed": {
+  "private": "ZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXp7fH1+f4CBgoM=",
+  "public": "fZwkMWU5glwYluV/KBl3Rnk85gy+461H2p0HuF+lXio=",
+  "survey": "20261015T100000Z-abcdef",
+  "target": "a",
+  "plaintext": "{\"outcome\":\"ok\",\"records\":[{\"key\":\"os\",\"subject\":\"host\",\"value\":\"x\"}],\"v\":1}",
+  "sealed": "I4MJ9oR68oY9CKQxtz3lnyVEhDjMAF9gfPrtFnWnkTfgKrkUMq9YvExfu5olnTM/dNNYkMFT16muc5uECqyF7CXttp4R3i+ZeEbMCmYsMxrbfqk9gC7AUBvZuafw/Dw//juzf/tqMXhyN7Fn32iqv9uBFuznQSaYbecKog=="
+ },
+ "heartbeat": {
+  "name": "legacy-web-1",
+  "sensor": "beat-sensor/0.1.0",
+  "labels": {
+   "role": "web"
+  },
+  "started": "2026-10-15T10:00:00Z",
+  "guide": null,
+  "sandbox": "full",
+  "at": "2026-10-15T10:00:10Z",
+  "collectors": [
+   "20261015:0123456789ab"
+  ],
+  "signature": "GltvmAmPnQMshrCKwiqvAeowVvkd+atUpN27yCzW5jFpyqQFtGZoZW1RHVQEQuCAh5mQ6ehmsLXgj5WU5yUqDQ=="
+ },
+ "countersigned": {
+  "_": "an ask signed by the org key (seed 32 bytes of 9) and countersigned by the seed's key",
+  "headers": {
+   "Beat-Survey": "20261015T100000Z-abcdef",
+   "Beat-Question": "d14e620b318c249f70966ad22785c51b179b8e1c4ed7afb98825ea2c8a71e535",
+   "Beat-Key": "AAAA",
+   "Beat-Timeout": "60",
+   "Beat-Issued": "2026-10-15T10:00:00Z",
+   "Beat-Deadline": "2026-10-15T10:01:55Z",
+   "Beat-Targets": "a,b",
+   "Beat-Signature": "JSppTrXYRR+aEam8z6nIQWsVh5kwijgUHS9t/6Fbv8WuYF4JDp76kUECozsRBENeDzLX/jwTXVbY19NP4u0FAw==",
+   "Beat-Countersignature": "hGdjTE8eUxzlrhG3Ef6ehDn4U3fXBAcRlHiNCID3qeaUSbMi1etw9gquD91i5o4vSu4Ids3g11kO/z9yKsj8AQ=="
+  },
+  "payload": "{\"libraries\":{},\"name\":\"a.star\",\"params\":{},\"source\":\"def main(): pass\",\"v\":1}",
+  "signed_bytes": "{\"headers\":{\"Beat-Deadline\":\"2026-10-15T10:01:55Z\",\"Beat-Issued\":\"2026-10-15T10:00:00Z\",\"Beat-Key\":\"AAAA\",\"Beat-Question\":\"d14e620b318c249f70966ad22785c51b179b8e1c4ed7afb98825ea2c8a71e535\",\"Beat-Survey\":\"20261015T100000Z-abcdef\",\"Beat-Targets\":\"a,b\",\"Beat-Timeout\":\"60\"},\"kind\":\"ask\",\"payload\":\"d14e620b318c249f70966ad22785c51b179b8e1c4ed7afb98825ea2c8a71e535\",\"v\":1}"
+ },
+ "credential": {
+  "_": "a member credential (H16) signed by the root at seed, for the key at member_seed",
+  "member_seed": "AwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISI=",
+  "member_public": "SB7edy2hV4XJ5ZoIYgG4w/nDBxKeP8bX80qk3+1YFOU=",
+  "root_name": "r1",
+  "name": "alice",
+  "now": 1800000000,
+  "credential": "eyJpc3N1ZXIiOiJyMTo1NjQ3NWFhNzU0NjMiLCJrZXkiOiJTQjdlZHkyaFY0WEo1Wm9JWWdHNHcvbkRCeEtlUDhiWDgwcWszKzFZRk9VPSIsImtpbmQiOiJtZW1iZXIiLCJuYW1lIjoiYWxpY2UiLCJub3RfYWZ0ZXIiOjE4MDI1OTIwMDAsIm5vdF9iZWZvcmUiOjE4MDAwMDAwMDAsInNpZ25hdHVyZSI6IjFoY2h0TmhZZGFsZzhaNzdtazVHN2Iva0VhaHhNMTF1aVZNekRURkdJU3QzU2hjWkRJdHJzcmtTd2tqdXpYVmtUTmpPbXlPNFFUVzc1ZnpvRzRKWkF3PT0ifQ=="
+ },
+ "deny": {
+  "_": "a deny list (H16) signed by the root at seed: alice's credentials issued before 1800000100",
+  "list": "{\"entries\":[{\"before\":1800000100,\"name\":\"alice\",\"until\":1900000000}],\"issued\":1800000100,\"issuer\":\"r1:56475aa75463\",\"seq\":7,\"signature\":\"gOHh5PDIof4Kq/bwQav6WHs2WwUITQpU35tkRNZG4a++IImgxqNpMmFFgmLKGt8eNbAnnqx5VhGLKdmb+OdpAg==\"}"
+ }
+}

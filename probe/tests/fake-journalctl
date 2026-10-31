@@ -1,0 +1,7 @@
+#!/bin/sh
+# Stands in for journalctl in tests: two entries (one with its MESSAGE given as bytes), and a third whose message
+# echoes the arguments it was called with.
+# Printed newest first, as journalctl does with --grep; the first entry is systemd's own (UNIT, from init.scope).
+printf '%s\n' '{"__REALTIME_TIMESTAMP":"1759449660000000","_SYSTEMD_UNIT":"nginx.service","PRIORITY":"6","MESSAGE":[104,105]}'
+printf '%s\n' '{"__REALTIME_TIMESTAMP":"1759449600000000","_SYSTEMD_UNIT":"init.scope","UNIT":"nginx.service","_PID":"42","PRIORITY":"6","MESSAGE":"Reloading nginx"}'
+printf '{"__REALTIME_TIMESTAMP":"1759449720000000","MESSAGE":"args: %s"}\n' "$*"

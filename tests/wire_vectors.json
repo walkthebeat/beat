@@ -1,0 +1,46 @@
+[
+  {
+    "value": {
+      "v": 1,
+      "name": "nginx.star",
+      "source": "def main():\n\temit(\"a\", \"b\", 1)\n",
+      "libraries": {},
+      "params": {}
+    },
+    "canonical": "{\"libraries\":{},\"name\":\"nginx.star\",\"params\":{},\"source\":\"def main():\\n\\temit(\\\"a\\\", \\\"b\\\", 1)\\n\",\"v\":1}",
+    "sha256": "f6f5d5ffaf08107b57f167f0b0baf828a3f3868a1c55f8bcb9ac66ad78e66bd5"
+  },
+  {
+    "value": {
+      "z": [
+        3,
+        -1,
+        true,
+        false,
+        null
+      ],
+      "a": {
+        "y": "ü € 漢 😀",
+        "b": "\u0001\u001f\"\\/"
+      },
+      "m": ""
+    },
+    "canonical": "{\"a\":{\"b\":\"\\u0001\\u001f\\\"\\\\/\",\"y\":\"ü € 漢 😀\"},\"m\":\"\",\"z\":[3,-1,true,false,null]}",
+    "sha256": "b0a951bd35a0bd288b34e9789bf9e76567d0ac82bae68ba8fc6337ba2bb1c1d9"
+  },
+  {
+    "value": {
+      "outcome": "ok",
+      "records": [
+        {
+          "subject": "x",
+          "key": "k",
+          "value": 12345678901234
+        }
+      ],
+      "error": null
+    },
+    "canonical": "{\"error\":null,\"outcome\":\"ok\",\"records\":[{\"key\":\"k\",\"subject\":\"x\",\"value\":12345678901234}]}",
+    "sha256": "63c0373718d760bc6bdb24a09fb823094734982f823f50e39d730899c16d2bd9"
+  }
+]

@@ -1,0 +1,5761 @@
+{
+"source": "betterleaks https://raw.githubusercontent.com/betterleaks/betterleaks/c613797a684337a014168063577bb6fa6e3b6296/config/betterleaks.toml",
+"license": "MIT, LICENSE.betterleaks",
+"generated_by": "probe/rules/convert.py",
+"global": {
+"max_entropy": null,
+"reject_regex": [
+"(?i)^true|false|null$",
+"^(?i:a+|b+|c+|d+|e+|f+|g+|h+|i+|j+|k+|l+|m+|n+|o+|p+|q+|r+|s+|t+|u+|v+|w+|x+|y+|z+|\\*+|\\.+)$",
+"^\\$(?:\\d+|{\\d+})$",
+"^\\$(?:[A-Z_]+|[a-z_]+)$",
+"^\\${(?:[A-Z_]+|[a-z_]+)}$",
+"^\\{\\{[ \\t]*[\\w ().|]+[ \\t]*}}$",
+"^\\$\\{\\{[ \\t]*(?:(?:env|github|secrets|vars)(?:\\.[A-Za-z]\\w+)+[\\w \"'&./=|]*)[ \\t]*}}$",
+"^%(?:[A-Z_]+|[a-z_]+)%$",
+"^%[+\\-# 0]?[bcdeEfFgGoOpqstTUvxX]$",
+"^\\{\\d{0,2}}$",
+"^@(?:[A-Z_]+|[a-z_]+)@$",
+"^/Users/(?i)[a-z0-9]+/[\\w .-/]+$",
+"^/(?:bin|etc|home|opt|tmp|usr|var)/[\\w ./-]+$"
+],
+"reject_contains": [
+"abcdefghijklmnopqrstuvwxyz",
+"014df517-39d1-4453-b7b3-9930c563627c"
+]
+},
+"rules": [
+{
+"id": "1password-secret-key",
+"regex": "\\bA3-[A-Z0-9]{6}-(?:(?:[A-Z0-9]{11})|(?:[A-Z0-9]{6}-[A-Z0-9]{5}))-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}\\b",
+"keywords": [
+"a3-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.8,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "1password-service-account-token",
+"regex": "ops_eyJ[a-zA-Z0-9+/]{250,}={0,3}",
+"keywords": [
+"ops_eyj"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "abuseipdb-api-key.1",
+"regex": "(?i)(?:abuseipdb)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{80})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"abuseipdb"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "adafruit-api-key",
+"regex": "(?i)(?:adafruit)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9_-]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"adafruit"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "adobe-client-id",
+"regex": "(?i)(?:adobe)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"adobe"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "adobe-client-secret",
+"regex": "\\b(p8e-(?i)[a-z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"p8e-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "age-secret-key",
+"regex": "AGE-SECRET-KEY-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58}",
+"keywords": [
+"age-secret-key-1"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "aikido-ci-token",
+"regex": "\\b(AIK_CI_[A-Za-z0-9]{20,44})\\b",
+"keywords": [
+"aik_ci_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "aikido-client-id",
+"regex": "\\b(AIK_CLIENT_[A-Za-z0-9]{24})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"aik_client_"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "aikido-client-secret",
+"regex": "\\b(AIK_SECRET_[A-Za-z0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"aik_secret_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "airtable-api-key",
+"regex": "(?i)(?:airtable)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{17})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"airtable"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "airtable-oauth-token",
+"regex": "(?i)(?:airtable)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Z0-9]+\\.v1\\.[A-Z0-9_-]+\\.[a-f0-9]+)(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"airtable"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "airtable-personnal-access-token",
+"regex": "\\b(pat[[:alnum:]]{14}\\.[a-f0-9]{64})\\b",
+"keywords": [
+"airtable"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "aiven-auth-token",
+"regex": "(?i:aiven)[\\s\\S]{0,32}?\\b([A-Za-z0-9/+=]{372})(?:[^A-Za-z0-9/+=]|$)",
+"keywords": [
+"aiven"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "algolia-api-key",
+"regex": "(?i)(?:algolia)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"algolia"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "algolia-application-id",
+"regex": "(?i)(?:algolia)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{10})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"algolia"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 2.75,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "alibaba-access-key-id",
+"regex": "\\b(LTAI[A-Za-z0-9]{17,21})\\b",
+"keywords": [
+"ltai"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "alibaba-secret-key",
+"regex": "(?i)(?:alibaba|aliyun|secret|key)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9]{30})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"alibaba",
+"aliyun"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "alibaba-sts-access-key-id",
+"regex": "\\b(STS\\.[A-Za-z0-9]{16,64})\\b",
+"keywords": [
+"sts."
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "alibaba-sts-access-key-secret",
+"regex": "(?i)(?:alibaba|aliyun|secret|key)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9]{30,64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"alibaba",
+"aliyun"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "alibaba-sts-security-token",
+"regex": "(?i)(?:alibaba|aliyun|secret|key)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(CAIS[A-Za-z0-9+/_=-]{20,1000}[A-Za-z0-9+/_=-]{0,24})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"alibaba",
+"aliyun",
+"cais"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "amplitude-secret-key",
+"regex": "(?i)\\bamplitude(?:.|[\\n\\r]){0,32}?(?:SECRET|PRIVATE|ACCESS|KEY|TOKEN|AUTHORIZATION)(?:.|[\\n\\r]){0,16}?\\b([a-f0-9]{32})\\b",
+"keywords": [
+"amplitude"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "anthropic-admin-api-key",
+"regex": "\\b(sk-ant-admin01-[a-zA-Z0-9_\\-]{93}AA)(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sk-ant-admin01"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "anthropic-api-key",
+"regex": "\\b(sk-ant-api03-[a-zA-Z0-9_\\-]{93}AA)(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sk-ant-api03"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "apify-api-token",
+"regex": "\\b(apify_api_[A-Za-z0-9]{34,38})\\b",
+"keywords": [
+"apify_api_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "apollo-api-key.1",
+"regex": "(?i:(?:apollo)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9_-]{22})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"apollo"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "artifactory-api-key",
+"regex": "\\bAKCp[A-Za-z0-9]{68,70}\\b",
+"keywords": [
+"akcp"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "artifactory-jfrog-url",
+"regex": "(?i)(?:^|[^a-z0-9-])([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.jfrog\\.io)(?:$|[^a-z0-9-])",
+"keywords": [
+"jfrog.io"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 2.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "artifactory-reference-token",
+"regex": "\\bcmVmd[A-Za-z0-9]{59}\\b",
+"keywords": [
+"cmvmd"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "asaas-api-token",
+"regex": "(?:^|[^A-Za-z0-9_-])(\\$aact_(?:prod|hmlg)_[A-Za-z0-9_-]{20,100})(?:[^A-Za-z0-9_-]|$)",
+"keywords": [
+"$aact_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "asana-client-id",
+"regex": "(?i)(?:asana)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9]{16})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"asana"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.75,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "asana-client-secret",
+"regex": "(?i)(?:asana)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"asana"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "assemblyai-api-key",
+"regex": "(?i)(?:assemblyai)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"assemblyai"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "atlassian-api-token",
+"regex": "\\b(ATAT[A-Za-z0-9_\\-=]{100,})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"atat"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "auth0-client-id.1",
+"regex": "(?i:(?:auth0[_.-]?(?:client[_.-]?)?(?:id|identifier))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9_-]{32,60})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"auth0"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "auth0-client-secret.1",
+"regex": "(?i:(?:auth0[_.-]?(?:client[_.-]?)?(?:secret|private|key|token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9_-]{64,128})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"auth0"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "auth0-domain.1",
+"regex": "(?i)\\b((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+auth0\\.com)(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"auth0.com"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "authress-service-client-access-key",
+"regex": "(?i)\\b((?:sc|ext|scauth|authress)_[a-z0-9]{5,30}\\.[a-z0-9]{4,6}\\.acc[_-][a-z0-9-]{10,32}\\.[a-z0-9+/_=-]{30,120})\\b",
+"keywords": [
+".acc_",
+".acc-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "aws-access-token",
+"regex": "\\b((?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16})\\b",
+"keywords": [
+"a3t",
+"akia",
+"asia",
+"abia",
+"acca"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [
+".+EXAMPLE$"
+],
+"reject_contains": []
+},
+{
+"id": "aws-amazon-bedrock-api-key-long-lived",
+"regex": "\\b(ABSK[A-Za-z0-9+/]{109,269}={0,2})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"absk"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "aws-amazon-bedrock-api-key-short-lived",
+"regex": "bedrock-api-key-YmVkcm9jay5hbWF6b25hd3MuY29t",
+"keywords": [
+"bedrock-api-key-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "aws-secret-access-key",
+"regex": "(?i:(?:secret|access|key|token)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9/+=]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"secret",
+"access",
+"key",
+"token"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "azure-ad-client-secret",
+"regex": "(?:^|[\\\\'\"\\x60\\s>=:(,)])([a-zA-Z0-9_~.]{3}\\dQ~[a-zA-Z0-9_~.-]{31,34})(?:$|[\\\\'\"\\x60\\s<),])",
+"keywords": [
+"0q~",
+"1q~",
+"2q~",
+"3q~",
+"4q~",
+"5q~",
+"6q~",
+"7q~",
+"8q~",
+"9q~"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "azure-app-configuration-connection-string",
+"regex": "(?i)Endpoint=(?P<azure_appconfig_endpoint>https://[a-z0-9-]+\\.azconfig\\.io);Id=(?P<azure_appconfig_id>[^;\\s'\"]{4,80});Secret=([A-Za-z0-9+/]{36,100}={0,2})",
+"keywords": [
+"azconfig.io",
+"endpoint=",
+"secret="
+],
+"confidence": "high",
+"group": 3,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "azure-client-id",
+"regex": "(?i)\\b(?:client[_\\s.-]*id|AZURE_CLIENT_ID)\\b(?s:.{0,24}?)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\\b",
+"keywords": [
+"client"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 2.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "azure-servicebus-connection-string",
+"regex": "(?i)(Endpoint=sb://[a-z0-9-]+\\.servicebus\\.windows\\.net/;SharedAccessKeyName=[^;=\\s'\"]{1,128};SharedAccessKey=[A-Za-z0-9+/]{32,100}={0,2}(?:;EntityPath=[^;\\s'\"]{1,128})?)",
+"keywords": [
+"endpoint=sb://",
+"sharedaccesskey"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "azure-storage-account-key",
+"regex": "(?i)\\b(?:AccountKey|(?:azure[_\\s.-]*)?(?:storage[_\\s.-]*)?(?:account[_\\s.-]*)?(?:access[_\\s.-]*)?key)\\b(?s:.{0,24}?)([A-Za-z0-9+/]{86}==)",
+"keywords": [
+"accountkey",
+"storage",
+"accesskey",
+"access_key",
+"access-key"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "azure-storage-account-name",
+"regex": "(?i)(?:\\bAccountName\\s*=\\s*([a-z0-9]{3,24})\\b|https://([a-z0-9]{3,24})\\.blob\\.core\\.windows\\.net\\b|\\b(?:azure[_\\s.-]*storage[_\\s.-]*(?:account[_\\s.-]*)?name|storage[_\\s.-]*account[_\\s.-]*name)\\b(?s:.{0,24}?)([a-z0-9]{3,24})\\b)",
+"keywords": [
+"accountname",
+"blob.core.windows.net",
+"storage"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 1.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "azure-tenant-id",
+"regex": "(?i)\\b(?:tenant[_\\s.-]*(?:id)?|AZURE_TENANT_ID)\\b(?s:.{0,24}?)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\\b",
+"keywords": [
+"tenant"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 2.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "beamer-api-token",
+"regex": "(?i)(?:beamer)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(b_[a-z0-9=_\\-]{44})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"beamer"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "bitbucket-client-id",
+"regex": "(?i)(?:bitbucket)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"bitbucket"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "bitbucket-client-secret",
+"regex": "(?i)(?:bitbucket)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9=_\\-]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"bitbucket"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "bitbucket-data-center-token",
+"regex": "\\b(BBDC-[A-Za-z0-9+/=]{32,})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"bbdc"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "bitly-access-token",
+"regex": "(?i)\\bbitly(?:.|[\\n\\r]){0,32}?(?:SECRET|PRIVATE|ACCESS|KEY|TOKEN)(?:.|[\\n\\r]){0,32}?([a-f0-9]{40})\\b",
+"keywords": [
+"bitly"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "bitrise-access-token",
+"regex": "(?i:(?:bitrise(?:[ _-]*(?:personal|workspace))?(?:[ _-]*(?:access|api))?[ _-]*token)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9_-]{60,120})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"bitrise"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "bittrex-access-key",
+"regex": "(?i)(?:bittrex)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"bittrex"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "bittrex-secret-key",
+"regex": "(?i)(?:bittrex)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"bittrex"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "box-api-access-token",
+"regex": "(?i)(?:box)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"box_",
+"box-",
+"boxt",
+"boxk",
+"boxa"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "brave-search-api-key",
+"regex": "\\b(BSA[A-Za-z0-9_-]{24,40})\\b",
+"keywords": [
+"bsa"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.2,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "browserstack-access-key.1",
+"regex": "(?i:(?:browserstack[_.-]?(?:access[_.-]?)?(?:key|secret|token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9]{20})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"browserstack"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "browserstack-username.1",
+"regex": "(?i:(?:browserstack[_.-]?(?:username|user))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9][A-Za-z0-9._-]{2,39})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"browserstack"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "buildkite-service-token",
+"regex": "\\b(bkaa_[A-Za-z0-9_-]{75}|bkaj_[A-Za-z0-9_-]{333}|bkar_[A-Za-z0-9_-]{73}|bkct_[A-Za-z0-9_-]{73}|bkpt_[A-Za-z0-9_-]{199}|bkpat_[A-Za-z0-9_-]{54}|bkps_[A-Za-z0-9_-]{64})(?:$|[^A-Za-z0-9_-])",
+"keywords": [
+"bkaa_",
+"bkaj_",
+"bkar_",
+"bkct_",
+"bkpt_",
+"bkpat_",
+"bkps_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "buildkite-user-access-token",
+"regex": "\\b(bkua_(?:[a-z0-9]{40}|[a-z0-9]{53}))\\b",
+"keywords": [
+"bkua_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "canadian-digital-service-notify-api-key",
+"regex": "(?i:\\b(ApiKey-v1\\s+gcntfy-[a-z0-9_]+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\\b)",
+"keywords": [
+"gcntfy-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "canva-client-id",
+"regex": "(?i)\\b(?:canva|CANVA_CLIENT_ID)(?:.|[\\n\\r]){0,32}?(?:client[_\\s-]*id|app[_\\s-]*id)(?:.|[\\n\\r]){0,16}?\\b(OC-[A-Za-z0-9_-]{8,16})\\b",
+"keywords": [
+"canva"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 2.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "canva-client-secret",
+"regex": "\\b(cnvca[a-zA-Z0-9_-]{51})\\b",
+"keywords": [
+"cnvca"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "cartesia-api-key.1",
+"regex": "\\b(sk_car_[A-Za-z0-9_]{20})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sk_car_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "cerebras-api-key",
+"regex": "(?i)\\b(csk-[a-z0-9]{48})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"csk-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "checkout-secret-key",
+"regex": "(?i)(?:checkout)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(sk_[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"checkout"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "circleci-personal-token",
+"regex": "\\b(CCIPAT_[a-zA-Z0-9]{22}_[a-z0-9]{40})",
+"keywords": [
+"ccipat_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "circleci-project-token",
+"regex": "(?i)(?:circleci)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"circleci"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "cisco-meraki-api-key",
+"regex": "(?i:(?:(?-i:[Mm]eraki|MERAKI))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9a-f]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"meraki"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "civo-api-key",
+"regex": "(?i)(?:civo)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{50})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"civo"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "clerk-secret-key",
+"regex": "(?i)(?:clerk)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(sk_(?:test|live)_[A-Za-z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"clerk"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "clickhouse-cloud-api-secret-key",
+"regex": "\\b(4b1d[A-Za-z0-9]{38})\\b",
+"keywords": [
+"4b1d"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "clickhouse-cloud-key-id",
+"regex": "(?i)\\bclickhouse(?:.|[\\n\\r]){0,16}?(?:ID|USER)(?:.|[\\n\\r]){0,16}?([a-z0-9]{20})",
+"keywords": [
+"clickhouse"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "clickup-personal-api-token",
+"regex": "(?i)(?:clickup)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(pk_[0-9]{8,9}_[a-z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"clickup"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "clojars-api-token",
+"regex": "(?i)CLOJARS_[a-z0-9]{60}",
+"keywords": [
+"clojars_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "cloudflare-account-id.1",
+"regex": "(?i:(?:account[_. -]*id)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"account_id",
+"account-id",
+"account id",
+"accountid"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "cloudflare-api-key.1",
+"regex": "(?i)(?:cloudflare)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9_-]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"cloudflare"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "cloudflare-api-key.2",
+"regex": "\\b(cf[ua]t_[A-Za-z0-9]{40}[a-f0-9]{8})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"cfut_",
+"cfat_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "cloudflare-global-api-key",
+"regex": "(?i)(?:cloudflare)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{37})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"cloudflare"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "cloudflare-origin-ca-key",
+"regex": "\\b(v1\\.0-[a-f0-9]{24}-[a-f0-9]{146})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"cloudflare",
+"v1.0-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "cloudinary-api-key",
+"regex": "(?i)\\bcloudinary(?:.|[\\n\\r]){0,32}?(?:API[_\\s]?KEY|KEY)(?:.|[\\n\\r]){0,16}?\\b([0-9]{15})\\b",
+"keywords": [
+"cloudinary"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 2.75,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "cloudinary-api-secret",
+"regex": "(?i)\\bcloudinary(?:.|[\\n\\r]){0,32}?(?:SECRET|PRIVATE|API[_\\s]?SECRET)(?:.|[\\n\\r]){0,32}?\\b([A-Za-z0-9]{32})\\b",
+"keywords": [
+"cloudinary"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "cloudinary-cloud-name",
+"regex": "(?i)\\bcloudinary(?:.|[\\n\\r]){0,32}?(?:CLOUD[_\\s]?NAME|CLOUD)(?:.|[\\n\\r]){0,16}?\\b([a-z0-9_-]{3,32})\\b",
+"keywords": [
+"cloudinary"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "cloudsmith-api-key",
+"regex": "\\b(csa_[a-f0-9]{30}[A-Za-z0-9]{6})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"csa_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "cockroachlabs-cloud-api-key",
+"regex": "\\b(CCDB1_[A-Za-z0-9]{22}_[A-Za-z0-9]{40})\\b",
+"keywords": [
+"ccdb1_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "codecov-access-token",
+"regex": "(?i)(?:codecov)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Z0-9-]{36})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"codecov"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "cohere-api-token",
+"regex": "(?i:(?:cohere|CO_API_KEY)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-zA-Z0-9]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"cohere",
+"co_api_key"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "coinbase-access-token",
+"regex": "(?i)(?:coinbase)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9_-]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"coinbase"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "configcat-sdk-key",
+"regex": "(?i)(?:configcat)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9_-]{22}/[A-Za-z0-9_-]{22})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"configcat"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "configcat-sdk-key-extended",
+"regex": "\\b(configcat-sdk-1/[A-Za-z0-9_-]{22}/[A-Za-z0-9_-]{22})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"configcat-sdk-1"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "confluent-access-token",
+"regex": "(?i)(?:confluent)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{16})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"confluent"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "confluent-secret-key",
+"regex": "(?i)(?:confluent)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"confluent"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "contentful-delivery-api-token",
+"regex": "(?i)(?:contentful)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9=_\\-]{43})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"contentful"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "couchbase-capella-api-key",
+"regex": "(?i)\\b(?:couchbase|capella)(?:.|[\\n\\r]){0,32}?(?:api(?:.|[\\n\\r]){0,12}?(?:key|secret)|key(?:.|[\\n\\r]){0,12}?secret)(?:.|[\\n\\r]){0,32}?\\b([A-Za-z0-9+/]{60,120}={0,2})\\b",
+"keywords": [
+"couchbase",
+"capella"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "coveralls-personal-api-token",
+"regex": "(?i)(?:coveralls)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9-]{37})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"coveralls"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "crates-io-api-key",
+"regex": "(?i)(?:crates(?:[_.-]?io)?)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(cio[A-Za-z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"crates"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "curl-auth-header",
+"regex": "\\bcurl\\b(?:.*?|.*?(?:[\\r\\n]{1,2}.*?){1,5})[ \\t\\n\\r](?:-H|--header)(?:=|[ \\t]{0,5})(?:\"(?i)(?:Authorization:[ \\t]{0,5}(?:Basic[ \\t]([a-z0-9+/]{8,}={0,3})|(?:Bearer|(?:Api-)?Token)[ \\t]([\\w=~@.+/-]{8,})|([\\w=~@.+/-]{8,}))|(?:(?:X-(?:[a-z]+-)?)?(?:Api-?)?(?:Key|Token)):[ \\t]{0,5}([\\w=~@.+/-]{8,}))\"|'(?i)(?:Authorization:[ \\t]{0,5}(?:Basic[ \\t]([a-z0-9+/]{8,}={0,3})|(?:Bearer|(?:Api-)?Token)[ \\t]([\\w=~@.+/-]{8,})|([\\w=~@.+/-]{8,}))|(?:(?:X-(?:[a-z]+-)?)?(?:Api-?)?(?:Key|Token)):[ \\t]{0,5}([\\w=~@.+/-]{8,}))')(?:\\B|\\s|\\z)",
+"keywords": [
+"curl"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.75,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "curl-auth-user",
+"regex": "\\bcurl\\b(?:.*|.*(?:[\\r\\n]{1,2}.*){1,5})[ \\t\\n\\r](?:-u|--user)(?:=|[ \\t]{0,5})(\"(:[^\"]{3,}|[^:\"]{3,}:|[^:\"]{3,}:[^\"]{3,})\"|'([^:']{3,}:[^']{3,})'|((?:\"[^\"]{3,}\"|'[^']{3,}'|[\\w$@.-]+):(?:\"[^\"]{3,}\"|'[^']{3,}'|[\\w${}@.-]+)))(?:\\s|\\z)",
+"keywords": [
+"curl"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [
+"[^:]+:(?:change(?:it|me)|pass(?:word)?|pwd|test|token|\\*+|x+)",
+"['\"]?<[^>]+>['\"]?:['\"]?<[^>]+>|<[^:]+:[^>]+>['\"]?",
+"[^:]+:\\[[^]]+]",
+"['\"]?[^:]+['\"]?:['\"]?\\$(?:\\d|\\w+|\\{(?:\\d|\\w+)})['\"]?",
+"['\"]?\\$\\{(?:[^{}]|\\{[^}]*\\})*\\}['\"]?:['\"]?\\$\\{(?:[^{}]|\\{[^}]*\\})*\\}['\"]?",
+"\\$\\([^)]+\\):\\$\\([^)]+\\)",
+"['\"]?\\$?{{[^}]+}}['\"]?:['\"]?\\$?{{[^}]+}}['\"]?"
+],
+"reject_contains": []
+},
+{
+"id": "cursor-api-key",
+"regex": "(?i)(?:cursor)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(key_[0-9a-f]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"cursor"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "databento-api-key",
+"regex": "(?i)(?:databento)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(db-[A-Za-z0-9]{29})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"databento"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "databricks-api-token",
+"regex": "\\b(dapi[a-f0-9]{32}(?:-\\d)?)(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"dapi"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "datadog-api-key",
+"regex": "(?i)(?:datadog)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"datadog"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "datadog-application-key",
+"regex": "(?i)(?:datadog)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9-]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"datadog"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "datagov-api-key",
+"regex": "(?i)(?:data\\.gov)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"data.gov"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "datastax-astra-application-token",
+"regex": "\\b(AstraCS:[A-Za-z0-9]{20,})",
+"keywords": [
+"astracs:"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "deepgram-api-key",
+"regex": "(?i)(?:deepgram)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"deepgram"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "deepseek-api-key",
+"regex": "(?i)(?:deepseek)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(sk-[a-f0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"deepseek"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "defined-networking-api-token",
+"regex": "(?i)(?:dnkey)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(dnkey-[a-z0-9=_\\-]{26}-[a-z0-9=_\\-]{52})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"dnkey"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "deno-account-token",
+"regex": "\\b(ddp_[A-Za-z0-9]{36})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"ddp_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "devcycle-client-sdk-key",
+"regex": "\\b(dvc_client_[A-Za-z0-9]{8,32})",
+"keywords": [
+"dvc_client_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "devcycle-mobile-sdk-key",
+"regex": "\\b(dvc_mobile_[A-Za-z0-9]{8,32})",
+"keywords": [
+"dvc_mobile_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "devcycle-server-sdk-key",
+"regex": "\\b(dvc_server_[A-Za-z0-9]{8,32})",
+"keywords": [
+"dvc_server_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "devin-personal-api-key",
+"regex": "\\b(apk_user_[A-Za-z0-9+/]{120,180}={0,2})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"apk_user_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "devin-service-api-key",
+"regex": "\\b(apk_[A-Za-z0-9+/]{80,100}={0,2})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"apk_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "devin-service-user-token",
+"regex": "\\b(cog_[a-z2-7]{52})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"cog_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "digitalocean-access-token",
+"regex": "\\b(doo_v1_[a-f0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"doo_v1_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "digitalocean-pat",
+"regex": "\\b(dop_v1_[a-f0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"dop_v1_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "digitalocean-refresh-token",
+"regex": "(?i)\\b(dor_v1_[a-f0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"dor_v1_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "discord-api-token",
+"regex": "(?i)(?:discord)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"discord"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "discord-client-id",
+"regex": "(?i)(?:discord)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9]{18})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"discord"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 2.75,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "discord-client-secret",
+"regex": "(?i)(?:discord)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9=_\\-]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"discord"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "disqus-api-key",
+"regex": "(?i)(?:disqus)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"disqus"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "docker-swarm-join-token",
+"regex": "\\b(SWMTKN-1-[a-z0-9]{50,60}-[a-z0-9]{24,30})",
+"keywords": [
+"swmtkn-1-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "docker-swarm-unlock-key",
+"regex": "\\b(SWMKEY-1-[A-Za-z0-9+/]{40,50})",
+"keywords": [
+"swmkey-1-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "dockerhub-organization-access-token",
+"regex": "\\b(dckr_oat_[A-Za-z0-9_-]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"dckr_oat_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "dockerhub-personal-access-token",
+"regex": "\\b(dckr_pat_[A-Za-z0-9_-]{27})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"dckr_pat_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "doppler-api-token",
+"regex": "dp\\.pt\\.(?i)[a-z0-9]{43}",
+"keywords": [
+"dp.pt."
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "droneci-access-token",
+"regex": "(?i)(?:droneci)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"droneci"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "dropbox-api-token",
+"regex": "(?i)(?:dropbox)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{15})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"dropbox"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "dropbox-long-lived-api-token",
+"regex": "(?i)(?:dropbox)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{11}(AAAAAAAAAA)[a-z0-9\\-_=]{43})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"dropbox"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "dropbox-short-lived-api-token",
+"regex": "(?i)(?:dropbox)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(sl\\.[a-z0-9\\-=_]{135})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"dropbox"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "duffel-api-token",
+"regex": "duffel_(?:test|live)_(?i)[a-z0-9_\\-=]{43}",
+"keywords": [
+"duffel_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "dynatrace-api-token",
+"regex": "dt0c01\\.(?i)[a-z0-9]{24}\\.[a-z0-9]{64}",
+"keywords": [
+"dt0c01."
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "easypost-api-token",
+"regex": "\\bEZAK(?i)[a-z0-9]{54}\\b",
+"keywords": [
+"ezak"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "easypost-test-api-token",
+"regex": "\\bEZTK(?i)[a-z0-9]{54}\\b",
+"keywords": [
+"eztk"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "ebay-client-id",
+"regex": "\\b([a-zA-Z0-9_-]+-[a-zA-Z0-9_-]+-PRD-[a-f0-9]{8,12}-[a-f0-9]{8,12})",
+"keywords": [
+"-prd-"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "ebay-client-secret",
+"regex": "(?i:(?:ebay(?:[_. -]*(?:client|api))?[_. -]*(?:secret|key))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(PRD-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4,12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"ebay"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "elastic-cloud-api-key",
+"regex": "\\b(essu_[A-Za-z0-9_\\-]{60,200}={0,2})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"essu_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "elevenlabs-api-key",
+"regex": "(?i)(?:elevenlabs)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(sk_[0-9a-f]{48})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"elevenlabs"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "endorlabs-api-key",
+"regex": "(?i)(?:endor(?:labs)?|key)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(endr\\+[A-Za-z0-9-]{16})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"endr+"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "endorlabs-api-secret",
+"regex": "(?i)(?:endor(?:labs)?|secret)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(endr\\+[A-Za-z0-9-]{16})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"endr+"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "etsy-open-api-key",
+"regex": "(?i)(?:etsy|x-api-key)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{24}:[a-z0-9]{10,64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"etsy",
+"x-api-key"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "exoscale-api-key",
+"regex": "\\b(EXO[a-zA-Z0-9]{24,30})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"exo"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "exoscale-api-secret",
+"regex": "(?i)(?:exoscale)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9_\\-]{40,60})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"exoscale"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "facebook-access-token",
+"regex": "(?i)\\b(\\d{15,16}(\\||%)[0-9a-z\\-_]{27,40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"facebook"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "facebook-page-access-token",
+"regex": "\\b(EAA[MC](?i)[a-z0-9]{100,})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"eaam",
+"eaac"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "facebook-secret",
+"regex": "(?i)(?:facebook)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"facebook"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "fal-api-key.1",
+"regex": "(?i:(?:falai|fal_ai|fal-ai|fal.ai|fal-api|fal_api|fal_key|fal-key)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}:[a-f0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"falai",
+"fal_ai",
+"fal-ai",
+"fal.ai",
+"fal-api",
+"fal_api",
+"fal_key",
+"fal-key"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "fastly-api-token",
+"regex": "(?i)(?:fastly)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9_-]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"fastly"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "figma-personal-access-header-token",
+"regex": "(?i)(?:x-figma-token|xfigmatoken|x_figma_token)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9A-F]{4}-[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"x-figma-token",
+"xfigmatoken",
+"x_figma_token"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "figma-personal-access-token",
+"regex": "(?i)\\b(figd_[A-Z0-9_-]{38,42})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"figd_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "finicity-api-token",
+"regex": "(?i)(?:finicity)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"finicity"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "finicity-client-secret",
+"regex": "(?i)(?:finicity)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{20})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"finicity"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "finnhub-access-token",
+"regex": "(?i)(?:finnhub)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{20})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"finnhub"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "flickr-access-token",
+"regex": "(?i)(?:flickr)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"flickr"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "flutterwave-encryption-key",
+"regex": "FLWSECK_TEST-(?i)[a-h0-9]{12}",
+"keywords": [
+"flwseck_test"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "flutterwave-public-key",
+"regex": "FLWPUBK_TEST-(?i)[a-h0-9]{32}-X",
+"keywords": [
+"flwpubk_test"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "flutterwave-secret-key",
+"regex": "FLWSECK_TEST-(?i)[a-h0-9]{32}-X",
+"keywords": [
+"flwseck_test"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "flyio-access-token",
+"regex": "\\b(FlyV1\\s[A-Za-z0-9=_\\-,/+]{100,})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"flyv1"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "frameio-api-token",
+"regex": "fio-u-(?i)[a-z0-9\\-_=]{64}",
+"keywords": [
+"fio-u-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "freshbooks-access-token",
+"regex": "(?i)(?:freshbooks)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"freshbooks"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "fullstory-api-key",
+"regex": "(?i)(?:(?:fullstory|fs_api|fullstory_api))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}((?:na1|eu1)\\.[A-Za-z0-9]{20,})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"fullstory",
+"fs_api"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gcp-api-key",
+"regex": "\\b(AIza[\\w-]{35})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"aiza"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [
+"AIzaSyabcdefghijklmnopqrstuvwxyz1234567",
+"AIzaSyAnLA7NfeLquW1tJFpx_eQCxoX-oo6YyIs",
+"AIzaSyCkEhVjf3pduRDt6d1yKOMitrUEke8agEM",
+"AIzaSyDMAScliyLx7F0NPDEJi1QmyCgHIAODrlU",
+"AIzaSyD3asb-2pEZVqMkmL6M9N6nHZRR_znhrh0",
+"AIzayDNSXIbFmlXbIE6mCzDLQAqITYefhixbX4A",
+"AIzaSyAdOS2zB6NCsk1pCdZ4-P6GBdi_UUPwX7c",
+"AIzaSyASWm6HmTMdYWpgMnjRBjxcQ9CKctWmLd4",
+"AIzaSyANUvH9H9BsUccjsu2pCmEkOPjjaXeDQgY",
+"AIzaSyA5_iVawFQ8ABuTZNUdcwERLJv_a_p4wtM",
+"AIzaSyA4UrcGxgwQFTfaI3no3t7Lt1sjmdnP5sQ",
+"AIzaSyDSb51JiIcB6OJpwwMicseKRhhrOq1cS7g",
+"AIzaSyBF2RrAIm4a0mO64EShQfqfd2AFnzAvvuU",
+"AIzaSyBcE-OOIbhjyR83gm4r2MFCu4MJmprNXsw",
+"AIzaSyB8qGxt4ec15vitgn44duC5ucxaOi4FmqE",
+"AIzaSyA8vmApnrHNFE0bApF4hoZ11srVL_n0nvY"
+],
+"reject_contains": []
+},
+{
+"id": "gcp-application-default-credentials",
+"regex": "\\{[^{]+(?:(?:\"client_secret\"\\s*:\\s*\"[^\"]+\"[^}]+\"refresh_token\"\\s*:\\s*\"[^\"]+\")|(?:\"refresh_token\"\\s*:\\s*\"[^\"]+\"[^}]+\"client_secret\"\\s*:\\s*\"[^\"]+\"))[^}]+\\}",
+"keywords": [
+".apps.googleusercontent.com"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gcp-gemini-api",
+"regex": "\\b(AQ\\.Ab8RN6[A-Za-z0-9_-]{44})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"aq.ab8rn6"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gcp-service-account",
+"regex": "\\{[^{]+(?:(?:\"private_key\"\\s*:\\s*\"-----BEGIN (?:RSA )?PRIVATE KEY-----[^}]+auth_provider_x509_cert_url)|(?:auth_provider_x509_cert_url[^}]+\"private_key\"\\s*:\\s*\"-----BEGIN (?:RSA )?PRIVATE KEY-----))[^}]+\\}",
+"keywords": [
+"provider_x509"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": [
+"image-pulling@authenticated-image-pulling.iam.gserviceaccount.com"
+]
+},
+{
+"id": "generic-api-key",
+"regex": "(?i)(?:access|auth|(?-i:[Aa]pi|API)|credential|creds|key|secret|token)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([\\w.=-]{10,150}|[a-z0-9][a-z0-9+/]{11,}={0,3})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"access",
+"api",
+"auth",
+"key",
+"credential",
+"creds",
+"secret",
+"token"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "generic-credential-uri",
+"regex": "(?i)\\b(?P<uri>(?P<scheme>https?|postgres(?:ql)?|mysql|mariadb|mongodb(?:\\+srv)?|rediss?|amqps?|ldaps?|smtps?|ftps?|ssh)://(?P<username>[^:/@\\s'\"\\x60]{0,128}):(?P<password>[^/@\\s'\"\\x60]{1,256})@(?P<host>(?:\\[[0-9a-f:.%]+\\]|[a-z0-9][a-z0-9._-]{0,252}))(?::[0-9]{1,5})?(?:,(?:\\[[0-9a-f:.%]+\\]|[a-z0-9][a-z0-9._-]{0,252})(?::[0-9]{1,5})?)*(?:[/?][a-z0-9._~!$&(*+,;=:@%/?-]*)?)(?:[\\s'\"\\x60#<>{}\\[\\],;)]|\\\\[nr]|$)",
+"keywords": [
+"http://",
+"https://",
+"postgres://",
+"postgresql://",
+"mysql://",
+"mariadb://",
+"mongodb://",
+"mongodb+srv://",
+"redis://",
+"rediss://",
+"amqp://",
+"amqps://",
+"ldap://",
+"ldaps://",
+"smtp://",
+"smtps://",
+"ftp://",
+"ftps://",
+"ssh://"
+],
+"confidence": "medium",
+"group": 4,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "generic-password",
+"regex": "(?i)(?:(?:passw(?:or)?d|psw|[_.-]pw)\\b[ \\t'\"\\\\]{0,3}(?:=>|:=|=|:)[ \\t]{0,5}(?:\"((?:\\\\.|[^\"\\\\\\r\\n]){5,250})\"|'((?:\\\\.|[^'\\\\\\r\\n]){5,250})'|\\x60((?:\\\\.|[^\\x60\\\\\\r\\n]){5,250})\\x60|([^:=\\s'\"\\x60,;][^\\s'\"\\x60,;]{4,249}))(?:[ \\t]*[,;)}\\]\\r\\n]|[ \\t]+(?:#|//|/\\*|--)|[ \\t]*$|\\\\[nr])|\\b(?:login|log_in|authenticate)\\b[ \\t]*\\([ \\t]*[^,()\\r\\n]{1,250}[ \\t]*,[ \\t]*(?:\"((?:\\\\.|[^\"\\\\\\r\\n]){4,250})\"|'((?:\\\\.|[^'\\\\\\r\\n]){4,250})'|\\x60((?:\\\\.|[^\\x60\\\\\\r\\n]){4,250})\\x60)[ \\t]*\\))",
+"keywords": [
+"passw",
+"psw",
+"_pw",
+"-pw",
+".pw",
+"login(",
+"login (",
+"log_in(",
+"log_in (",
+"authenticate(",
+"authenticate ("
+],
+"confidence": "low",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "generic-username",
+"regex": "(?m)(?:^|[^a-zA-Z0-9])(?i:username|user|login(?:[_.-]?name)?|email(?:[_.-]?address)?|uid|account(?:[_.-]?name)?|client(?:[_.-]?(?:id|name))?)\\b[ \\t'\"\\\\]{0,3}(?:=>|:=|=|:)[ \\t]{0,5}(?:\"((?:\\\\.|[^\"\\\\\\r\\n]){3,250})\"|'((?:\\\\.|[^'\\\\\\r\\n]){3,250})'|\\x60((?:\\\\.|[^\\x60\\\\\\r\\n]){3,250})\\x60|([^:=\\s'\"\\x60,;][^\\s'\"\\x60,;]{2,249}))(?:[ \\t]*[,;)}\\]\\r\\n]|[ \\t]*$|\\\\[nr])",
+"keywords": [
+"user",
+"login",
+"email",
+"uid",
+"account",
+"client"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitea-access-token",
+"regex": "(?i)(?:gitea[_.-]?(?:token|key|secret|access))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"gitea"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "github-app-token",
+"regex": "(?:ghu|ghs)_[0-9a-zA-Z]{36}",
+"keywords": [
+"ghu_",
+"ghs_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "github-fine-grained-pat",
+"regex": "github_pat_\\w{82}",
+"keywords": [
+"github_pat_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "github-oauth",
+"regex": "gho_[0-9a-zA-Z]{36}",
+"keywords": [
+"gho_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "github-pat",
+"regex": "ghp_[0-9a-zA-Z]{36}",
+"keywords": [
+"ghp_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "github-refresh-token",
+"regex": "ghr_[0-9a-zA-Z]{36}",
+"keywords": [
+"ghr_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitlab-cicd-job-token",
+"regex": "glcbt-[0-9a-zA-Z]{1,5}_[0-9a-zA-Z_-]{20}",
+"keywords": [
+"glcbt-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitlab-deploy-token",
+"regex": "gldt-[0-9a-zA-Z_\\-]{20}",
+"keywords": [
+"gldt-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitlab-feature-flag-client-token",
+"regex": "glffct-[0-9a-zA-Z_\\-]{20}",
+"keywords": [
+"glffct-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitlab-feed-token",
+"regex": "glft-[0-9a-zA-Z_\\-]{20}",
+"keywords": [
+"glft-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitlab-incoming-mail-address-token",
+"regex": "incoming\\+(?:[A-Za-z0-9._-]+-)?\\d+-([A-Za-z0-9_-]+)-(?:issue(?:-\\d+)?|merge-request)@",
+"keywords": [
+"incoming+"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitlab-incoming-mail-token",
+"regex": "glimt-[0-9a-zA-Z_\\-]{25}",
+"keywords": [
+"glimt-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitlab-kubernetes-agent-token",
+"regex": "glagent-[0-9a-zA-Z_\\-]{50}",
+"keywords": [
+"glagent-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitlab-oauth-app-secret",
+"regex": "gloas-[0-9a-zA-Z_\\-]{64}",
+"keywords": [
+"gloas-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitlab-pat",
+"regex": "glpat-[\\w-]{20}",
+"keywords": [
+"glpat-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitlab-pat-routable",
+"regex": "\\bglpat-[0-9a-zA-Z_-]{27,300}\\.[0-9a-z]{2}[0-9a-z]{7}\\b",
+"keywords": [
+"glpat-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitlab-pat-routable-versioned",
+"regex": "\\bglpat-[0-9a-zA-Z_-]{27,300}\\.[0-9a-z]{2}\\.[0-9a-z]{9}\\b",
+"keywords": [
+"glpat-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitlab-ptt",
+"regex": "glptt-[0-9a-f]{40}",
+"keywords": [
+"glptt-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitlab-rrt",
+"regex": "GR1348941[\\w-]{20}",
+"keywords": [
+"gr1348941"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitlab-runner-authentication-token",
+"regex": "glrt-[0-9a-zA-Z_\\-]{20}",
+"keywords": [
+"glrt-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitlab-runner-authentication-token-routable",
+"regex": "\\bglrt-t\\d_[0-9a-zA-Z_\\-]{27,300}\\.[0-9a-z]{2}[0-9a-z]{7}\\b",
+"keywords": [
+"glrt-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitlab-scim-token",
+"regex": "glsoat-[0-9a-zA-Z_\\-]{20}",
+"keywords": [
+"glsoat-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitlab-session-cookie",
+"regex": "_gitlab_session=[0-9a-z]{32}",
+"keywords": [
+"_gitlab_session="
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gitter-access-token",
+"regex": "(?i)(?:gitter)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9_-]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"gitter"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gocardless-api-token",
+"regex": "(?i)(?:gocardless)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(live_(?i)[a-z0-9\\-_=]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"live_",
+"gocardless"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "grafana-api-key",
+"regex": "\\b(eyJrIjoi[A-Za-z0-9+/]{40,380}={0,2})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"eyjrijoi"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "grafana-cloud-api-token",
+"regex": "\\b(glc_[A-Za-z0-9+/]{40,150}={0,2})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"glc_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "grafana-service-account-token",
+"regex": "\\b(glsa_[A-Za-z0-9]{32}_[A-Fa-f0-9]{8})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"glsa_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "greptile-api-key",
+"regex": "(?i)(?:greptile)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-zA-Z0-9+/]{48})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"greptile"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "groq-api-key",
+"regex": "(?i)\\b(gsk_[A-Z0-9]{52})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"gsk_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "gumroad-access-token",
+"regex": "(?i)(?:gumroad)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}((?:[a-f0-9]{64}|[A-Za-z0-9-]{43}))(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"gumroad"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "harness-api-key",
+"regex": "(?:pat|sat)\\.[a-zA-Z0-9_-]{22}\\.[0-9a-f]{24}\\.[a-zA-Z0-9]{20}",
+"keywords": [
+"pat.",
+"sat."
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.4,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "hashicorp-tf-api-token",
+"regex": "(?i)[a-z0-9]{14}\\.(?-i:atlasv1)\\.[a-z0-9\\-_=]{60,70}",
+"keywords": [
+"atlasv1"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "heroku-api-key",
+"regex": "(?i)(?:heroku)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"heroku"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "heroku-api-key-v2",
+"regex": "\\b((HRKU-AA[0-9a-zA-Z_-]{58}))(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"hrku-aa"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "highnote-secret-live-key",
+"regex": "(?i:(?:highnote(?:[_. -]*(?:api))?[_. -]*(?:secret|key|token|sk[_. -]*live))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(sk_live_a2V5Xz[A-Za-z0-9+/]{69}={0,2})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"highnote"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "honeycomb-api-key",
+"regex": "(?i)(?:honeycomb)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}((?:[a-f0-9]{32}|[a-z0-9]{22}))(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"honeycomb"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "hubspot-api-key",
+"regex": "(?i)(?:hubspot)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"hubspot"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "huggingface-access-token",
+"regex": "\\b(hf_(?i:[a-z]{34}))(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"hf_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "huggingface-organization-api-token",
+"regex": "\\b(api_org_(?i:[a-z]{34}))(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"api_org_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "hunter-api-key.1",
+"regex": "(?i:(?:hunter)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"hunter"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "ibm-cloud-user-api-key",
+"regex": "(?i)(?:ibm(?:cloud)?|bx)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9_-]{42,44})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"ibm"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "influxdb-api-token",
+"regex": "(?i)(?:\\binflux(?:db)?\\b(?:.|[\\n\\r]){0,64}?\\b(?:token|api[_-]?key)\\b(?:.|[\\n\\r]){0,32}?)[=:\"'\\s]{1,8}([A-Za-z0-9+/=_-]{88,})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"influx"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "infomaniak-api-token",
+"regex": "(?i)(?:infomaniak)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9_\\-]{60,100})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"infomaniak"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "infracost-api-token",
+"regex": "\\b(ico-[a-zA-Z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"ico-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "instantly-api-key.1",
+"regex": "(?i:(?:instantly)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9+/]{66}==)(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"instantly"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "intercom-api-key",
+"regex": "(?i)(?:intercom)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9=_\\-]{60})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"intercom"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "intra42-client-secret",
+"regex": "\\b(s-s4t2(?:ud|af)-(?i)[abcdef0123456789]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"intra",
+"s-s4t2ud-",
+"s-s4t2af-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "ionic-personal-access-token",
+"regex": "\\b(ion_[A-Za-z0-9]{42})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"ionic"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "jumpcloud-api-key",
+"regex": "(?i)(?:jumpcloud)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"jumpcloud"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "jwt",
+"regex": "\\b(ey[a-zA-Z0-9]{17,}\\.ey[a-zA-Z0-9\\/\\\\_-]{17,}\\.(?:[a-zA-Z0-9\\/\\\\_-]{10,}={0,2})?)(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"eyj"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "jwt-base64",
+"regex": "\\bZXlK(?:(?P<alg>aGJHY2lPaU)|(?P<apu>aGNIVWlPaU)|(?P<apv>aGNIWWlPaU)|(?P<aud>aGRXUWlPaU)|(?P<b64>aU5qUWlP)|(?P<crit>amNtbDBJanBi)|(?P<cty>amRIa2lPaU)|(?P<epk>bGNHc2lPbn)|(?P<enc>bGJtTWlPaU)|(?P<jku>cWEzVWlPaU)|(?P<jwk>cWQyc2lPb)|(?P<iss>cGMzTWlPaU)|(?P<iv>cGRpSTZJ)|(?P<kid>cmFXUWlP)|(?P<key_ops>clpYbGZiM0J6SWpwY)|(?P<kty>cmRIa2lPaUp)|(?P<nonce>dWIyNWpaU0k2)|(?P<p2c>d01tTWlP)|(?P<p2s>d01uTWlPaU)|(?P<ppt>d2NIUWlPaU)|(?P<sub>emRXSWlPaU)|(?P<svt>emRuUWlP)|(?P<tag>MFlXY2lPaU)|(?P<typ>MGVYQWlPaUp)|(?P<url>MWNtd2l)|(?P<use>MWMyVWlPaUp)|(?P<ver>MlpYSWlPaU)|(?P<version>MlpYSnphVzl1SWpv)|(?P<x>NElqb2)|(?P<x5c>NE5XTWlP)|(?P<x5t>NE5YUWlPaU)|(?P<x5ts256>NE5YUWpVekkxTmlJNkl)|(?P<x5u>NE5YVWlPaU)|(?P<zip>NmFYQWlPaU))[a-zA-Z0-9\\/\\\\_+\\-\\r\\n]{40,}={0,2}",
+"keywords": [
+"zxlk"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "kagi-api-key",
+"regex": "(?i)(?:kagi)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9_-]{11}\\.[a-z0-9_-]{43})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"kagi"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "kimi-api-key",
+"regex": "(?i)(?:kimi|moonshot)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(sk-[A-Za-z0-9_-]{48})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"kimi",
+"moonshot"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "klaviyo-api-key",
+"regex": "(?i)(?:klaviyo)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(pk_[a-z0-9]{34})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"klaviyo"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "kraken-access-token",
+"regex": "(?i)(?:kraken)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9\\/=_\\+\\-]{80,90})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"kraken"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "kucoin-access-token",
+"regex": "(?i)(?:kucoin)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{24})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"kucoin"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "kucoin-secret-key",
+"regex": "(?i)(?:kucoin)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"kucoin"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "langchain-langsmith-personal-access-token",
+"regex": "\\b(lsv2_pt_[0-9a-fA-F]{32}_[0-9a-fA-F]{10})",
+"keywords": [
+"lsv2_pt_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "langchain-langsmith-service-key",
+"regex": "\\b(lsv2_sk_[0-9a-fA-F]{32}_[0-9a-fA-F]{10})",
+"keywords": [
+"lsv2_sk_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "langfuse-public-key.1",
+"regex": "\\b(pk-lf-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"pk-lf-"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "langfuse-secret-key.1",
+"regex": "\\b(sk-lf-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sk-lf-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "lark-app-id",
+"regex": "\\b(cli_[A-Za-z0-9]{16})",
+"keywords": [
+"cli_"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "lark-app-secret",
+"regex": "(?i)(?:lark|larksuite)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"lark"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "launchdarkly-access-token",
+"regex": "(?i)(?:launchdarkly)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9=_\\-]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"launchdarkly"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "lichess-personal-access-token",
+"regex": "\\b(lip_[A-Za-z0-9_]{16,60})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"lip_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "lighton-paradigm-api-key",
+"regex": "(?i)(?:lighton|paradigm)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9_\\-]{40,80})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"lighton",
+"paradigm"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "linear-api-key",
+"regex": "lin_api_(?i)[a-z0-9]{40}",
+"keywords": [
+"lin_api_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "linear-client-secret",
+"regex": "(?i)(?:linear)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"linear"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "linkedin-client-id",
+"regex": "(?i)(?:linked[_-]?in)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{14})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"linkedin",
+"linked_in",
+"linked-in"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "linkedin-client-secret",
+"regex": "(?i)(?:linked[_-]?in)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{16})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"linkedin",
+"linked_in",
+"linked-in"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "llama-cloud-api-key.1",
+"regex": "\\b(llx-[A-Za-z0-9]{44,52})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"llx-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "lob-api-key",
+"regex": "(?i)(?:lob)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}((live|test)_[a-f0-9]{35})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"test_",
+"live_"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "lob-pub-api-key",
+"regex": "(?i)(?:lob)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}((test|live)_pub_[a-f0-9]{31})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"test_pub_",
+"live_pub_"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "looker-client-id",
+"regex": "(?i)(?:looker)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{20})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"looker"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "looker-client-secret",
+"regex": "(?i)(?:looker)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{24})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"looker"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "mailchimp-api-key",
+"regex": "(?i)(?:MailchimpSDK.initialize|mailchimp)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{32}-us\\d\\d)(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"mailchimp"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "mailersend-api-token",
+"regex": "\\b(mlsn\\.[A-Za-z0-9]{30,100})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"mlsn."
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "mailgun-private-api-token",
+"regex": "(?i)(?:mailgun)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(key-[a-f0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"mailgun"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "mailgun-pub-key",
+"regex": "(?i)(?:mailgun)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(pubkey-[a-f0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"mailgun"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "mailgun-signing-key",
+"regex": "(?i)(?:mailgun)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-h0-9]{32}-[a-h0-9]{8}-[a-h0-9]{8})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"mailgun"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "mapbox-api-token",
+"regex": "(?i)(?:mapbox)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(pk\\.[a-z0-9]{60}\\.[a-z0-9]{22})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"mapbox"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "mattermost-access-token",
+"regex": "(?i)(?:mattermost)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{26})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"mattermost"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "maxmind-license-key",
+"regex": "\\b([A-Za-z0-9]{6}_[A-Za-z0-9]{29}_mmk)(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"_mmk"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "mem0-api-key.1",
+"regex": "(?i:(?:mem0)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(m0-[A-Za-z0-9]{24,44})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"mem0"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "mercury-production-api-token",
+"regex": "\\b(mercury_production_[a-z]{3,6}_[A-Za-z0-9]{40,50}_yrucrem)(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"mercury_production_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "mergify-application-key",
+"regex": "\\b(mergify_application_key_[A-Za-z0-9_-]{40,200})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"mergify_application_key_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.2,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "messagebird-api-token",
+"regex": "(?i)(?:message[_-]?bird)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{25})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"messagebird",
+"message-bird",
+"message_bird"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "messagebird-client-id",
+"regex": "(?i)(?:message[_-]?bird)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"messagebird",
+"message-bird",
+"message_bird"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "microsoft-teams-webhook",
+"regex": "https://[a-z0-9]+\\.webhook\\.office\\.com/webhookb2/[a-z0-9]{8}-([a-z0-9]{4}-){3}[a-z0-9]{12}@[a-z0-9]{8}-([a-z0-9]{4}-){3}[a-z0-9]{12}/IncomingWebhook/[a-z0-9]{32}/[a-z0-9]{8}-([a-z0-9]{4}-){3}[a-z0-9]{12}",
+"keywords": [
+"webhook.office.com",
+"webhookb2",
+"incomingwebhook"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "midtrans-production-server-client-key",
+"regex": "(?i)(?:midtrans|mid[_-]?)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(Mid-(?:server|client)-[A-Za-z0-9_]{10,20})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"mid-server-",
+"mid-client-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.8,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "minimax-api-key",
+"regex": "(?i)\\b(sk-api-[A-Za-z0-9_-]{119})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sk-api-",
+"minimax"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "miro-access-token",
+"regex": "\\b(eyJtaXJv[A-Za-z0-9-]{10,64}_[A-Za-z0-9_-]{20,64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"miro"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "miro-client-id",
+"regex": "(?i)(?:miro[_. -]*client[_. -]*id)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9]{15,21})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"miro"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 2.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "miro-client-secret",
+"regex": "(?i)(?:miro)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"miro"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "mistral-api-key",
+"regex": "(?i)(?:mistral)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"mistral"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "monday-api-token.1",
+"regex": "(?i:(?:monday)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(eyJ[A-Za-z0-9_-]{10,200}\\.eyJ[A-Za-z0-9_-]{50,1000}\\.[A-Za-z0-9_-]{20,500})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"monday"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "mongodb-atlas-service-account-id",
+"regex": "\\b(mdb_sa_id_[a-f0-9]{24})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"mdb_sa_id_"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "mongodb-atlas-service-account-secret",
+"regex": "\\b(mdb_sa_sk_[A-Za-z0-9_-]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"mdb_sa_sk_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [
+"^mdb_sa_sk_[0-9]{40}$"
+],
+"reject_contains": []
+},
+{
+"id": "mongodb-connection-string",
+"regex": "\\b(mongodb(?:\\+srv)?://(?P<username>[!-9;-~]{3,50}):(?P<password>[!-?A-~]{3,88})@(?P<host>(?:[a-zA-Z0-9][\\w.-]+|\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})(?::\\d{1,5})?(?:,(?:[a-zA-Z0-9][\\w.-]+|\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})(?::\\d{1,5})?)*)/?(?:(?P<authdb>[\\w-]+)?(?P<options>\\?\\w+=[\\w@/.$-]+(?:&(?:amp;)?\\w+=[\\w@/.$-]+)*)?)?)(?:['\"\\s;\\x60]|\\\\[nr]|\\b|$)",
+"keywords": [
+"mongodb://",
+"mongodb+srv://"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [
+"(?i)\\bmongodb(?:\\+srv)?:\\/\\/(?:user(?:name)?|foo):(?:pass(?:word)?|bar)(?:[^@\\/]*)?@",
+"(?i)\\bmongodb(?:\\+srv)?:\\/\\/[^\\s'\"\\x60]*(?:\\$\\{\\{[^}]+}}|\\$\\{[^}]+}|\\$[A-Za-z_][A-Za-z0-9_]*|{{[^}]+}}|<[^>]+>|\\[[^]]+])[^\\s'\"\\x60]*"
+],
+"reject_contains": []
+},
+{
+"id": "mux-access-token-id.1",
+"regex": "(?i)(?:mux[_.-]?(?:access[_.-]?)?token[_.-]?(?:id|identifier))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"mux"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "mux-access-token-secret.1",
+"regex": "(?i:(?:mux[_.-]?(?:access[_.-]?)?token[_.-]?(?:secret|private|key))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9+/]{75})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"mux"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "neon-api-key",
+"regex": "\\b(napi_[A-Za-z0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"napi_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "netlify-access-token",
+"regex": "(?i)(?:netlify)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9=_\\-]{40,46})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"netlify"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "new-relic-browser-api-token",
+"regex": "(?i)(?:new-relic|newrelic|new_relic)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(NRJS-[a-f0-9]{19})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"nrjs-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "new-relic-insert-key",
+"regex": "(?i)(?:new-relic|newrelic|new_relic)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(NRII-[a-z0-9-]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"nrii-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "new-relic-user-api-id",
+"regex": "(?i)(?:new-relic|newrelic|new_relic)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"new-relic",
+"newrelic",
+"new_relic"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "new-relic-user-api-key",
+"regex": "(?i)(?:new-relic|newrelic|new_relic)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(NRAK-[a-z0-9]{27})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"nrak"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "ngrok-api-key.1",
+"regex": "(?i:(?:ngrok[_. -]*(?:(?:api|agent)[_. -]*)?(?:secret|key|token|authtoken))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(2[A-Za-z0-9]{26}_[0-9][A-Za-z0-9]{20})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"ngrok"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "notion-api-token",
+"regex": "\\b(ntn_[0-9]{11}[A-Za-z0-9]{32}[A-Za-z0-9]{3})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"ntn_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "npm-access-token",
+"regex": "(?i)\\b(npm_[a-z0-9]{36})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"npm_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "nuget-api-key",
+"regex": "(?i)\\b(oy2[a-p][a-z2-7]{15}[aq][a-z2-7]{25}[aeimquy4])(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"oy2"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "nvidia-api-key",
+"regex": "(?i)\\b(nvapi-[A-Z0-9_-]{60,70})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"nvapi-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "nylas-api-key.1",
+"regex": "\\b(nyk_[A-Za-z0-9]{67})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"nyk_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "nytimes-access-token",
+"regex": "(?i)(?:nytimes|new-york-times|newyorktimes)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9=_\\-]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"nytimes",
+"new-york-times",
+"newyorktimes"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "octopus-deploy-api-key",
+"regex": "\\b(API-[A-Z0-9]{26})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"api-"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "okta-access-token",
+"regex": "(?i:(?:(?-i:[Oo]kta|OKTA))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(00[\\w=\\-]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"okta"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "ollama-api-key",
+"regex": "(?i)(?:ollama)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{32}\\.[a-zA-Z0-9_-]{24})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"ollama"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "onesignal-rich-authentication-token",
+"regex": "\\b(os_v2_(?:app|org)_[a-z2-7]{103})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"os_v2_app_",
+"os_v2_org_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "onfido-live-api-token-ca",
+"regex": "\\b(api_live_ca\\.[A-Za-z0-9_-]{20,80})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"api_live_ca."
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "onfido-live-api-token-eu",
+"regex": "\\b(api_live\\.[A-Za-z0-9_-]{20,80})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"api_live."
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "onfido-live-api-token-us",
+"regex": "\\b(api_live_us\\.[A-Za-z0-9_-]{20,80})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"api_live_us."
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "openai-api-key",
+"regex": "\\b(sk-(?:proj|svcacct|admin)-(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58}|[A-Za-z0-9_-]{20})T3BlbkFJ(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58}|[A-Za-z0-9_-]{20})\\b|sk-[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"t3blbkfj"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "openrouter-api-key",
+"regex": "(?i)\\b(sk-or-v1-[0-9a-f]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sk-or-v1-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "openshift-user-token",
+"regex": "\\b(sha256~[\\w-]{43})(?:[^\\w-]|\\z)",
+"keywords": [
+"sha256~"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "openweather-api-key",
+"regex": "(?i:(?:openweather|pyowm)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"openweather",
+"pyowm"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "opsgenie-api-key.1",
+"regex": "(?i)(?:opsgenie)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"opsgenie"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "ovh-application-key",
+"regex": "(?i)(?:app(?:lication)?[_.-]{0,1}key)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9-]{16})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"ovh"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "ovh-application-secret",
+"regex": "(?i)(?:app(?:lication)?[_.-]{0,1}secret)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9-]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"ovh"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "ovh-consumer-key",
+"regex": "(?i)(?:consumer[_.-]{0,1}key)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9-]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"ovh"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "paddle-live-api-key",
+"regex": "\\b(pdl_live_apikey_[a-z0-9]{26}_[A-Za-z0-9]{22}_[A-Za-z0-9]{3})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"pdl_live_apikey_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "pagerduty-authorization-token.1",
+"regex": "(?i:(?:pagerduty)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(u\\+[A-Za-z0-9_+-]{18})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"pagerduty"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "paypal-client-id.1",
+"regex": "(?i:(?:paypal[_.-]?(?:client[_.-]?)?(?:id|user))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(A[A-Za-z0-9_-]{78,99})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"paypal"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "paypal-client-secret.1",
+"regex": "(?i:(?:paypal[_.-]?(?:client[_.-]?)?(?:secret|private|access|key|token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9_.-]{78,120})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"paypal"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "perplexity-api-key",
+"regex": "\\b(pplx-[a-zA-Z0-9]{48})(?:[\\x60'\"\\s;]|\\\\[nr]|$|\\b)",
+"keywords": [
+"pplx-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "persona-production-api-key",
+"regex": "\\b(persona_production_[a-z0-9_-]{20,80})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"persona_production_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "pinecone-api-key.1",
+"regex": "(?i:(?:pinecone(?:[_. -]*(?:api))?[_. -]*(?:secret|key|token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"pinecone"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "pinecone-api-key.2",
+"regex": "\\b(pcsk_[A-Za-z0-9]{5,6}_[A-Za-z0-9]{63})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"pcsk_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "pinterest-access-token",
+"regex": "\\b(pina_[A-Za-z0-9_-]{20,200})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"pina_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "plaid-api-token",
+"regex": "(?i)(?:plaid)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(access-(?:sandbox|development|production)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"plaid"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "plaid-client-id",
+"regex": "(?i)(?:plaid)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{24})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"plaid"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "plaid-secret-key",
+"regex": "(?i)(?:plaid)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{30})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"plaid"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "planetscale-api-token",
+"regex": "\\b(pscale_tkn_(?i)[\\w=\\.-]{32,64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"pscale_tkn_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "planetscale-id",
+"regex": "(?i)(?:pscale|planetscale)(?:.|[\\n\\r]){0,16}?(?:USER|ID|NAME)(?:.|[\\n\\r]){0,16}?([a-z0-9]{12})",
+"keywords": [
+"pscale",
+"planetscale"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "planetscale-oauth-token",
+"regex": "\\b(pscale_oauth_[\\w=\\.-]{32,64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"pscale_oauth_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "planetscale-password",
+"regex": "(?i)\\b(pscale_pw_(?i)[\\w=\\.-]{32,64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"pscale_pw_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "plivo-auth-id",
+"regex": "(?i)(?:plivo(?:[_. -]*(?:auth|account))?[_. -]*(?:id|sid))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(MA[A-Z0-9]{18})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"plivo"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 2.8,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "plivo-auth-token",
+"regex": "(?i:(?:plivo(?:[_. -]*(?:auth))?[_. -]*(?:secret|token|key))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9_-]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"plivo"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "polar-oauth-access-token",
+"regex": "\\b(polar_at_[A-Za-z0-9_-]{20,100})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"polar_at_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "polar-organization-access-token",
+"regex": "\\b(polar_oat_[A-Za-z0-9_-]{20,100})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"polar_oat_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "polar-personal-access-token",
+"regex": "\\b(polar_pat_[A-Za-z0-9_-]{20,100})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"polar_pat_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "polymarket-address",
+"regex": "(?i:(?:poly.{0,20}address)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(0x[a-fA-F0-9]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"poly"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "polymarket-api-key",
+"regex": "(?i:(?:poly.{0,20}key)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"poly"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "polymarket-api-secret",
+"regex": "(?i:(?:poly.{0,20}secret)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-zA-Z0-9+/]{40,}={0,2})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"poly"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "polymarket-passphrase",
+"regex": "(?i:(?:poly.{0,20}passphrase)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-zA-Z0-9_]{8,128})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"poly"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "polymarket-private-key",
+"regex": "(?i:(?:poly.{0,20}private.{0,20}key)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(0x[a-fA-F0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"poly"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "posthog-personal-api-key",
+"regex": "(?i)\\b(phx_[a-zA-Z0-9_\\-]{41,49})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"phx_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "posthog-project-api-key",
+"regex": "(?i)\\b(phc_[a-zA-Z0-9_\\-]{41,44})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"phc_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "postman-api-token",
+"regex": "\\b(PMAK-(?i)[a-f0-9]{24}\\-[a-f0-9]{34})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"pmak-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "postmark-api-token.1",
+"regex": "(?i)(?:postmark)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"postmark"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "prefect-api-token",
+"regex": "\\b(pnu_[a-zA-Z0-9]{36})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"pnu_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "private-key",
+"regex": "(?i)-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----[\\s\\S-]{64,}?KEY(?: BLOCK)?-----",
+"keywords": [
+"-----begin"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "privateai-api-token",
+"regex": "(?i:(?:private[_-]?ai)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"privateai",
+"private_ai",
+"private-ai"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "proof-full-access-api-key",
+"regex": "\\b(prf_(?:cli_)?[A-Za-z0-9_-]{20,80})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"prf_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [
+"^prf_(?:cli_)?test_"
+],
+"reject_contains": []
+},
+{
+"id": "pulumi-api-token",
+"regex": "\\b(pul-[a-f0-9]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"pul-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "pypi-upload-token",
+"regex": "pypi-AgEIcHlwaS5vcmc[\\w-]{50,1000}",
+"keywords": [
+"pypi-ageichlwas5vcmc"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "rainforest-pay-production-api-key",
+"regex": "(?i:(?:rainforest(?:[_. -]*pay)?(?:[_. -]*(?:api))?[_. -]*(?:secret|key|token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(apikey_[a-f0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"rainforest"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "ramp-client-id",
+"regex": "\\b(ramp_id_[A-Za-z0-9]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"ramp_id_"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "ramp-client-secret",
+"regex": "\\b(ramp_sec_[A-Za-z0-9]{48})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"ramp_sec_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "rapidapi-access-token",
+"regex": "(?i)(?:rapidapi)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9_-]{50})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"rapidapi"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "razorpay-key-id.1",
+"regex": "\\b(rzp_(?:live|test)_[A-Za-z0-9]{14})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"rzp_live_",
+"rzp_test_"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "razorpay-key-secret.1",
+"regex": "(?i:(?:razorpay[_.-]?(?:(?:api|key)[_.-]?)?(?:secret|private|token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9]{24})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"razorpay"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "readme-api-token",
+"regex": "\\b(rdme_[a-z0-9]{70})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"rdme_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "redirect-pizza-api-token.1",
+"regex": "\\b(rpa_[A-Za-z0-9]{30})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"rpa_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "render-api-key",
+"regex": "\\b(rnd_[A-Za-z0-9]{28})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"rnd_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "replicate-api-token",
+"regex": "(?i)\\b(r8_[A-Za-z0-9]{37})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"r8_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "resend-api-key.1",
+"regex": "\\b(re_[1-9A-HJ-NP-Za-km-z]{8}_[1-9A-HJ-NP-Za-km-z]{24})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"resend"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "retell-api-key.1",
+"regex": "(?i:(?:retell)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(key_[a-f0-9]{28})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"retell"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "rootly-api-key.1",
+"regex": "\\b(rootly_[a-f0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"rootly_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "rubygems-api-token",
+"regex": "\\b(rubygems_[a-f0-9]{48})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"rubygems_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "runpod-api-key.1",
+"regex": "\\b(rpa_[A-Z0-9]{40}[A-Za-z0-9]{6})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"rpa_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "salesforce-access-token.1",
+"regex": "\\b(00[A-Za-z0-9]{13}![A-Za-z0-9._-]{80,260})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"salesforce.com"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "salesforce-instance-url.1",
+"regex": "(?i)(?:^|[^a-z0-9.-])(?:https?://)?((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?){0,4}\\.my\\.salesforce\\.com|[a-z]{2,8}[0-9]{1,4}\\.salesforce\\.com))(?:[^a-z0-9.-]|$)",
+"keywords": [
+"salesforce.com"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "samsara-api-token.1",
+"regex": "\\b(samsara_api_[A-Za-z0-9]{26,32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"samsara_api_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "scaleway-secret-key",
+"regex": "(?i)(?:(?:scaleway|scw).{0,20}?(?:secret|token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"scaleway",
+"scw"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "scalingo-api-token",
+"regex": "\\b(tk-us-[\\w-]{48})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"tk-us-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "scalr-api-access-token.1",
+"regex": "(?i:(?:scalr(?:[_. -]*(?:api|access))?[_. -]*(?:secret|key|token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\\.eyJpc3MiOiJ1c2VyIiwianRpIjoiYXQt[A-Za-z0-9_-]{20,40}\\.[A-Za-z0-9_-]{43})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"scalr"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "segment-public-api-token.1",
+"regex": "\\b(sgp_[A-Za-z0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sgp_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "sendbird-access-id",
+"regex": "(?i)(?:sendbird)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sendbird"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "sendbird-access-token",
+"regex": "(?i)(?:sendbird)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sendbird"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "sendgrid-api-token",
+"regex": "\\b(SG\\.(?i)[a-z0-9=_\\-\\.]{66})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sg."
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "sendinblue-api-token",
+"regex": "\\b(xkeysib-[a-fA-F0-9]{64}-[a-zA-Z0-9]{16})\\b",
+"keywords": [
+"xkeysib-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.2,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "sentry-access-token",
+"regex": "(?i)(?:sentry)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sentry"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "sentry-org-token",
+"regex": "\\bsntrys_eyJpYXQiO[a-zA-Z0-9+/]{10,200}(?:LCJyZWdpb25fdXJs|InJlZ2lvbl91cmwi|cmVnaW9uX3VybCI6)[a-zA-Z0-9+/]{10,200}={0,2}_[a-zA-Z0-9+/]{43}(?:[^a-zA-Z0-9+/]|\\z)",
+"keywords": [
+"sntrys_eyjpyxqio"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "sentry-user-token",
+"regex": "\\b(sntryu_[a-f0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sntryu_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "settlemint-application-access-token",
+"regex": "\\b(sm_aat_[a-zA-Z0-9]{16})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sm_aat"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "settlemint-personal-access-token",
+"regex": "\\b(sm_pat_[a-zA-Z0-9]{16})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sm_pat"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "settlemint-service-access-token",
+"regex": "\\b(sm_sat_[a-zA-Z0-9]{16})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sm_sat"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "shippo-api-token",
+"regex": "\\b(shippo_(?:live|test)_[a-fA-F0-9]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"shippo_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "shopify-access-token",
+"regex": "shpat_[a-fA-F0-9]{32}",
+"keywords": [
+"shpat_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "shopify-custom-access-token",
+"regex": "shpca_[a-fA-F0-9]{32}",
+"keywords": [
+"shpca_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "shopify-private-app-access-token",
+"regex": "shppa_[a-fA-F0-9]{32}",
+"keywords": [
+"shppa_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "shopify-shared-secret",
+"regex": "shpss_[a-fA-F0-9]{32}",
+"keywords": [
+"shpss_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "sidekiq-secret",
+"regex": "(?i)(?:BUNDLE_ENTERPRISE__CONTRIBSYS__COM|BUNDLE_GEMS__CONTRIBSYS__COM)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{8}:[a-f0-9]{8})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"bundle_enterprise__contribsys__com",
+"bundle_gems__contribsys__com"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "sidekiq-sensitive-url",
+"regex": "(?i)\\bhttps?://([a-f0-9]{8}:[a-f0-9]{8})@(?:gems.contribsys.com|enterprise.contribsys.com)(?:[\\/|\\#|\\?|:]|$)",
+"keywords": [
+"gems.contribsys.com",
+"enterprise.contribsys.com"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "slack-app-token",
+"regex": "(?i)xapp-\\d-[A-Z0-9]+-\\d+-[a-z0-9]+",
+"keywords": [
+"xapp"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "slack-bot-token",
+"regex": "xoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*",
+"keywords": [
+"xoxb"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "slack-config-access-token",
+"regex": "(?i)xoxe.xox[bp]-\\d-[A-Z0-9]{163,166}",
+"keywords": [
+"xoxe.xoxb-",
+"xoxe.xoxp-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "slack-config-refresh-token",
+"regex": "(?i)xoxe-\\d-[A-Z0-9]{146}",
+"keywords": [
+"xoxe-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "slack-legacy-bot-token",
+"regex": "xoxb-[0-9]{8,14}-[a-zA-Z0-9]{18,26}",
+"keywords": [
+"xoxb"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "slack-legacy-token",
+"regex": "xox[os]-\\d+-\\d+-\\d+-[a-fA-F\\d]+",
+"keywords": [
+"xoxo",
+"xoxs"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "slack-legacy-workspace-token",
+"regex": "xox[ar]-(?:\\d-)?[0-9a-zA-Z]{8,48}",
+"keywords": [
+"xoxa",
+"xoxr"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "slack-session-cookie",
+"regex": "(xoxd-[\\w\\/\\\\+-]{100,}={0,2})(?:[^\\w\\/+=-]|\\z)",
+"keywords": [
+"xoxd-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "slack-session-token",
+"regex": "xoxc-\\d{9,15}-\\d{9,15}-\\d{9,15}-[a-f0-9]{64}\\b",
+"keywords": [
+"xoxc-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "slack-user-token",
+"regex": "xox[pe](?:-[0-9]{10,13}){3}-[a-zA-Z0-9-]{28,34}",
+"keywords": [
+"xoxp-",
+"xoxe-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "slack-webhook-url",
+"regex": "(?:https?://)?hooks.slack.com/(?:services|workflows|triggers)/[A-Za-z0-9+/]{43,56}",
+"keywords": [
+"hooks.slack.com"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "snowflake-account-host.1",
+"regex": "(?i)\\b([a-z0-9_-]+(?:\\.[a-z0-9_-]+)*\\.snowflakecomputing\\.com)\\b",
+"keywords": [
+"snowflakecomputing.com"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "snowflake-programmatic-access-token.1",
+"regex": "(?i:(?:(?:snowflake[_. -]*(?:programmatic[_. -]*)?(?:access[_. -]*)?token|sf[_. -]*token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9_-]{100,500})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"snowflake",
+"sf_token"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "snyk-api-token",
+"regex": "(?i)(?:snyk[_.-]?(?:(?:api|oauth)[_.-]?)?(?:key|token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"snyk"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "sonar-api-token",
+"regex": "(?i)(?:sonar[_.-]?(login|token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}((?:squ_|sqp_|sqa_)?[a-z0-9=_\\-]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sonar"
+],
+"confidence": "high",
+"group": 2,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "sourcegraph-access-token",
+"regex": "(?i)\\b(sgp_(?:[a-fA-F0-9]{16}|local)_[a-fA-F0-9]{40}|sgp_[a-fA-F0-9]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sgp_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "square-access-token",
+"regex": "\\b((?:EAAA|sq0atp-)[\\w-]{22,60})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sq0atp-",
+"eaaa"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "squarespace-access-token",
+"regex": "(?i)(?:squarespace)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"squarespace"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "sslmate-api-key.1",
+"regex": "(?i:(?:sslmate(?:[_. -]*(?:api))?[_. -]*(?:secret|key|token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9]{36})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sslmate"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "stability-ai-api-key",
+"regex": "(?i)(?:stability)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(sk-[A-Za-z0-9]{48})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"stability"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "stripe-access-token",
+"regex": "\\b((?:sk|rk)_(?:test|live|prod)_[a-zA-Z0-9]{10,99})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sk_test",
+"sk_live",
+"sk_prod",
+"rk_test",
+"rk_live",
+"rk_prod"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 2.0,
+"reject_regex": [
+"^sk_live_a2V5Xz"
+],
+"reject_contains": []
+},
+{
+"id": "sumologic-access-id",
+"regex": "(?i)(?:(?-i:[Ss]umo|SUMO))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}((?-i:su)[a-zA-Z0-9]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sumo"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "sumologic-access-token",
+"regex": "(?i)(?:(?-i:[Ss]umo|SUMO))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sumo"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "supabase-management-token",
+"regex": "\\b(sbp_[a-z0-9_-]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sbp_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "supabase-project-api-key",
+"regex": "\\b(sb_secret_[A-Za-z0-9_-]{31})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"sb_secret_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "supabase-project-url",
+"regex": "\\b(https://[a-z0-9]{16,32}\\.supabase\\.co)\\b",
+"keywords": [
+"supabase.co"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "tableau-personal-access-token-name.1",
+"regex": "(?i:(?:tableau(?:[_. -]*(?:personal[_. -]*access|pat))?[_. -]*(?:token[_. -]*)?name)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z][A-Za-z0-9_-]{2,50})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"tableau"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "tableau-personal-access-token.1",
+"regex": "(?:^|[^A-Za-z0-9+/])([A-Za-z0-9+/]{22}==:[A-Za-z0-9]{32})\\b",
+"keywords": [
+"tableau"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "tableau-server-host.1",
+"regex": "(?i)\\b([a-z0-9-]+\\.online\\.tableau\\.com)\\b",
+"keywords": [
+"online.tableau.com"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "tailscale-api-key.1",
+"regex": "\\b(tskey-api-[A-Za-z0-9_-]{20,36})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"tskey-api-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "telegram-bot-api-token",
+"regex": "(?i)(?:telegr)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9]{5,16}:(?-i:A)[a-z0-9_\\-]{34})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"telegr"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "telnyx-api-v2-key.1",
+"regex": "(?i:(?:telnyx(?:[_. -]*(?:api))?[_. -]*(?:secret|key|token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(KEY[0-9A-Za-z_-]{55})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"telnyx"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "temporal-cloud-api-key.1",
+"regex": "\\b(eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]*Y2NvdW50X2lk[A-Za-z0-9_-]*InRlbXBvcmFsLmlv[A-Za-z0-9_-]*(?:ICJrZXlfaWQiOi|a2V5X2lk|rZXlfaWQi)[A-Za-z0-9_-]{20,}\\.[A-Za-z0-9_-]{20,})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"inrlbxbvcmfslmlv"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.2,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "thunderstore-api-token.1",
+"regex": "\\b(tss_[A-Za-z0-9_-]{20,80})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"tss_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "togetherai-api-key",
+"regex": "(?i)\\b(tgp_v1_[A-Za-z0-9_-]{43})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"tgp_v1_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "travisci-access-token",
+"regex": "(?i)(?:travis)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{22})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"travis"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "twilio-api-key",
+"regex": "SK[0-9a-fA-F]{32}",
+"keywords": [
+"twilio"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "twitch-api-token",
+"regex": "(?i)(?:twitch)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{30})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"twitch"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "twitter-access-secret",
+"regex": "(?i)(?:twitter)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{45})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"twitter"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "twitter-access-token",
+"regex": "(?i)(?:twitter)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9]{15,25}-[a-zA-Z0-9]{20,40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"twitter"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "twitter-api-key",
+"regex": "(?i)(?:twitter)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{25})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"twitter"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "twitter-api-secret",
+"regex": "(?i)(?:twitter)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{50})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"twitter"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "twitter-bearer-token",
+"regex": "(?i)(?:twitter)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(A{22}[a-zA-Z0-9%]{80,100})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"twitter"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "typeform-api-token",
+"regex": "(?i)(?:typeform)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(tfp_[a-z0-9\\-_\\.=]{59})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"tfp_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "unkey-root-key.1",
+"regex": "\\b(unkey_[A-Za-z0-9]{20,32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"unkey_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "upcloud-api-token",
+"regex": "\\b(ucat_[0-9A-Za-z]{24,32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"ucat_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "upstage-api-key",
+"regex": "(?i)(?:upstage)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9]{40,50})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"upstage"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "upstash-redis-rest-token.1",
+"regex": "(?i:(?:upstash)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}((?:[A-Za-z0-9]{32,48}|AYNgAS[A-Za-z0-9+/_-]{26,90}={0,2}))(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"upstash"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "upstash-redis-rest-url.1",
+"regex": "(?i)\\b(https://[a-z0-9][a-z0-9-]{2,63}\\.upstash\\.io)(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"upstash.io"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "val-town-api-token.1",
+"regex": "\\b(vtwn_[A-Za-z0-9_-]{20,80})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"vtwn_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "vault-batch-token",
+"regex": "\\b(hvb\\.[\\w-]{138,300})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"hvb."
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "vault-service-token",
+"regex": "\\b((?:hvs\\.[\\w-]{90,120}|s\\.(?i:[a-z0-9]{24})))(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"hvs.",
+"vault"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [
+"s\\.[A-Za-z]{24}"
+],
+"reject_contains": []
+},
+{
+"id": "vercel-ai-gateway-key",
+"regex": "(?i)\\b(vck_[A-Za-z0-9_-]{56})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"vck_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "vercel-api-token",
+"regex": "(?i)(?:vercel)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Z0-9]{24})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"vercel"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "vercel-app-access-token",
+"regex": "(?i)\\b(vca_[A-Za-z0-9_-]{56})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"vca_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "vercel-app-refresh-token",
+"regex": "(?i)\\b(vcr_[A-Za-z0-9_-]{56})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"vcr_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "vercel-integration-token",
+"regex": "(?i)\\b(vci_[A-Za-z0-9_-]{56})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"vci_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "vercel-personal-access-token",
+"regex": "(?i)\\b(vcp_[A-Za-z0-9_-]{56})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"vcp_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "virustotal-api-key.1",
+"regex": "(?i)(?:virustotal)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"virustotal"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "voyageai-api-key",
+"regex": "(?i:(?:voyage)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}((?:pa|al)-[A-Za-z0-9_-]{43})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"voyage"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "vultr-api-key.1",
+"regex": "(?i)(?:vultr)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{36})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"vultr"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.4,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "wakatime-api-key.1",
+"regex": "(?i:(?:waka[_. -]?time(?:[_. -]*(?:api))?[_. -]*(?:secret|key|token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"wakatime",
+"waka_time",
+"waka-time",
+"waka time",
+"waka.time"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "wakatime-api-key.2",
+"regex": "(?i)\\b(waka_[a-z0-9]{36,64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"waka_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "weatherstack-api-key.1",
+"regex": "(?i:(?:weatherstack(?:[_. -]*(?:api))?[_. -]*(?:secret|key|token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9a-z]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"weatherstack"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "weights-and-biases-api-key",
+"regex": "(?i)(?:wandb|weightsandbiases)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"wandb",
+"weightsandbiases"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "weights-and-biases-api-key-v1",
+"regex": "(?i)\\b(wandb_v1_[A-Za-z0-9_]{77})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"wandb_v1_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "wiz-client-id.1",
+"regex": "(?i:(?:wiz)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9]{53,56})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"wiz"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "wiz-client-secret.1",
+"regex": "(?i:(?:wiz)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([A-Za-z0-9]{64})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"wiz"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "woocommerce-consumer-secret.1",
+"regex": "(?i)(?:woo)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(cs_[a-f0-9]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"wooc",
+"woo-",
+"woo_",
+"cs_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "workato-developer-api-token.1",
+"regex": "\\b(wrka(?:[a-z]{2})?-eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{16,}\\.[A-Za-z0-9_-]{64,})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"wrka"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 4.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "workos-production-api-key.1",
+"regex": "(?i:(?:workos(?:[_. -]*(?:api))?[_. -]*(?:secret|key|token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(sk_live_a2V5Xz[A-Za-z0-9+/]{69}={0,2})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"workos"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [
+"(?i)example"
+],
+"reject_contains": []
+},
+{
+"id": "xai-api-key",
+"regex": "(?i)\\b(xai-[A-Za-z0-9_-]{70,120})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"xai-"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "xendit-production-api-key.1",
+"regex": "\\b(xnd_production_[A-Za-z0-9]{56,72})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"xnd_production_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "yandex-access-token",
+"regex": "(?i)(?:yandex)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(t1\\.[A-Z0-9a-z_-]+[=]{0,2}\\.[A-Z0-9a-z_-]{86}[=]{0,2})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"yandex"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "yandex-api-key",
+"regex": "(?i)(?:yandex)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(AQVN[A-Za-z0-9_\\-]{35,38})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"yandex"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "yandex-aws-access-token",
+"regex": "(?i)(?:yandex)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(YC[a-zA-Z0-9_\\-]{38})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"yandex"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": null,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "zai-api-key",
+"regex": "(?i)(?:zai|z_ai|z\\.ai|glm|zlm)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{32}\\.[a-z0-9]{16})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"zai",
+"z_ai",
+"z.ai",
+"glm",
+"zlm"
+],
+"confidence": "medium",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "zendesk-secret-key",
+"regex": "(?i)(?:zendesk)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9]{40})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"zendesk"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "zoho-client-id.1",
+"regex": "(?i)(?:zoho)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(1000\\.[a-z0-9]{30})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"zoho"
+],
+"confidence": "low",
+"group": null,
+"max_entropy": 3.0,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "zoho-client-secret.1",
+"regex": "(?i)(?:zoho)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{42})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"zoho"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "zoho-oauth-token.1",
+"regex": "(?i)(?:zoho)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(1000\\.[a-f0-9]{32}\\.[a-f0-9]{32})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"zoho"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "zoho-zapi-key.1",
+"regex": "(?i)(?:zoho)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}((?:1001\\.[a-f0-9]{32}\\.[a-f0-9]{32}(?:-d)?|1003\\.[a-f0-9]{32,64}))(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"zoho"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.5,
+"reject_regex": [],
+"reject_contains": []
+},
+{
+"id": "zuplo-consumer-api-key.1",
+"regex": "\\b(zpka_[a-z0-9]{32}_[0-9a-f]{8})(?:\\\\?['\"\\x60]|[\\s;]|\\\\[nr]|$)",
+"keywords": [
+"zpka_"
+],
+"confidence": "high",
+"group": null,
+"max_entropy": 3.3,
+"reject_regex": [],
+"reject_contains": []
+}
+]
+}

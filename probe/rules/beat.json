@@ -1,0 +1,13 @@
+{"source": "beat's own rules: host-shaped secrets the Betterleaks rules miss (eval/secrets)",
+ "rules": [
+  {"id": "beat-libpq-password",
+   "note": "libpq keyword/value DSN: password=X followed by another key (generic-password wants a delimiter after the value); orders-api.ini",
+   "regex": "(?i)(?:^|[\\s'\"])password\\s*=\\s*([^\\s'\"]{4,})(?:\\s+\\w+\\s*=|\\s*$)",
+   "keywords": ["password"], "confidence": "medium", "action": "hash",
+   "group": null, "max_entropy": null, "reject_regex": ["^\\$", "^\\{\\{", "^%\\("], "reject_contains": []},
+  {"id": "beat-pgpass-line",
+   "note": ".pgpass: host:port:db:user:password; any five-field colon line looks the same, so a flag only",
+   "regex": "(?m)^[^:\\s#]+:(?:\\d+|\\*):[^:\\s]+:[^:\\s]+:(\\S+)$",
+   "keywords": [], "confidence": "low", "action": "hash",
+   "group": null, "max_entropy": null, "reject_regex": [], "reject_contains": []}
+ ]}

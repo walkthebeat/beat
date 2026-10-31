@@ -1,0 +1,10 @@
+[package]
+name = "wasm-demo"
+version = "0.1.0"
+edition = "2021"
+description = "Stage 0: one WASI program whose subcommands each try something; shows what the sandbox allows."
+
+[dependencies]
+
+[profile.release]
+opt-level = "s"

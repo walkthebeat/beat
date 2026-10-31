@@ -1,0 +1,31 @@
+[project]
+name = "beat"
+version = "0.0.1"
+description = "beat's client: the CLI, the MCP server, the signer and the wire protocol"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = [
+    "cryptography>=48",   # HPKE and Ed25519 (seal.py)
+    "mcp<2",
+]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[project.scripts]
+beat = "beat.cli:main"
+beat-mcp = "beat.mcp:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/beat"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.uv]
+# The newest cryptography has no prebuilt wheel for x86_64 macOS; 48.0.1 is the last that does.
+constraint-dependencies = ["cryptography<=48.0.1"]

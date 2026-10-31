@@ -1,0 +1,31 @@
+# Installed by beat-sensor-activate. ExecStart goes through /opt/beat-sensor/current, so switching the symlink and
+# restarting is the whole upgrade (or rollback). Build: @out@
+#
+# Connects out to NATS (docs/protocol.md); listens on no port. Runs as root: it starts each question as a
+# transient systemd unit (the sandbox: read-only, no network, limits, secrets hidden) and reads secret metadata.
+# /etc/beat-sensor.env (written by activation) sets BEAT_NATS and BEAT_SENSOR_NAME.
+[Unit]
+Description=beat sensor: answers questions published on NATS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/
+Environment=HOME=/tmp
+EnvironmentFile=/etc/beat-sensor.env
+ExecStart=/opt/beat-sensor/current/bin/beat-sensor-run
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+PrivateTmp=yes
+# Each question's input and result files (runner.rs, RUN_DIR); writable here despite ProtectSystem=strict.
+RuntimeDirectory=beat-sensor
+RuntimeDirectoryMode=0700
+# What the sensor keeps across restarts (the org root's deny list, so a restart cannot roll it back): the one place
+# under /var/lib/beat-sensor it may write; its key stays read-only.
+StateDirectory=beat-sensor/state
+StateDirectoryMode=0700
+
+[Install]
+WantedBy=multi-user.target

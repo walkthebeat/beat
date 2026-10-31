@@ -1,0 +1,34 @@
+# The sensor installed from its image (docs/security.md M16): the image holds the sensor's /nix/store closure, and
+# MountImages= mounts it at /nix/store inside this unit's mount namespace only. The host's own / (its /etc, /var/log,
+# /usr/bin/systemd-run) stays as it is; a host without Nix gets only the empty /nix/store systemd makes as the mount
+# point. Build: @out@
+#
+# Installed by install.sh (image.nix), closed: nothing starts until `beat-sensor configure` has written
+# /etc/beat-sensor.env. The image's path names its version, so a question never mounts another build's image while
+# an upgrade restarts the sensor.
+[Unit]
+Description=beat sensor: answers questions published on NATS
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/beat-sensor.env
+
+[Service]
+MountImages=@image@:/nix/store
+# The questions' units (runner.rs) get the same image.
+Environment=HOME=/tmp BEAT_IMAGE=@image@
+EnvironmentFile=/etc/beat-sensor.env
+WorkingDirectory=/
+ExecStartPre=@probe@ tools --tools @tools@ --cache /var/lib/beat-sensor/wasm-cache
+ExecStart=@out@/bin/beat-sensor-run
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+PrivateTmp=yes
+RuntimeDirectory=beat-sensor
+RuntimeDirectoryMode=0700
+StateDirectory=beat-sensor/state beat-sensor/wasm-cache
+StateDirectoryMode=0700
+
+[Install]
+WantedBy=multi-user.target

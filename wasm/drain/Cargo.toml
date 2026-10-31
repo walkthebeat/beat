@@ -1,0 +1,20 @@
+[package]
+name = "drain"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Log template summaries for probes (docs/security.md C21): the drain3 crate as a WASI tool"
+
+[[bin]]
+name = "drain"
+path = "src/main.rs"
+
+[dependencies]
+# Pinned: this version was checked against Python Drain3's output; check again before upgrading.
+drain3 = "=0.3.0"
+regex = "1"
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true

@@ -1,0 +1,19 @@
+{
+  "enableAllProjectMcpServers": true,
+  "permissions": {
+    "allow": [
+      "mcp__beat",
+      "Bash(@BEAT@ run:*)",
+      "Bash(@BEAT@ survey:*)",
+      "Bash(@BEAT@ analyze:*)",
+      "Bash(@BEAT@ logs:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)"
+    ],
+    "deny": [
+      "Bash(@BEAT@ survey delete:*)"
+    ]
+  }
+}
