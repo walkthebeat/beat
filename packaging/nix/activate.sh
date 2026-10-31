@@ -1,5 +1,5 @@
 #!@shell@
-# beat-sensor-activate --nats URL --name NAME --org-root NAME=KEY... --collector-key NAME=KEY...: make this build
+# beat-sensor-activate --nats URL --api URL --name NAME --org-root NAME=KEY... --collector-key NAME=KEY...: make this build
 # (@out@) the running sensor.
 # Run as root on the target, after its closure has been copied into /nix/store (`nix copy`; a deployment tool does both).
 # Idempotent; activating an older build is a rollback. Without arguments, keeps /etc/beat-sensor.env and the keys as
@@ -15,10 +15,11 @@ set -euo pipefail
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin # the host's own systemctl; not from the store
 out=@out@
 
-nats="" name="" orgs=() collectors=()
+nats="" api="" name="" orgs=() collectors=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --nats) nats="$2"; shift 2;;
+    --api) api="$2"; shift 2;;  # where the sensor gets its bus login (docs/security.md, the bus)
     --name) name="$2"; shift 2;;
     --org-root) orgs+=("$2"); shift 2;;
     --collector-key) collectors+=("$2"); shift 2;;
@@ -27,9 +28,10 @@ while [ $# -gt 0 ]; do
 done
 env_before="$(cat /etc/beat-sensor.env 2>/dev/null || true)"
 if [ -n "$nats" ]; then
-  printf 'BEAT_NATS=%s\nBEAT_SENSOR_NAME=%s\n' "$nats" "${name:-$(hostname)}" > /etc/beat-sensor.env
+  [ -n "$api" ] || { echo "--nats needs --api URL too: the sensor logs in to the bus with a JWT from it" >&2; exit 2; }
+  printf 'BEAT_NATS=%s\nBEAT_API=%s\nBEAT_SENSOR_NAME=%s\n' "$nats" "$api" "${name:-$(hostname)}" > /etc/beat-sensor.env
 fi
-[ -f /etc/beat-sensor.env ] || { echo "no /etc/beat-sensor.env: activate with --nats URL --name NAME" >&2; exit 1; }
+[ -f /etc/beat-sensor.env ] || { echo "no /etc/beat-sensor.env: activate with --nats URL --api URL --name NAME" >&2; exit 1; }
 mkdir -p /etc/beat-sensor
 # put_keys DIR FLAG NAME=KEY...: DIR holds exactly these keys (replaced in one rename); none given: left as it is.
 put_keys() {

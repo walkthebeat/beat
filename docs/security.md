@@ -105,8 +105,8 @@ A question is a Starlark program (`docs/probes.md`) run by `beat-probe` in a tra
   and public keys) and its collector keys' names; the deny list's sequence; whether its sandbox is complete.
 - **C21. Logs are not collected.** Questions can summarise logs on the host (templates, counts) and return extracts
   someone asked for; nothing is shipped continuously.
-- Nothing else: the sensor opens no port and connects only to the bus; to the service's API when you run
-  `configure` or `enroll`; and, with `--attest aws`, to the instance metadata service and AWS STS for its identity
+- Nothing else: the sensor opens no port and connects only to the bus; to the service's API for its bus login
+  (every half hour) and when you run `configure` or `enroll`; and, with `--attest aws`, to the instance metadata service and AWS STS for its identity
   token (`sensor/src/aws.rs`).
 
 ## Enrolment: admitting a sensor to the service
@@ -128,8 +128,28 @@ that is the root (H16).
     must match, and which claim names the sensor.
 - **What a stolen proof gets:** a fake sensor enrolled under that name. Its answers pollute your store; it commands
   nothing, and it sees only the questions it is asked.
-- **Not built yet:** per-sensor NATS credentials (H4's credential bound to the sensor's key). Today the bus is open
-  to whoever can reach it; that delivers questions but cannot make one run (C14).
+
+## The bus: every sensor logs in with its own key (H17)
+
+NATS runs in operator mode: nobody connects without a login, and each login allows only its own subjects. The code:
+`sensor/src/bus.rs`; the subjects: `docs/protocol.md`, "Logins".
+
+- **A sensor's login is a JWT for its own enrolled key,** minted by the service for a request signed with that key
+  (`POST /v1/bus-credential`, kind `bus`) and valid an hour. The sensor renews it at half life and hands the newest
+  to the NATS client at every connection; the server drops a connection whose login expired. No secret is stored
+  for it: the key is the one the sensor already has, and the JWT names only its public half.
+- **What it allows:** receiving questions sent to every sensor and to this one by name, publishing its own acks,
+  answers and directory entry, its builtins guide, reading the deny list; replies on an inbox of its own. Not:
+  another sensor's questions or directory entry, sending questions, creating or deleting streams and buckets.
+  Signatures still decide what is believed; the login decides who is on the bus and what it can see.
+- **A removed sensor** (`beat sensors remove`) gets no new login: it is off the bus within the hour.
+- **The nonce is signed only if it looks like one.** NATS's server sends a nonce for the client to sign, with the
+  same key that signs answers and heartbeats. Every beat signature covers canonical JSON (`{"v":1,"kind":...`), and
+  the sensor signs a nonce only if it is 8-64 characters of `[A-Za-z0-9_-]`, which nats-server's nonces are and a
+  JSON object never is: a bus (or something impersonating it) cannot get a beat message signed by sending it as a
+  nonce.
+- **Not built yet:** TLS between the sensor and the bus (with production); an attested sensor attesting again for
+  each login (today it renews with its key, as the others do).
 
 ## The binary you run
 
@@ -147,6 +167,7 @@ that is the root (H16).
 | read the answers it opens (gate 2 masks known secrets before storing) | make a sensor run a question no member of your org signed |
 | refuse to relay questions, or withhold a new deny list | forge a member credential, add or remove a deny-list entry, roll a sensor's deny list back |
 | enrol fake sensors (they command nothing) | read a secret file's bytes, which no question can read |
+| keep a removed sensor's login alive, or mint any login it likes | get a sensor to sign anything but a nonce-shaped string with its key |
 
 ## Reporting a vulnerability
 

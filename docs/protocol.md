@@ -76,6 +76,22 @@ Any key in a directory counts, so a key is rotated by adding the new one, switch
 - `POST <api>/v1/enroll`, open: `{request, signature}`, the request being the sensor's name, public key, host name
   and time, plus a rollout token or an identity token when it has one, signed with the sensor's key (kind `enroll`).
   The answer is a code to approve, or `enrolled` (`sensor/src/enroll.rs`).
+- `POST <api>/v1/bus-credential`, open: `{request, signature}`, the request being the sensor's name, public key and
+  time (`iat`, within 5 minutes of the service's clock), signed with the sensor's key (kind `bus`). The answer is
+  `{jwt, expires, inbox}` when the key is enrolled under that name, else 403 (`sensor/src/bus.rs`).
+
+## Logins (NATS operator mode)
+
+The service's operator key signs one account per org; the org's account key signs every login (a NATS user JWT,
+`alg: ed25519-nkey`). A client sends the JWT and signs the server's nonce with the key the JWT names (`sub`).
+
+| Login | Key | Life | Subscribe | Publish |
+| --- | --- | --- | --- | --- |
+| sensor `<name>` | its enrolled key | an hour | `beat.ask.all`, `beat.ask.host.<name>`, `_INBOX_<name>.>` | `beat.ack.*`, `beat.answer.*`, `$KV.beat-directory.<name>`, `$KV.beat-guides.*`, `$JS.API.STREAM.INFO.KV_<bucket>` for those and `beat-deny`, the deny list's `list` by direct or message get |
+| collector | the service's | a day | everything in the account | everything in the account |
+| API | the service's | a day | `_INBOX_serve.>` | `beat.api.>`, `beat.cp.>` |
+
+The collector makes the stream and the buckets; a sensor uses them.
 
 ## Survey outcomes
 

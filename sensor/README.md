@@ -49,7 +49,7 @@ whose root it pins signed, and a collector key countersigned):
 ```
 cargo build --release
 K=~/.local/share/beat/keys
-./target/release/beat-sensor --nats nats://127.0.0.1:4222 --name dev --no-sandbox \
+./target/release/beat-sensor --nats nats://127.0.0.1:4222 --api http://127.0.0.1:8480 --name dev --no-sandbox \
   --probe ../probe/target/release/beat-probe --tools $(nix build ..#wasm-tools --no-link --print-out-paths) \
   --cache ~/.cache/beat-probe --journalctl /usr/bin/journalctl --key $K/dev-sensor.key --roots $K/org \
   --collector-keys DIR

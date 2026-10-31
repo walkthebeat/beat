@@ -52,8 +52,8 @@ pub fn host_name() -> anyhow::Result<String> {
     Ok(std::fs::read_to_string("/proc/sys/kernel/hostname").context("host name")?.trim().to_string())
 }
 
-fn post(api: &str, body: &Value) -> anyhow::Result<Value> {
-    let url = format!("{}/v1/enroll", api.trim_end_matches('/'));
+pub fn post(api: &str, path: &str, body: &Value) -> anyhow::Result<Value> {
+    let url = format!("{}{path}", api.trim_end_matches('/'));
     match ureq::post(&url).timeout(Duration::from_secs(15)).send_json(body.clone()) {
         Ok(r) => Ok(r.into_json()?),
         Err(ureq::Error::Status(code, r)) => {
@@ -153,7 +153,7 @@ pub fn wait(api: &str, name: &str, path: &Path, version: &str, proof: &Proof) ->
     let started = Instant::now();
     let mut shown = false;
     loop {
-        let r = post(api, &request(&key, name, &host, crate::unix_now(), version, proof))?;
+        let r = post(api, "/v1/enroll", &request(&key, name, &host, crate::unix_now(), version, proof))?;
         let enrolled = r["name"].as_str().unwrap_or(name).to_string();
         match r["state"].as_str() {
             Some("enrolled") if r["policy"].is_string() => {

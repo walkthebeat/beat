@@ -3,7 +3,7 @@
 #
 # Connects out to NATS (docs/protocol.md); listens on no port. Runs as root: it starts each question as a
 # transient systemd unit (the sandbox: read-only, no network, limits, secrets hidden) and reads secret metadata.
-# /etc/beat-sensor.env (written by activation) sets BEAT_NATS and BEAT_SENSOR_NAME.
+# /etc/beat-sensor.env (written by activation or `beat-sensor configure`) sets BEAT_NATS, BEAT_API and BEAT_SENSOR_NAME.
 [Unit]
 Description=beat sensor: answers questions published on NATS
 After=network-online.target

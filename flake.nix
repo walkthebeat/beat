@@ -44,7 +44,7 @@
       # in an inner one (beat-probe) every commit would force its rebuild with identical code.
       rev = self.shortRev or self.dirtyShortRev or "unknown";
       # The release: the tag v<release> publishes it (.github/workflows/release.yml checks they agree).
-      release = "0.1.0";
+      release = "0.2.0";
 
       # WASM tools for probes (wasm/README.md).
       wasm = import ./wasm { inherit pkgs crane; rust-bin = rust-overlay.lib.mkRustBin { } pkgs; };
@@ -92,7 +92,7 @@
           cat > $out/bin/beat-sensor-run <<EOF
           #!${pkgs.runtimeShell}
           # The service's entry point: beat-sensor with this build's beat-probe, tools, osquery and eBPF catalog.
-          exec ${sensorBin}/bin/beat-sensor --nats "\$BEAT_NATS" --name "\$BEAT_SENSOR_NAME" \\
+          exec ${sensorBin}/bin/beat-sensor --nats "\$BEAT_NATS" --api "\$BEAT_API" --name "\$BEAT_SENSOR_NAME" \\
             --version "$(basename $out)" --probe ${probe}/bin/beat-probe --tools ${wasm.tools} \\
             --cache /var/lib/beat-sensor/wasm-cache --osqueryi ${pkgs.osquery}/bin/osqueryi \\
             --journalctl /usr/bin/journalctl --bpf-tools ${libbpfTools}/bin \\

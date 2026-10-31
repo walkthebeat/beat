@@ -28,6 +28,7 @@
 //! image, MountImages= gives the questions the image's /nix/store (docs/security.md M16).
 
 mod aws;
+mod bus;
 mod configure;
 mod enroll;
 mod runner;
@@ -50,7 +51,6 @@ use runner::Runner;
 const VERSION: &str = concat!("beat-sensor/", env!("CARGO_PKG_VERSION"));
 const MAX_TIMEOUT_S: u64 = 300;
 const HEARTBEAT: Duration = Duration::from_secs(10);
-const DIRECTORY_TTL: Duration = Duration::from_secs(35);
 const ACK_AFTER: Duration = Duration::from_secs(1); // short questions answer before this: no ack
 /// The collector's windows past a question's time limit (collector.py: ack window 10 s, runner slack 15 s, grace
 /// 30 s): a deadline further than the limit plus this is refused, so no signed question stays live for long.
@@ -60,6 +60,8 @@ const SKEW_S: i64 = 5;
 
 struct Config {
     nats: String,
+    /// The service's API (BEAT_API), where the sensor gets its bus login (bus.rs).
+    api: String,
     name: String,
     labels: serde_json::Map<String, serde_json::Value>,
     concurrency: usize,
@@ -77,7 +79,7 @@ struct Config {
 }
 
 fn parse(argv: &[String]) -> anyhow::Result<Config> {
-    let (mut nats, mut name, mut probe, mut tools, mut cache) = (None, None, None, None, None);
+    let (mut nats, mut api, mut name, mut probe, mut tools, mut cache) = (None, None, None, None, None, None);
     let (mut osqueryi, mut journalctl, mut placeholders, mut no_sandbox) = (None, None, None, false);
     let (mut bpf_tools, mut unit_props) = (None, vec![]);
     let (mut key, mut roots, mut collector, mut deny_file) = (None, None, None, None);
@@ -89,6 +91,7 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
         let mut val = || it.next().cloned().with_context(|| format!("{x} needs a value"));
         match x.as_str() {
             "--nats" => nats = Some(val()?),
+            "--api" => api = Some(val()?),
             "--name" => name = Some(val()?),
             "--probe" => probe = Some(PathBuf::from(val()?)),
             "--tools" => tools = Some(PathBuf::from(val()?)),
@@ -142,6 +145,7 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
         collectors,
         started: unix_now(),
         nats: nats.context("--nats is required")?,
+        api: api.context("--api is required: the service's API, where the sensor gets its bus login")?,
         name,
         labels,
         concurrency,
@@ -401,17 +405,11 @@ fn header_map(h: seal::Headers) -> async_nats::HeaderMap {
     m
 }
 
+/// Puts the builtins guide in the guides bucket by its hash. The collector makes the bucket: a sensor may not (H17).
 async fn publish_guide(cfg: &Config, js: &jetstream::Context) -> Option<String> {
+    let kv = js.get_key_value(wire::GUIDES).await.map_err(|e| eprintln!("guides bucket: {e}")).ok()?;
     let guide = cfg.runner.guide().await.map_err(|e| eprintln!("guide: {e}")).ok()?;
     let hash = wire::sha256_hex(guide.as_bytes());
-    let kv = match js.get_key_value(wire::GUIDES).await {
-        Ok(k) => k,
-        Err(_) => js
-            .create_key_value(jetstream::kv::Config { bucket: wire::GUIDES.into(), history: 1, ..Default::default() })
-            .await
-            .map_err(|e| eprintln!("guides bucket: {e}"))
-            .ok()?,
-    };
     kv.put(&hash, guide.into_bytes().into()).await.map_err(|e| eprintln!("guide: {e}")).ok()?;
     Some(hash)
 }
@@ -445,9 +443,11 @@ async fn refresh_deny(cfg: &Config, js: &jetstream::Context) {
 
 async fn heartbeat(cfg: Arc<Config>, js: jetstream::Context) {
     let started = iso_now();
-    let guide = publish_guide(&cfg, &js).await;
-    let mut kv = None;
+    let (mut guide, mut kv) = (None, None);
     loop {
+        if guide.is_none() {
+            guide = publish_guide(&cfg, &js).await;
+        }
         // The keys trusted now, as name:fingerprint (`beat keys use` checks a new key is trusted).
         let trusted = |dir: &std::path::Path| -> Vec<String> {
             match seal::read_keys(dir) {
@@ -470,20 +470,8 @@ async fn heartbeat(cfg: Arc<Config>, js: jetstream::Context) {
                            "roots": roots, "collectors": collectors, "root_keys": root_keys,
                            "deny": deny_seq});
         let entry = serde_json::Value::Object(seal::sign_entry(&cfg.key, entry.as_object().cloned().unwrap_or_default()));
-        if kv.is_none() {
-            kv = match js.get_key_value(wire::DIRECTORY).await {
-                Ok(k) => Some(k),
-                Err(_) => js
-                    .create_key_value(jetstream::kv::Config {
-                        bucket: wire::DIRECTORY.into(),
-                        history: 1,
-                        max_age: DIRECTORY_TTL,
-                        ..Default::default()
-                    })
-                    .await
-                    .map_err(|e| eprintln!("directory bucket: {e}"))
-                    .ok(),
-            };
+        if kv.is_none() {  // the collector makes the bucket
+            kv = js.get_key_value(wire::DIRECTORY).await.map_err(|e| eprintln!("directory bucket: {e}")).ok();
         }
         if let Some(k) = &kv {
             if let Err(e) = k.put(&cfg.name, wire::canonical(&entry).into()).await {
@@ -510,8 +498,16 @@ async fn main() -> anyhow::Result<()> {
         return tokio::task::block_in_place(|| configure::run(&argv[1..], VERSION));
     }
     let cfg = Arc::new(parse(&argv)?);
-    let client = async_nats::ConnectOptions::new()
+    // Its own login (bus.rs): a JWT for its key from the API, renewed at half life, handed over at every connection.
+    let slot: bus::Slot = Arc::new(std::sync::Mutex::new(
+        bus::first(cfg.api.clone(), cfg.key.clone(), cfg.name.clone()).await));
+    tokio::spawn(bus::keep(cfg.api.clone(), cfg.key.clone(), cfg.name.clone(), slot.clone()));
+    let (key, held) = (cfg.key.clone(), slot.clone());
+    let client = async_nats::ConnectOptions::with_auth_callback(move |nonce| {
+            std::future::ready(bus::auth(&key, &held, &nonce))
+        })
         .name(format!("beat-sensor {}", cfg.name))
+        .custom_inbox_prefix(format!("_INBOX_{}", cfg.name))  // its replies only: its login allows no other inbox
         .retry_on_initial_connect()
         .connect(&cfg.nats)
         .await
