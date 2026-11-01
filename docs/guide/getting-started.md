@@ -8,7 +8,7 @@ You need: a laptop (Linux or macOS) with [Claude Code](https://claude.com/claude
  ────────────────                          ───────────                       ─────────────────
  2. install beat                           1. sign up: your org
  3. beat login ───── device code ────────► portal
- 4. beat sensors add ── prints a line ──────────────────────────────────►    5. install the sensor
+ 4. beat org init, beat sensors add ────────────────────────────────────►    5. install the sensor
                                                                              6. run the line: enrol
  7. beat sensors ◄──── the beat service ◄── sensors connect out, answer ──
  8. Claude asks
@@ -60,19 +60,41 @@ beat whoami
 
 shows who you are, your org, and the address your org's sensors call: `https://api.walkthebeat.ai/o/<your org id>`.
 
-## 4. Get the line for your hosts
+## 4. Your org's root, and the line for your hosts
+
+Your hosts run only questions signed by people your **org root** certified. The root is a key that you keep;
+neither walkthebeat nor the beat service ever holds it. Make it once, on your first laptop:
+
+```
+beat org init
+```
+
+It shows the root once, as one line (`beat-org-root:...`). Save that line in your password manager: any will do
+(Google Password Manager, 1Password, Bitwarden, KeePass, ...), as a password or a note. It asks you to paste it
+back, to be sure it was saved, then certifies this laptop for 30 days. beat does not keep the root: that line is the
+only copy. Lost, it cannot be recovered, and every host would have to be configured again with a new root.
+(Set up before November 2026? Your root is still on that laptop: `beat keys export` prints its line for your
+password manager; then delete it there as it says.)
+
+On another laptop, or on this one when its 30 days are up (beat says so):
+
+```
+beat creds init
+```
+
+and paste the line when it asks (it is not shown). With a password manager that has a command line, you can pipe it
+instead: `op read op://Private/beat-root/password | beat creds init --root -`. Each laptop gets its own key; if one
+is lost, `beat keys deny` ends its access at once.
+
+Then:
 
 ```
 beat sensors add
 ```
 
-The first time, this makes your **org root**: a key on this laptop (`~/.local/share/beat/keys/org/`) that sensors
-trust. Only questions signed by a member the root certified run on your hosts; neither walkthebeat nor the beat
-service holds it. Keep a copy somewhere safe: losing it means configuring every host again.
-
-`beat sensors add` prints a `sudo beat-sensor configure ...` line with your org's address
-(`https://api.walkthebeat.ai/o/<your org id>`) and your root's public key. It holds no secret: the key is public, and it is fine that it ends up in the
-host's logs (sudo records the command). Copy it for step 6.
+prints a `sudo beat-sensor configure ...` line with your org's address
+(`https://api.walkthebeat.ai/o/<your org id>`) and your root's public key. It holds no secret: the key is public,
+and it is fine that it ends up in the host's logs (sudo records the command). Copy it for step 6.
 
 ## 5. Install the sensor on a host
 

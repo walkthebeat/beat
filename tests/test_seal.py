@@ -47,9 +47,16 @@ def test_what_is_refused():
         seal.open_sealed(seal.survey_key(), s["survey"], s["target"], seal.unb64(s["sealed"]))
 
 
+def kept_root(path, name="r1"):
+    """An org root kept on a machine (`beat org init --keep`)."""
+    ring = seal.org_keys(path)
+    ring.keep(name, seal.ed25519.Ed25519PrivateKey.generate())
+    return ring
+
+
 def test_keys_on_disk(tmp_path):
     client, service = tmp_path / "client", tmp_path / "service"
-    org = seal.org_keys(client)
+    org = kept_root(client)
     k = org.key()
     assert org.key().public_key().public_bytes(*seal.RAW) == seal.public_raw(k)
     name = org.current()
@@ -68,7 +75,7 @@ def test_keys_on_disk(tmp_path):
 
 
 def test_rotation(tmp_path):
-    for ring in (seal.org_keys(tmp_path), seal.collector_keys(tmp_path)):  # the same rotation for both
+    for ring in (kept_root(tmp_path), seal.collector_keys(tmp_path)):  # the same rotation for both
         first = ring.current()
         old = ring.key()
         pub = ring.new("next")
@@ -155,7 +162,7 @@ def test_credentials_that_are_refused():
 
 def test_member_is_made_and_renewed_from_the_root_here(tmp_path, monkeypatch):
     monkeypatch.setattr(seal, "member_name", lambda: "alice")
-    seal.org_keys(tmp_path).key()                      # one person: the org's root on this machine (`beat keys`)
+    kept_root(tmp_path)                                # one person: the org's root kept on this machine
     cc = tmp_path / "cc"
     key, cred = seal.member(tmp_path, cc, now=1000)
     roots = {n: seal.public_key(k) for n, k in seal.org_keys(tmp_path).public().items()}
@@ -180,10 +187,9 @@ def test_member_is_made_and_renewed_from_the_root_here(tmp_path, monkeypatch):
 def test_creds_new_signs_from_a_root_file_like_kinit(tmp_path, monkeypatch):
     monkeypatch.setattr(seal, "member_name", lambda: "bob")
     admin, laptop = tmp_path / "admin", tmp_path / "laptop"
-    ring = seal.org_keys(admin)
-    ring.key()                                          # the org's root, on the admin's machine
+    ring = kept_root(admin)                             # the org's root, on the admin's machine
     root_file = ring.dir / f"{ring.current()}.key"
-    with pytest.raises(seal.Refused, match="beat creds init --root FILE"):
+    with pytest.raises(seal.Refused, match="no member credential"):
         seal.member(laptop, laptop / "cc", now=1000)    # nothing here yet
     assert not (laptop / "org").exists()                # and no root made on the way
     root, name = seal.read_root(root_file)
@@ -196,8 +202,9 @@ def test_creds_new_signs_from_a_root_file_like_kinit(tmp_path, monkeypatch):
         seal.member(laptop, laptop / "cc", now=1000 + 7 * 86400)
     with pytest.raises(ValueError, match="at most 90 days"):
         seal.new_member(root, name, life=91 * 86400, cache=laptop / "cc")
-    with pytest.raises(seal.Refused, match="not a root key file"):
+    with pytest.raises(seal.Refused, match="No such file"):
         seal.read_root(tmp_path / "nope.key")
+    assert seal.member_roots(laptop / "cc") == ring.public()  # what `beat sensors add` gives hosts, root not here
 
 
 def test_deny_list():
@@ -217,3 +224,29 @@ def test_deny_list():
         seal.check_deny(seal.wire.canonical(forged), roots)
     gone = seal.deny_list(root, "r1", [{"name": "alice", "before": 1, "until": 2}], 9, now=3)
     assert seal.check_deny(gone, roots)["entries"] == []          # past `until`: dropped
+
+
+def test_no_org_root_is_ever_made_by_reading_it(tmp_path):
+    ring = seal.org_keys(tmp_path)
+    for read in (ring.current, ring.key, ring.public):
+        with pytest.raises(seal.Refused, match="no org root on this machine"):
+            read()
+    assert not ring.exists() and not (tmp_path / "org").exists()
+    assert seal.collector_keys(tmp_path).current()      # the service's own first key is still made on first use
+
+
+def test_the_root_line_goes_through_a_password_manager_and_back(tmp_path, monkeypatch):
+    key = seal.ed25519.Ed25519PrivateKey.generate()
+    line = seal.root_line("20261102", key)
+    assert line.startswith("beat-org-root:20261102:") and "\n" not in line
+    back, name = seal.parse_root(f"  {line}\n")          # pasted with whitespace around it
+    assert name == "20261102" and seal.public_raw(back) == seal.public_raw(key)
+    (tmp_path / "root.txt").write_text(line + "\n")
+    assert seal.read_root(tmp_path / "root.txt")[1] == "20261102"
+    import io
+    monkeypatch.setattr("sys.stdin", io.StringIO(line))   # `op read ... | beat creds init --root -`
+    assert seal.read_root("-")[1] == "20261102"
+    for bad in ("", "hello", "beat-org-root:20261102", "beat-org-root:a/b:" + seal.b64(bytes(32)),
+                "beat-org-root:x:not base64!", "other:x:" + seal.b64(bytes(32))):
+        with pytest.raises(seal.Refused, match="not an org root"):
+            seal.parse_root(bad)

@@ -30,12 +30,14 @@ sensor/src/seal.rs; tests/seal_vectors.json keeps both sides in step.
   not_after, issuer}, signed by a root over canonical JSON (`credential_bytes`), carried base64 in Beat-Cred. With the
   org's root on this machine (one person), the client makes a fresh member key and credential when its own has less
   than RENEW_BEFORE_S left or another root made it, as `kinit -kt` gets a ticket from a keytab (`member`); without
-  the root here, `beat creds init --root FILE` signs one from the root's key file (`new_member`).
+  the root here (the default: `beat org init` shows it once, to keep in a password manager), `beat creds init` signs
+  one from the root pasted or read (`root_line`, `parse_root`, `new_member`), and keeps the root's public half
+  next to it (root.pub: what `beat sensors add` gives hosts to pin).
 
 Keys on disk, raw 32-byte keys in base64, one per file, split by owner. The client's (BEAT_KEYS, default
 ~/.local/share/beat/keys):
   org/<name>.key, .pub           the org's root keys (a Keyring): `org/current` names the one that certifies members
-                                 (made on first use); every .pub here is pinned by the sensors
+                                 (only when kept here: `beat org init --keep`); every .pub here is pinned by the sensors
                                  (/etc/beat-sensor/roots/<name>.pub, `beat-sensor configure --org-root`)
   org/retired/<name>.pub         roots no longer deployed
 The member's, apart (the ccache to the root's keytab: disposable, days), in BEAT_CCACHE, default
@@ -57,6 +59,7 @@ import getpass
 import json
 import os
 import socket
+import sys
 import threading
 import time
 from datetime import datetime
@@ -153,23 +156,31 @@ def _write_secret(path: Path, text: str) -> None:
 
 
 class Keyring:
-    """Signing keys of one owner in a directory, one in use: <name>.key and .pub, `current` naming the one in use (a
-    first key is made on first use), retired/<name>.pub for keys no longer deployed (their private halves destroyed).
-    The org's (`org_keys`) and the collector's own (`collector_keys`) work alike, rotation included."""
+    """Signing keys of one owner in a directory, one in use: <name>.key and .pub, `current` naming the one in use,
+    retired/<name>.pub for keys no longer deployed (their private halves destroyed). The org's (`org_keys`) and the
+    collector's own (`collector_keys`) work alike, rotation included. The collector's first key is made on first use;
+    the org's never is: an org root is made only on purpose (`beat org init`), and is usually not kept on a laptop."""
 
-    def __init__(self, d: Path, what: str):
-        self.dir, self.what = d, what
+    def __init__(self, d: Path, what: str, make_first: bool = True):
+        self.dir, self.what, self.make_first = d, what, make_first
+
+    def exists(self) -> bool:
+        return (self.dir / "current").exists()
 
     def _ready(self) -> Path:
         d = self.dir
-        if not (d / "current").exists():
-            d.mkdir(parents=True, exist_ok=True)
-            name = time.strftime("%Y%m%d", time.gmtime())
-            key = ed25519.Ed25519PrivateKey.generate()
-            _write_secret(d / f"{name}.key", b64(seed_of(key)) + "\n")
-            (d / f"{name}.pub").write_text(b64(public_raw(key)) + "\n")
-            (d / "current").write_text(name + "\n")
+        if not self.exists():
+            if not self.make_first:
+                raise Refused(NO_ROOT)
+            self.keep(time.strftime("%Y%m%d", time.gmtime()), ed25519.Ed25519PrivateKey.generate())
         return d
+
+    def keep(self, name: str, key: ed25519.Ed25519PrivateKey) -> None:
+        """Keeps the key here and signs with it (the first key, or `beat org init --keep`'s root)."""
+        self.dir.mkdir(parents=True, exist_ok=True)
+        _write_secret(self.dir / f"{name}.key", b64(seed_of(key)) + "\n")
+        (self.dir / f"{name}.pub").write_text(b64(public_raw(key)) + "\n")
+        (self.dir / "current").write_text(name + "\n")
 
     def current(self) -> str:
         return (self._ready() / "current").read_text().strip()
@@ -217,8 +228,33 @@ class Keyring:
 
 
 def org_keys(root: Path | None = None) -> Keyring:
-    """The client's: the org's root keys, which certify members (H16); sensors pin their public halves."""
-    return Keyring((root or keys_dir()) / "org", "org root")
+    """The client's: the org's root keys, which certify members (H16); sensors pin their public halves. Here only
+    when kept here (`beat org init --keep`, or a machine set up before 2026-11-02): usually the root lives in a
+    password manager, and this machine has a member credential (`beat creds init`)."""
+    return Keyring((root or keys_dir()) / "org", "org root", make_first=False)
+
+
+NO_ROOT = ("no org root on this machine: it is pasted when needed (`beat creds init`), or kept here with "
+           "`beat org init --keep`")
+NO_MEMBER = ("no member credential on this machine: `beat creds init` (paste your org root from where you keep "
+             "it); for a new org, `beat org init`")
+ROOT_LINE = "beat-org-root"
+
+
+def root_line(name: str, key: ed25519.Ed25519PrivateKey) -> str:
+    """The root as one line of text, for a password manager: beat-org-root:<name>:<seed, base64>."""
+    return f"{ROOT_LINE}:{name}:{b64(seed_of(key))}"
+
+
+def parse_root(text: str) -> tuple:
+    """(the root's key, its name) from root_line's text."""
+    parts = text.strip().split(":")
+    if len(parts) != 3 or parts[0] != ROOT_LINE or not _valid_name(parts[1]):
+        raise Refused(f"not an org root: expected one line {ROOT_LINE}:NAME:KEY (as `beat org init` showed it)")
+    try:
+        return signing_key(unb64(parts[2])), parts[1]
+    except ValueError as e:
+        raise Refused(f"not an org root: {e}") from None
 
 
 # --- member credentials (docs/security.md H16) -----------------------------------------------------------------------
@@ -294,12 +330,22 @@ def member_name() -> str:
 
 
 def read_root(path: str | Path) -> tuple:
-    """(the root's key, its name) from a root key file (one line, the seed in base64; BEAT_KEYS/org/<name>.key)."""
+    """(the root's key, its name) from a file holding root_line's text, from stdin for "-" (a password manager's
+    command line: `op read ... | beat creds init --root -`), or from a kept key file (BEAT_KEYS/org/<name>.key, the
+    seed in base64, named by the file)."""
+    if str(path) == "-":
+        return parse_root(sys.stdin.read())
     p = Path(path)
     try:
-        return signing_key(unb64(p.read_text())), p.stem
-    except (OSError, ValueError) as e:
-        raise Refused(f"{p}: not a root key file ({e})") from None
+        text = p.read_text()
+    except OSError as e:
+        raise Refused(f"{p}: {e}") from None
+    if text.startswith(ROOT_LINE + ":"):
+        return parse_root(text)
+    try:
+        return signing_key(unb64(text)), p.stem
+    except ValueError as e:
+        raise Refused(f"{p}: not an org root ({e})") from None
 
 
 def new_member(root_key: ed25519.Ed25519PrivateKey, root_name: str, name: str | None = None,
@@ -313,7 +359,18 @@ def new_member(root_key: ed25519.Ed25519PrivateKey, root_name: str, name: str | 
     cred = credential(root_key, root_name, name or member_name(), public_raw(key), now, life)
     _write_secret(d / "key", b64(seed_of(key)) + "\n")
     (d / "credential").write_text(cred + "\n")
+    (d / "root.pub").write_text(f"{root_name} {b64(public_raw(root_key))}\n")  # what sensors pin (configure)
     return key, cred
+
+
+def member_roots(cache: Path | None = None) -> dict[str, str]:
+    """name -> public key of the root that certified this machine's member: what `beat sensors add` gives hosts to pin
+    when the root is not kept here. {} without a credential (or one made before root.pub was kept)."""
+    try:
+        name, pub = ((cache or ccache_dir()) / "root.pub").read_text().split()
+    except (OSError, ValueError):
+        return {}
+    return {name: pub}
 
 
 def current_member(cache: Path | None = None) -> tuple:
@@ -323,8 +380,7 @@ def current_member(cache: Path | None = None) -> tuple:
         cred = (d / "credential").read_text().strip()
         key = signing_key(unb64((d / "key").read_text()))
     except OSError:
-        raise Refused(f"no member credential in {d}: `beat creds init --root FILE` (the org root's key file); on "
-                      "the org's first machine, `beat keys` makes the root") from None
+        raise Refused(NO_MEMBER) from None
     fields = read_credential(cred)
     if fields.get("key") != b64(public_raw(key)):
         raise Refused("the member credential is not for the member key here: `beat creds init`")
@@ -335,14 +391,14 @@ def member(keys: Path | None = None, cache: Path | None = None, now: float | Non
     """(member key, credential) to sign questions with. With the org's root on this machine (one person,
     BEAT_KEYS/org), renewed silently when it has less than RENEW_BEFORE_S left, another root made it, or it names
     someone else than who is signed in now. Without, used until it expires, then refused: `beat creds init --root
-    FILE`, as an expired ticket sends you to kinit. A machine without a root never makes one here (`beat keys`)."""
+    FILE`, as an expired ticket sends you to kinit. A machine without a root never makes one (`beat org init` does)."""
     now = time.time() if now is None else now
     ring = org_keys(keys)
     if not (ring.dir / "current").exists():
         key, cred, fields = current_member(cache)
         if fields.get("not_after", 0) <= now:
             raise Refused(f"the member credential expired at {wire.iso(fields.get('not_after', 0))}: "
-                          "`beat creds init --root FILE`")
+                          "`beat creds init` (paste your org root)")
         return key, cred
     name = member_name()
     try:

@@ -45,6 +45,26 @@ a sensor run anything on their own.
     root signed it and its sequence is higher than the one it holds, and keeps it in
     `/var/lib/beat-sensor/state/deny.json`, so a restart cannot roll it back. A compromised service can withhold a new
     list (until the denied credentials expire) but cannot forge, shorten or roll one back.
+  - **Where the root lives** (2026-11-01, with the user, after managing one org from two laptops: the second laptop
+    silently made a second root, and the host enrolled from the first refused its questions). The root is made only
+    on purpose, `beat org init`, once per org: it refuses when the org's sensors already pin a root (their
+    heartbeats say which) and sends you to `beat creds init`; shows the root once, as one line
+    (`beat-org-root:NAME:KEY`, NAME the date and the key's fingerprint, so two roots never share a name), to keep
+    in a password manager; asks for it to be pasted back; certifies the laptop; and does not keep it (`--keep` does,
+    the user's call: "if i am silly enough to store it on disk this is my problem"). Every laptop, the first included
+    once its credential runs out, gets a credential with `beat creds init`, pasting the root (hidden) or reading
+    it (`--root FILE`, `--root -` from a password manager's command line); `beat keys deny` takes it the same way.
+    `beat sensors add` needs only the credential: the root's public half is kept next to it. A stolen laptop then
+    exposes a credential that ends within 30 days and can be denied at once; a root on it would let the thief
+    certify anyone, and the only remedy would be configuring every host again.
+    - *Rejected: one password manager's integration* (1Password's `op`, Bitwarden's `bw`, `pass`): there is no
+      common interface, Google Password Manager has no command line at all, and naming one imposes it. Copy and
+      paste is the interface every manager has; `--root -` lets a command line feed it.
+    - *Rejected: the OS keychain* (macOS Keychain, libsecret): the root stays on each laptop, so a second laptop is
+      as hard as before and a stolen one as bad.
+    - *Later: certify without the root reaching the laptop*, as a certificate request: the new laptop prints its
+      public key, the root's holder signs it, the laptop takes the credential. Then the root can sit in a vault
+      that signs without exporting it (Vault's transit engine does Ed25519): the enterprise form.
 - **H15. Never a vendor CA, never the OS trust store.** Whoever runs a CA the sensors trust could issue a credential
   for anyone. The root is yours. Corporate PKI (an X.509 CA you pin, with the subjects it may certify) is planned as
   a second kind of root; the OS trust store is never one, since it holds every public CA.

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 
 
@@ -68,10 +69,16 @@ def _main() -> None:
     sn.add_argument("--attest", metavar="oidc:FILE|aws", help="add: the configure line for hosts that prove who they "
                     "are with the identity token in FILE, or one the sensor asks AWS STS for (a trust policy accepts "
                     "it: beat org trust)")
-    og = sub.add_parser("org", help="the org's settings at the service: `org trust` lists its trust policies, which "
+    og = sub.add_parser("org", help="`org init`: make the org's root, once per org, on the first laptop (shown once, to "
+                        "keep in your password manager; this laptop certified with it); the org's settings at the "
+                        "service: `org trust` lists its trust policies, which "
                         "admit sensors by an identity their platform gives them (docs/security.md H13); `org trust add "
                         "NAME --issuer URL --name-from CLAIM`, `org trust remove NAME`")
-    og.add_argument("what", choices=["trust"])
+    og.add_argument("what", choices=["init", "trust"])
+    og.add_argument("--keep", action="store_true", help="init: also keep the root on this machine (BEAT_KEYS/org): "
+                    "credentials renew silently, and whoever gets this machine's files can certify anyone")
+    og.add_argument("--force", action="store_true", help="init: even when the org's sensors already pin a root (a "
+                    "second root: every host must be configured again to trust it)")
     og.add_argument("action", nargs="?", choices=["add", "remove"])
     og.add_argument("name", nargs="?", help="the policy's name")
     og.add_argument("--issuer", help="add: the OIDC issuer, as tokens name it in iss (a cluster's, a cloud's)")
@@ -139,7 +146,8 @@ def _main() -> None:
                         "fresh key signed by the org's root, like kinit -kt from a keytab (with the root on this "
                         "machine, renewed silently as well); destroy (kdestroy)")
     cr.add_argument("action", nargs="?", choices=["show", "init", "destroy"], default="show")
-    cr.add_argument("--root", metavar="FILE", help="init: the root's key file (default: the root in use here, "
+    cr.add_argument("--root", metavar="FILE", help="init: a file with the org root's line, or - for stdin (a password "
+                    "manager's command line); default: the root kept here, else you paste it (hidden), "
                     "BEAT_KEYS/org)")
     cr.add_argument("--name", help="init: the member's name (default: the login's subject, else user@host)")
     cr.add_argument("--days", type=int, default=30, help="init: how long it lasts (default 30, at most 90)")
@@ -152,6 +160,14 @@ def _main() -> None:
         from . import seal
         if a.action in ("deny", "allow", "denied"):
             return _deny(a)
+        if a.action == "export":
+            ring = seal.org_keys()
+            if not ring.exists():
+                raise SystemExit(f"error: {seal.NO_ROOT}")
+            print(seal.root_line(ring.current(), ring.key()))
+            print(f"\nThe org root kept on this machine, as `beat creds init` takes it. Once it is in your password "
+                  f"manager, delete it here: rm -r {ring.dir}", file=sys.stderr)
+            return
         return keys(a, seal.org_keys(), "roots", "beat keys")
 
     if a.cmd == "creds":
@@ -159,6 +175,9 @@ def _main() -> None:
 
     if a.cmd in ("ask", "sensors", "survey", "logs", "analyze", "dataset"):
         return _service(a)
+
+    if a.cmd == "org" and a.what == "init":
+        return _org_init(a)
 
     if a.cmd == "org":
         return _trust(a)
@@ -516,16 +535,18 @@ def _enroll(a) -> None:
         return f"{e['code']}  {e['name']}  host {e['host'] or '?'}  key {e['fingerprint']}  {e['version']}".rstrip()
 
     if a.action == "add" and a.attest:
+        line = configure_line(attest=a.attest)
         print("On each EC2 instance whose role may call sts:GetWebIdentityToken, with the sensor installed, run:\n"
               if a.attest.split(":")[0] == "aws" else
               "On each host, with the sensor installed and the identity token in place, run:\n")
-        print(f"  {configure_line(attest=a.attest)}\n")
+        print(f"  {line}\n")
         print("The service enrols it at once if one of the org's trust policies accepts the token (beat org trust),")
         print("under the name the policy takes from it. No secret in the line: it can go in any configuration.")
         return
     if a.action == "add":
+        line = configure_line()
         print("On the host, with the sensor installed, run:\n")
-        print(f"  {configure_line()}\n")
+        print(f"  {line}\n")
         print("It points the sensor at this service (bus and collector keys come from the service) and pins your")
         print("org's root above: the sensor runs only questions of members it certified. Then it prints a code to")
         print("approve here:")
@@ -650,9 +671,10 @@ def configure_line(token_file: str | None = None, attest: str | None = None) -> 
     file or the identity token's file."""
     import asyncio
     from . import ask, seal
-    keys = seal.org_keys().public()
+    ring = seal.org_keys()
+    keys = ring.public() if ring.exists() else seal.member_roots()
     if not keys:
-        raise SystemExit("error: no org root on this machine to give the sensor (beat keys)")
+        raise SystemExit(f"error: {seal.NO_MEMBER}")
     try:
         api = sensor_api(asyncio.run(ask.whoami()))
     except RuntimeError as e:
@@ -702,13 +724,17 @@ def _login(a) -> None:
 def keys_arguments(p, deny: bool = False) -> None:
     """`beat keys` and `beat-service keys` take the same arguments; `beat keys` also the root's deny list."""
     p.add_argument("action", nargs="?", default="list",
-                   choices=["list", "new", "use", "retire", "deployed"] + (["deny", "allow", "denied"] if deny else []),
+                   choices=["list", "new", "use", "retire", "deployed"] + (["deny", "allow", "denied", "export"] if deny else []),
                    help="deployed: NAME KEY lines, what every sensor and the service are given"
                    + ("; deny NAME: refuse the member's credentials issued until now, everywhere (the deny list, "
-                      "signed by the root); allow NAME: take it off; denied: the list, and which sensors hold it"
+                      "signed by the root); allow NAME: take it off; denied: the list, and which sensors hold it; "
+                      "export: the root kept here as one line, for your password manager (then delete it here)"
                       if deny else ""))
     p.add_argument("name", nargs="?")
     p.add_argument("--force", action="store_true", help="use: even when live sensors do not trust the key yet")
+    if deny:
+        p.add_argument("--root", metavar="FILE", help="deny, allow: the org root's line in FILE, or - for stdin, when "
+                       "it is not kept here (default: you paste it)")
 
 
 def keys(a, ring, field: str, prog: str) -> None:
@@ -768,15 +794,26 @@ def keys(a, ring, field: str, prog: str) -> None:
 
 def _deny(a) -> None:
     """`beat keys deny NAME | allow NAME | denied`: the org root's deny list (seal.deny_list, docs/security.md H16),
-    signed here with the root in use and put to the service (deny.put), which publishes it to the sensors. The list
-    held is the newest of this machine's copy (BEAT_KEYS/org/deny.json) and the service's that the root signed."""
+    signed here with the root (kept here, else pasted or --root, as `beat creds init` takes it) and put to the service
+    (deny.put), which publishes it to the sensors. The list held is the newest of this machine's copy
+    (BEAT_KEYS/org/deny.json) and the service's that the root signed."""
     import asyncio
     import time
     from . import ask, seal, wire
     ring = seal.org_keys()
-    if not (ring.dir / "current").exists():
-        raise SystemExit("error: no org root on this machine: only the root signs the deny list")
-    roots = {n: seal.public_key(k) for n, k in ring.public(retired=True).items()}
+    signer = None
+    try:
+        if a.action != "denied":  # only the root signs the deny list
+            signer = ((ring.key(), ring.current()) if ring.exists() else
+                      seal.read_root(a.root) if a.root else paste_root())
+        pubs = ring.public(retired=True) if ring.exists() else seal.member_roots()
+    except seal.Refused as e:
+        raise SystemExit(f"error: {e}")
+    if signer:
+        pubs = {**pubs, signer[1]: seal.b64(seal.public_raw(signer[0]))}
+    if not pubs:
+        raise SystemExit(f"error: {seal.NO_MEMBER}")
+    roots = {n: seal.public_key(k) for n, k in pubs.items()}
     local = ring.dir / "deny.json"
     held = {"seq": 0, "entries": []}
     sources = [lambda: local.read_bytes(), lambda: (asyncio.run(ask.api("deny.get"))["list"] or "").encode()]
@@ -807,7 +844,8 @@ def _deny(a) -> None:
         entries.append({"name": a.name, "before": now, "until": now + seal.MAX_MEMBER_LIFE_S + seal.SKEW_S})
     elif len(entries) == len(held["entries"]):
         raise SystemExit(f"error: {a.name} is not on the deny list (beat keys denied)")
-    raw = seal.deny_list(ring.key(), ring.current(), entries, held["seq"] + 1, now)
+    raw = seal.deny_list(signer[0], signer[1], entries, held["seq"] + 1, now)
+    local.parent.mkdir(parents=True, exist_ok=True)
     local.write_bytes(raw)
     what = (f"{a.name}: credentials issued until now are refused" if a.action == "deny"
             else f"{a.name} is off the deny list")
@@ -833,27 +871,82 @@ def _creds(a) -> None:
             ring = seal.org_keys()
             if a.root:
                 root, root_name = seal.read_root(a.root)
-            elif (ring.dir / "current").exists():
+            elif ring.exists():
                 root, root_name = ring.key(), ring.current()
             else:
-                raise seal.Refused("no root on this machine: --root FILE, the org root's key file")
+                root, root_name = paste_root()
             _, cred = seal.new_member(root, root_name, a.name, a.days * 86400)
             c = seal.read_credential(cred)
         else:
             _, _, c = seal.current_member()
     except (seal.Refused, ValueError) as e:
         raise SystemExit(f"error: {e}")
-    local = (seal.org_keys().dir / "current").exists()
+    local = seal.org_keys().exists()
     print(f"member {c['name']}  key {seal.fingerprint(seal.unb64(c['key']))}  certified by root {c['issuer']}")
     print(f"  valid {wire.iso(c['not_before'])} to {wire.iso(c['not_after'])}"
           + (f"; renewed here {seal.RENEW_BEFORE_S // 86400} days before it ends (the root is on this machine)"
-             if local else "; then `beat creds init --root FILE` again"))
+             if local else "; then `beat creds init` again (it asks for the root)"))
     try:  # which live sensors pin its root (their heartbeats): a credential of a root none pins is refused by all
         live = asyncio.run(ask.sensors())
     except Exception:
         return
     pinned = sorted(h for h, e in live.items() if c["issuer"] in (e.get("roots") or []))
     print(f"  its root is pinned by {len(pinned)} of {len(live)} live sensors")
+
+
+def paste_root() -> tuple:
+    """(the root's key, its name), pasted at a hidden prompt: from any password manager, by copy and paste."""
+    import getpass
+    from . import seal
+    if not sys.stdin.isatty():
+        raise seal.Refused("no org root here and no terminal to paste it in: --root FILE, or --root - for stdin")
+    return seal.parse_root(getpass.getpass("Paste your org root (the beat-org-root:... line; it is not shown): "))
+
+
+def _org_init(a) -> None:
+    """`beat org init`: the org's root, made once (docs/security.md H16, where the root lives): shown once to keep in a password
+    manager, pasted back to prove it was kept, this machine certified with it, and forgotten unless --keep."""
+    import asyncio
+    import getpass
+    import time
+    from . import ask, seal
+    ring = seal.org_keys()
+    if ring.exists():
+        raise SystemExit(f"error: this machine keeps the org root {ring.current()} already (`beat keys`)")
+    try:
+        me = asyncio.run(ask.whoami())
+        live = asyncio.run(ask.sensors(untrusted=True))
+    except RuntimeError as e:
+        raise SystemExit(f"error: {e}")
+    pinned = sorted({r.split(":")[0] for e in live.values() for r in (e.get("roots") or [])})
+    if pinned and not a.force:
+        raise SystemExit(f"error: org {me.get('org', '')}'s sensors already pin the root {', '.join(pinned)}: this "
+                         "machine needs a member credential from it, `beat creds init` (paste it from where you keep "
+                         "it). A second root is --force: every host would have to be configured again to trust it.")
+    key = seal.ed25519.Ed25519PrivateKey.generate()
+    # the date and the key's fingerprint: two roots of one org never share a name (hosts pin roots by name)
+    name = f"{time.strftime('%Y%m%d', time.gmtime())}-{seal.fingerprint(seal.public_raw(key))[:4]}"
+    line = seal.root_line(name, key)
+    print(f"Your org's root, {name}. Sensors trust questions only from members it certified.\n")
+    print(f"  {line}\n")
+    print("Save this line now in your password manager (any will do: it is one line of text, a password or a note).")
+    print("It is shown once" + (" and also kept on this machine (--keep)." if a.keep else
+                                 ": beat does not keep it.") + " Every laptop you work from pastes it into")
+    print("`beat creds init` (about once a month). Lost, it cannot be recovered: every host would have to be")
+    print("configured again with a new root. Anyone holding it can have your hosts run their questions.\n")
+    if sys.stdin.isatty():
+        for _ in range(3):
+            if getpass.getpass("Paste it back from where you saved it (not shown): ").strip() == line:
+                break
+            print("That is not the same line; copy it again from where you saved it.")
+        else:
+            raise SystemExit("error: not confirmed; nothing kept. Run `beat org init` again.")
+    if a.keep:
+        ring.keep(name, key)
+    _, cred = seal.new_member(key, name)
+    c = seal.read_credential(cred)
+    print(f"\nThis machine is certified: member {c['name']}, until {time.strftime('%Y-%m-%d', time.gmtime(c['not_after']))}.")
+    print("Next: `beat sensors add` prints the line for your hosts.")
 
 
 def _survey_delete(a) -> None:
