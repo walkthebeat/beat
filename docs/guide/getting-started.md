@@ -42,8 +42,11 @@ uv tool update-shell
 ```
 
 It installs two commands, `beat` and `beat-mcp` (in `~/.local/bin`), needs no root, and configures nothing. Open
-a new terminal again and check that `beat --help` works. It needs `git`: while the repository is private, git uses
-your GitHub login (`gh auth setup-git` once, if git does not already have it).
+a new terminal again and check that `beat --version` works.
+
+It needs `git`: while the repository is private, git uses your GitHub login (`gh auth setup-git` once, if git does not already have it).
+
+To upgrade later (`uv tool install` does not replace an installed beat): `uv tool upgrade walkthebeat` (the package's name; the commands are `beat` and `beat-mcp`).
 
 ## 3. Sign in from the laptop
 

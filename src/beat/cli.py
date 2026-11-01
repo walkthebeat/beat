@@ -16,8 +16,17 @@ def main() -> None:
         raise SystemExit(f"error: {e}")
 
 
+def _version() -> str:
+    from importlib.metadata import PackageNotFoundError, version
+    try:
+        return version("walkthebeat")
+    except PackageNotFoundError:
+        return "unknown"
+
+
 def _main() -> None:
     ap = argparse.ArgumentParser(prog="beat")
+    ap.add_argument("--version", action="version", version=f"beat {_version()}")
     sub = ap.add_subparsers(dest="cmd", required=True)
     ei = sub.add_parser("init", help="create an estate repository (git)")
     ei.add_argument("dir", nargs="?", default=".", help="a new or empty directory (default: this one)")

@@ -1,4 +1,5 @@
-# A tag v<release> (flake.nix `release`) publishes the sensor's image and installer as a GitHub release. The image is
+# A tag v<release> (pyproject.toml `version`, which flake.nix reads as `release`: one version for the client and the
+# sensor) publishes the sensor's image and installer as a GitHub release. The image is
 # built to be reproducible: anyone can build `.#beat-sensor-image` at the tag and compare beat-sensor.roothash.
 name: release
 on:

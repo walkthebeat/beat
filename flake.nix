@@ -44,7 +44,7 @@
       # in an inner one (beat-probe) every commit would force its rebuild with identical code.
       rev = self.shortRev or self.dirtyShortRev or "unknown";
       # The release: the tag v<release> publishes it (.github/workflows/release.yml checks they agree).
-      release = "0.2.0";
+      release = (builtins.fromTOML (builtins.readFile ./pyproject.toml)).project.version; # one version: client and sensor
 
       # WASM tools for probes (wasm/README.md).
       wasm = import ./wasm { inherit pkgs crane; rust-bin = rust-overlay.lib.mkRustBin { } pkgs; };
@@ -120,7 +120,7 @@
           (workspace.mkPyprojectOverlay { sourcePreference = "wheel"; }) # manylinux wheels, patched by Nix
         ]
       );
-      beat = pythonSet.mkVirtualEnv "beat-env" { beat = [ ]; };  # the user's machine: beat, beat-mcp
+      beat = pythonSet.mkVirtualEnv "beat-env" { walkthebeat = [ ]; };  # the user's machine: beat, beat-mcp
       beatDev = pythonSet.mkVirtualEnv "beat-dev-env" workspace.deps.all; # + pytest
     in
     {
