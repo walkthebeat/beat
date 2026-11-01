@@ -72,6 +72,10 @@ Any key in a directory counts, so a key is rotated by adding the new one, switch
 
 ## Enrolment (HTTPS)
 
+`<api>` is the sensor's `--api`: the org's address on the service. A service that serves many orgs puts each under
+`/o/<org>` (`https://api.walkthebeat.ai/o/<org>`), and `beat sensors add` prints it. The org id in it is not a secret:
+it only finds the org, and what the sensor gets there still needs that org's approval, token or trust policy.
+
 - `GET <api>/v1/sensor-config`, open: the bus to connect to and the collector's public keys.
 - `POST <api>/v1/enroll`, open: `{request, signature}`, the request being the sensor's name, public key, host name
   and time, plus a rollout token or an identity token when it has one, signed with the sensor's key (kind `enroll`).
@@ -84,6 +88,8 @@ Any key in a directory counts, so a key is rotated by adding the new one, switch
 
 The service's operator key signs one account per org; the org's account key signs every login (a NATS user JWT,
 `alg: ed25519-nkey`). A client sends the JWT and signs the server's nonce with the key the JWT names (`sub`).
+Accounts share nothing: every subject, stream and bucket below exists once per org, so two orgs' sensors never hear
+each other's questions, and two orgs may each have a sensor of the same name.
 
 | Login | Key | Life | Subscribe | Publish |
 | --- | --- | --- | --- | --- |

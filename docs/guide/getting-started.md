@@ -88,7 +88,7 @@ A sensor's answers count once the service has enrolled it. Pick one way.
 On the host, run the line from step 4. It prints a code and waits:
 
 ```
-sudo /opt/beat-sensor/current/bin/beat-sensor configure --api https://<your service> --org-root <name>=<key>
+sudo /opt/beat-sensor/current/bin/beat-sensor configure --api https://<your service>/o/<your org> --org-root <name>=<key>
 ```
 
 On the laptop:

@@ -41,7 +41,9 @@ def _main() -> None:
                         "service trusts), then this machine's login is kept and renewed (login.py)")
     lg.add_argument("url", nargs="?", help="the service (https://HOST, or http://HOST:8480), kept as this machine's "
                     "from then on; without it, the one kept (BEAT_API, when set, wins over both)")
-    sub.add_parser("whoami", help="who this machine is signed in as, as the service sees it, and which service")
+    wh = sub.add_parser("whoami", help="who this machine is signed in as, as the service sees it, and which service")
+    wh.add_argument("--sensor-api", action="store_true", help="print only the URL the org's sensors call (their "
+                    "--api: the service's, with /o/<org>), for scripts")
     sub.add_parser("logout", help="forget this machine's login to its service, and revoke it")
     sn = sub.add_parser("sensors", help="list the live sensors (the NATS directory); `add`: the command that "
                         "configures a host's sensor for this service and org; `pending`, `approve CODE`, `deny CODE`: "
@@ -587,16 +589,28 @@ def _trust(a) -> None:
           "the token), or --attest aws on EC2")
 
 
+def sensor_api(me: dict) -> str:
+    """The URL the org's sensors call (their --api): the service's, with the org's path the service names in whoami
+    (/o/<org>: one service serves every org, docs/protocol.md); a service that names none serves one org at its root."""
+    from . import wire
+    return wire.api_url() + (me.get("sensor_api") or "")
+
+
 def configure_line(token_file: str | None = None, attest: str | None = None) -> str:
-    """The `beat-sensor configure` command for a host: this service, this machine's org root(s), and a token file or the
-    identity token's file."""
-    from . import seal, wire
+    """The `beat-sensor configure` command for a host: this service and org, this machine's org root(s), and a token
+    file or the identity token's file."""
+    import asyncio
+    from . import ask, seal
     keys = seal.org_keys().public()
     if not keys:
         raise SystemExit("error: no org root on this machine to give the sensor (beat keys)")
+    try:
+        api = sensor_api(asyncio.run(ask.whoami()))
+    except RuntimeError as e:
+        raise SystemExit(f"error: {e}")
     flags = " ".join(f"--org-root {n}={k}" for n, k in keys.items())
     token = (f" \\\n    --token-file {token_file}" if token_file else "") + (f" \\\n    --attest {attest}" if attest else "")
-    return f"sudo /opt/beat-sensor/current/bin/beat-sensor configure --api {wire.api_url()} \\\n    {flags}{token}"
+    return f"sudo /opt/beat-sensor/current/bin/beat-sensor configure --api {api} \\\n    {flags}{token}"
 
 
 def _login(a) -> None:
@@ -616,8 +630,13 @@ def _login(a) -> None:
         me = asyncio.run(ask.whoami())
     except RuntimeError as e:
         raise SystemExit(f"error: {e}")
+    if getattr(a, "sensor_api", False):
+        print(sensor_api(me))
+        return
     print(f"Signed in to {wire.api_url()} as {me.get('sub')}" + (f", org {me['org']}" if me.get("org") else "")
           + (f", role {me['role']}" if me.get("role") else "") + (f" (issuer {me['iss']})" if me.get("iss") else ""))
+    if me.get("sensor_api"):
+        print(f"  the org's sensors call {sensor_api(me)} (beat sensors add)")
     why = wire.api_source()[1]
     print("  the service: " + ("BEAT_API's" if why == "BEAT_API" else "this machine's (no `beat login URL` yet)"
                                if why == "the default" else f"kept in {why} (`beat login URL` changes it)"))
