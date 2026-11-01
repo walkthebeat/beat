@@ -1,8 +1,5 @@
 # Getting started
 
-Draft, 2026-10-30. Steps marked **not yet** wait for packaging: until then they only work in our own lab. The rest
-is what beat does today.
-
 You need: a laptop (Linux or macOS) with [Claude Code](https://claude.com/claude-code), and one or more Linux hosts
 (x86_64, systemd) you have root on.
 
@@ -20,7 +17,11 @@ You need: a laptop (Linux or macOS) with [Claude Code](https://claude.com/claude
 ## 1. Sign up
 
 Open [walkthebeat.ai](https://walkthebeat.ai) and sign in with GitHub or Google. The first sign-in makes your account and an org of your
-own. The account page shows the org's id; you will not need to type it.
+own. The account page shows the org's id (12 letters and digits, such as `k3x9p2m7q4ta`); you will not need to type
+it.
+
+Two addresses, two jobs: **walkthebeat.ai** is where you sign in (your account, these docs). **api.walkthebeat.ai**
+is the beat service: your laptop and your sensors talk to it, and it keeps each org's data apart from every other's.
 
 ## 2. Install beat on your laptop
 
@@ -36,13 +37,17 @@ private, git uses your GitHub login (`gh auth setup-git` once, if git does not a
 ## 3. Sign in from the laptop
 
 ```
-beat login https://<your service>
+beat login
 ```
 
-It prints a code and a link. Open the link, check the code matches, and approve. `beat whoami` shows who you are
-and which service you use; this machine remembers the service, so later commands and Claude need no setting.
+It signs in to the beat service at `https://api.walkthebeat.ai` (the default; `beat login URL` is for a service of
+your own). It prints a code and a link to walkthebeat.ai: open the link, check the code matches, and approve.
 
-**Not yet**: the address of your service. For the first evaluators, each org gets its own.
+```
+beat whoami
+```
+
+shows who you are, your org, and the address your org's sensors call: `https://api.walkthebeat.ai/o/<your org id>`.
 
 ## 4. Get the line for your hosts
 
@@ -54,8 +59,8 @@ The first time, this makes your **org root**: a key on this laptop (`~/.local/sh
 trust. Only questions signed by a member the root certified run on your hosts; neither walkthebeat nor the beat
 service holds it. Keep a copy somewhere safe: losing it means configuring every host again.
 
-`beat sensors add` prints a `sudo beat-sensor configure ...` line with your service and your root's public key. It
-holds no secret. Copy it for step 6.
+`beat sensors add` prints a `sudo beat-sensor configure ...` line with your org's address
+(`https://api.walkthebeat.ai/o/<your org id>`) and your root's public key. It holds no secret. Copy it for step 6.
 
 ## 5. Install the sensor on a host
 
@@ -85,10 +90,12 @@ A sensor's answers count once the service has enrolled it. Pick one way.
 
 ### A. By approval: a few hosts, anywhere
 
-On the host, run the line from step 4. It prints a code and waits:
+On the host, run the line from step 4. It looks like this (yours has your org id and your root's key), prints a
+code and waits:
 
 ```
-sudo /opt/beat-sensor/current/bin/beat-sensor configure --api https://<your service>/o/<your org> --org-root <name>=<key>
+sudo /opt/beat-sensor/current/bin/beat-sensor configure --api https://api.walkthebeat.ai/o/k3x9p2m7q4ta \
+    --org-root 20261031=UNhY4JhezH9gQYqvDMWrWH9CwlcKiECVqejMrND2VFw=
 ```
 
 On the laptop:

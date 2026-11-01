@@ -41,7 +41,7 @@ import time
 from pathlib import Path
 
 DEFAULT_NATS = "nats://127.0.0.1:4222"
-DEFAULT_API = "http://127.0.0.1:8480"
+DEFAULT_API = "https://api.walkthebeat.ai"  # walkthebeat's hosted service (tier 1)
 STREAM = "beat"
 STREAM_SUBJECTS = ["beat.survey.>", "beat.ack.>", "beat.answer.>"]
 DIRECTORY = "beat-directory"
@@ -68,7 +68,7 @@ def service_file() -> Path:
 
 def api_source() -> tuple[str, str]:
     """Where clients reach the service (serve.py), and why: BEAT_API, else the one `beat login URL` recorded, else
-    `beat-service serve` on this machine."""
+    walkthebeat's hosted service."""
     if os.environ.get("BEAT_API"):
         return os.environ["BEAT_API"].rstrip("/"), "BEAT_API"
     try:

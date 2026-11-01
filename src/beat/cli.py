@@ -40,7 +40,7 @@ def _main() -> None:
     lg = sub.add_parser("login", help="sign in to the beat service: a code to approve in a browser (the issuer the "
                         "service trusts), then this machine's login is kept and renewed (login.py)")
     lg.add_argument("url", nargs="?", help="the service (https://HOST, or http://HOST:8480), kept as this machine's "
-                    "from then on; without it, the one kept (BEAT_API, when set, wins over both)")
+                    "from then on; without it, the one kept, else https://api.walkthebeat.ai (BEAT_API, when set, wins over all)")
     wh = sub.add_parser("whoami", help="who this machine is signed in as, as the service sees it, and which service")
     wh.add_argument("--sensor-api", action="store_true", help="print only the URL the org's sensors call (their "
                     "--api: the service's, with /o/<org>), for scripts")
@@ -638,7 +638,7 @@ def _login(a) -> None:
     if me.get("sensor_api"):
         print(f"  the org's sensors call {sensor_api(me)} (beat sensors add)")
     why = wire.api_source()[1]
-    print("  the service: " + ("BEAT_API's" if why == "BEAT_API" else "this machine's (no `beat login URL` yet)"
+    print("  the service: " + ("BEAT_API's" if why == "BEAT_API" else "walkthebeat's (the default; `beat login URL` changes it)"
                                if why == "the default" else f"kept in {why} (`beat login URL` changes it)"))
     e = login.current()
     if os.environ.get("BEAT_TOKEN"):

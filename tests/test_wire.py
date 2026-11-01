@@ -39,7 +39,7 @@ def test_too_large_says_where_the_bytes_are():
 
 
 def test_the_service_url(tmp_path, monkeypatch):
-    """BEAT_API, else what `beat login URL` kept, else this machine."""
+    """BEAT_API, else what `beat login URL` kept, else walkthebeat's hosted service."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("BEAT_API", raising=False)
     assert wire.api_source() == (wire.DEFAULT_API, "the default")

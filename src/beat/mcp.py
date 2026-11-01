@@ -12,7 +12,7 @@ Tools (descriptions say first when to use each: in the agent's terms, not beat's
 - `logs`: the log summaries in a survey's answers across its hosts, with a proposed curated template set: the read
   API's logs.get, as `beat logs` calls it (tool first, MCP second).
 The `run` description is the builtins guide a sensor published (guide.get); this server only relays.
-Env: BEAT_API (else the service `beat login URL` kept, else http://127.0.0.1:8480).
+Env: BEAT_API (else the service `beat login URL` kept, else https://api.walkthebeat.ai).
 """
 from __future__ import annotations
 
