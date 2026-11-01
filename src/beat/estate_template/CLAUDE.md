@@ -95,7 +95,9 @@ Before working on a host, read every annotation and decide from its facts which 
 Compare **source** (files) with **loaded state** (what is running):
 - pending changes: a config file newer than the process that loaded it, and no reload since (file mtime vs process
   start, the journal);
-- unsourced state, lost on reboot: `sysctls` where `live` differs from `persisted`, or a live value that changed
-  between surveys with no persisted value; live `firewall` rules with no persisted rules file; processes whose
-  `owner` is a session `.scope` (started by hand), not a `.service`;
+- unsourced state, lost on reboot: a sysctl whose live value (`/proc/sys`) differs from the one its files set
+  (`/etc/sysctl.conf`, then `sysctl.d` in `/etc`, `/run`, `/usr/lib`, last one wins), or a live value that changed
+  between surveys with nothing persisting it; processes whose `owner` is a session `.scope` (started by hand), not a
+  `.service`. There is no sysctl builtin: read the files. A question runs in its own network namespace, so `net.*`
+  sysctls and live firewall rules are the sandbox's, not the host's: compare only the files for those, and say so;
 - plus the usual: kernel images vs the running kernel, deleted binaries still running, units enabled vs active.

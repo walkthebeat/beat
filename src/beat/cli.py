@@ -19,7 +19,7 @@ def _main() -> None:
     ap = argparse.ArgumentParser(prog="beat")
     sub = ap.add_subparsers(dest="cmd", required=True)
     ei = sub.add_parser("init", help="create an estate repository (git)")
-    ei.add_argument("dir")
+    ei.add_argument("dir", nargs="?", default=".", help="a new or empty directory (default: this one)")
     er = sub.add_parser("run", help="run a probe on hosts; records go to hosts/<host>/facts/<probe>.jsonl "
                         "in the estate repo here, committed if they changed")
     er.add_argument("probe", help="probes/<name>.star by name, or a .star file")

@@ -25,14 +25,25 @@ is the beat service: your laptop and your sensors talk to it, and it keeps each 
 
 ## 2. Install beat on your laptop
 
-With [uv](https://docs.astral.sh/uv/), from the repository (PyPI later):
+beat is installed with [uv](https://docs.astral.sh/uv/), a Python package manager; it brings its own Python, so
+you need neither Python nor pip. If `uv --version` says it is not found, install it (no root):
+
+```
+curl -LsSf https://astral.sh/uv/install.sh | sh     # Linux or macOS
+brew install uv                                     # or, on macOS with Homebrew
+```
+
+Open a new terminal so it is on your PATH. Then install beat from the repository (PyPI later), and let uv put its
+commands on your PATH:
 
 ```
 uv tool install git+https://github.com/walkthebeat/beat
+uv tool update-shell
 ```
 
-It installs two commands, `beat` and `beat-mcp`, needs no root, and configures nothing. While the repository is
-private, git uses your GitHub login (`gh auth setup-git` once, if git does not already have it).
+It installs two commands, `beat` and `beat-mcp` (in `~/.local/bin`), needs no root, and configures nothing. Open
+a new terminal again and check that `beat --help` works. It needs `git`: while the repository is private, git uses
+your GitHub login (`gh auth setup-git` once, if git does not already have it).
 
 ## 3. Sign in from the laptop
 
@@ -60,7 +71,8 @@ trust. Only questions signed by a member the root certified run on your hosts; n
 service holds it. Keep a copy somewhere safe: losing it means configuring every host again.
 
 `beat sensors add` prints a `sudo beat-sensor configure ...` line with your org's address
-(`https://api.walkthebeat.ai/o/<your org id>`) and your root's public key. It holds no secret. Copy it for step 6.
+(`https://api.walkthebeat.ai/o/<your org id>`) and your root's public key. It holds no secret: the key is public, and it is fine that it ends up in the
+host's logs (sudo records the command). Copy it for step 6.
 
 ## 5. Install the sensor on a host
 
@@ -72,7 +84,7 @@ curl -fsSL https://github.com/walkthebeat/beat/releases/latest/download/install.
 the release with the GitHub CLI and install from the files:
 
 ```
-gh release download -R walkthebeat/beat -D beat-sensor
+gh release download -R walkthebeat/beat -p '*' -D beat-sensor
 sudo BEAT_SENSOR_BASE=file://$PWD/beat-sensor sh beat-sensor/install.sh
 ```
 
@@ -146,13 +158,28 @@ Each host is listed with its name and when it was last heard from. A host listed
 
 ## 8. Ask with Claude
 
+Claude reaches beat through beat's MCP server, `beat-mcp` (installed in step 2). Make a directory for your hosts'
+notes and set it up:
+
 ```
-mkdir ~/estate && cd ~/estate && beat init
+beat init ~/estate
+cd ~/estate
 claude
 ```
 
-`beat init` writes `.mcp.json`, so Claude starts beat's MCP server in this directory. Ask it about your hosts, for
-example "which hosts have a failed systemd unit, and why?".
+`beat init` makes the directory a git repository that Claude works in, with:
+
+- `.mcp.json`: Claude starts `beat-mcp` here, which talks to the service you signed in to in step 3.
+- `.claude/settings.json`: Claude may use the beat server and the read-only `beat` commands without asking each
+  time; deleting surveys stays denied.
+- `CLAUDE.md` and two skills, `discover` (map what runs on hosts) and `investigate` (chase a problem across them):
+  how to work with beat, and where the findings go (`hosts/`, `probes/`).
+
+In Claude, `/mcp` should list `beat` as connected. Then ask about your hosts, for example "which hosts have a
+failed systemd unit, and why?", or `/discover` to have it map what runs where.
+
+To use beat from Claude in any directory instead, add the server once for your user:
+`claude mcp add -s user beat -- beat-mcp`.
 
 ## 9. Remove
 
