@@ -57,6 +57,7 @@ import getpass
 import json
 import os
 import socket
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -144,7 +145,7 @@ def _valid_name(name: str) -> bool:
 
 
 def _write_secret(path: Path, text: str) -> None:
-    tmp = path.with_suffix(".tmp")
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")  # one writer's own
     tmp.unlink(missing_ok=True)
     tmp.touch(mode=0o600)
     tmp.write_text(text)

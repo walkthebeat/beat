@@ -4,6 +4,7 @@
     "allow": [
       "mcp__beat",
       "Bash(@BEAT@ run:*)",
+      "Bash(@BEAT@ probes:*)",
       "Bash(@BEAT@ survey:*)",
       "Bash(@BEAT@ analyze:*)",
       "Bash(@BEAT@ logs:*)",

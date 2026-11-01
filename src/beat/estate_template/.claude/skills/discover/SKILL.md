@@ -11,17 +11,23 @@ on this host and on similar ones, with no model in the loop. An SRE reads them l
 
 Outputs:
 - `probes/<name>.star`: one per piece of software or concern (`nginx.star`, `sched-agent.star`, `host-base.star`).
-  Extend an existing probe rather than writing a near-duplicate.
+  Extend an existing probe rather than writing a near-duplicate. The default pack's are read-only: to change one,
+  `@BEAT@ probes fork <name>` (it becomes the estate's), or write a probe for what the pack does not cover.
 - `hosts/<host>/facts/<name>.jsonl`: written only by `@BEAT@ run <name> <hosts...>` (never by hand).
 - `hosts/<host>/model.md`: what it all means, every observed statement citing probe records.
 - `hosts/<host>/questions.md`: what could not be determined.
 
 ## Steps
 
-1. **Context.** Read `annotations/`, `probes/` (the header says what each covers and where it applies) and
-   `hosts/<host>/` if present. Survey every probe that may apply over the hosts (`survey` with `probe: <name>`). A
-   failed assertion is information: that probe's assumptions do not hold here, which is what discovery should fix.
-   Hosts that answer alike are one tier: discover the tier once, not each host.
+1. **Context, at once.** Run every probe there is, on every host, in one go: `@BEAT@ probes run <hosts...>` (no
+   hosts: every trusted live sensor). That is the estate's `probes/` and beat's default pack (`@BEAT@ probes` lists
+   them), all in flight together, in about a minute, and their facts committed. **Tell the SRE what they show
+   before exploring further**: what each host is, what runs, what stands out. Then read `annotations/`, the probes'
+   headers (what each covers, where it applies, what it cannot see) and `hosts/<host>/`. A failed assertion is
+   information: that probe's assumptions do not hold here, which is what discovery should fix. The default pack is
+   a reference and a quick start, written for common hosts: expect some of it not to fit, and where it does not,
+   fork it and adjust it, or discover more. It is never the end of discovery. Hosts that answer
+   alike are one tier: discover the tier once, not each host.
 2. **Explore.** Delegate to the `beat-investigator` subagent, one per host or tier: the hosts, the applicable
    annotations verbatim, what the
    existing probes already cover (so it does not redo it), and what to find out: what each workload is, how it

@@ -176,6 +176,11 @@
           [ "$r" = "Invalid user <*> from <IP>" ] || { echo "unexpected: $r"; exit 1; }
           touch $out
         '';
+        # The default pack (src/beat/pack): every probe parses and calls only builtins and tools that exist.
+        pack = pkgs.runCommand "beat-pack-check" { } ''
+          ${probe}/bin/beat-probe check ${./src/beat/pack}/*.star --tools ${wasm.tools}
+          touch $out
+        '';
         pytest = pkgs.runCommand "beat-pytest" {
           nativeBuildInputs = [ beatDev pkgs.openssl pkgs.git ];
           GIT_AUTHOR_NAME = "beat-check"; GIT_AUTHOR_EMAIL = "check@beat"; GIT_COMMITTER_NAME = "beat-check"; GIT_COMMITTER_EMAIL = "check@beat";

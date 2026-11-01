@@ -70,3 +70,64 @@ def test_run_on_a_host_with_no_live_sensor_says_so(repo, monkeypatch):
     with pytest.raises(estate.EstateError, match="no live sensor named 'beat-devg' \\(did you mean beat-dev\\?\\)"):
         estate.run_probe("web", "beat-devg")
     assert "did you mean" not in ask.not_live_reason("zzz", ["beat-dev"])
+
+
+def test_the_default_pack_is_found_after_the_estates_probes(repo):
+    assert estate.probe_path(repo, "hello") == estate.PACK / "hello.star"
+    assert estate.origin(repo, estate.probe_path(repo, "hello")) == "pack:hello.star"
+    (repo / "probes" / "hello.star").write_text('"""Ours."""\ndef main() -> None:\n    pass\n')
+    assert estate.probe_path(repo, "hello") == repo / "probes" / "hello.star"  # the estate's wins
+    assert estate.origin(repo, estate.probe_path(repo, "hello")) == "probes/hello.star"
+    with pytest.raises(estate.EstateError, match="no probe 'nosuch'"):
+        estate.probe_path(repo, "nosuch")
+
+
+def test_probes_lists_both_with_where_each_comes_from(repo):
+    (repo / "probes" / "nginx.star").write_text('"""nginx: its config."""\ndef main() -> None:\n    pass\n')
+    (repo / "probes" / "hello.star").write_text('"""Ours."""\ndef main() -> None:\n    pass\n')
+    estate.fork(repo, "journal")
+    got = {p["name"]: p for p in estate.probes(repo)}
+    assert got["nginx"]["origin"] == "estate" and got["nginx"]["summary"] == "nginx: its config."
+    assert got["host-base"]["origin"] == "pack"
+    assert got["hello"]["origin"] == "estate, over the pack's"
+    assert got["journal"]["origin"] == "estate, forked from the pack"
+    assert {"hello", "host-base", "systemd-units", "listeners", "sysctl-persist", "journal", "beat-sensor"} <= set(got)
+
+
+def test_fork_makes_the_packs_probe_the_estates(repo):
+    p = estate.fork(repo, "host-base")
+    text = p.read_text()
+    assert p == repo / "probes" / "host-base.star" and text.startswith(estate.FORKED)
+    assert text.endswith((estate.PACK / "host-base.star").read_text())  # the pack's, below one marker line
+    assert estate.probe_path(repo, "host-base") == p
+    with pytest.raises(estate.EstateError, match="exists already"):
+        estate.fork(repo, "host-base")
+    with pytest.raises(estate.EstateError, match="no nosuch.star"):
+        estate.fork(repo, "nosuch")
+
+
+def test_run_every_asks_every_probe_and_writes_each_hosts_facts(repo, monkeypatch):
+    asked = []
+
+    async def fake_ask(name, source, hosts=None, timeout=120, via=""):
+        asked.append(name)
+        return {"survey": f"s-{name}", "question": "q", "expected": hosts, "down": [], "answers": {h: {
+            "answer_hash": "h", "outcome": "ok", "answer": {"v": 1, "outcome": "ok", "diag": "", "notes": [],
+            "error": None, "failures": [],
+            "records": [{"subject": "host", "key": "probe", "value": name, "source": "s", "span": "x"}]}}
+            for h in hosts}}
+
+    async def fake_whoami():
+        return {}
+    from beat import ask
+    monkeypatch.setattr(ask, "ask", fake_ask)
+    monkeypatch.setattr(ask, "whoami", fake_whoami)
+    from beat import seal
+    monkeypatch.setattr(seal, "member", lambda: ("key", "cred"))
+    out = estate.run_every(["web-1", "web-2"])
+    names = [p["name"] for p in estate.probes(repo)]
+    assert sorted(asked) == sorted(f"{n}.star" for n in names) and [n for n, _, _ in out] == names
+    for name, survey, results in out:
+        assert survey == f"s-{name}.star" and set(results) == {"web-1", "web-2"}
+        assert results["web-1"]["probe"] == f"pack:{name}.star" and results["web-1"]["commit"]
+    assert (repo / "hosts/web-2/facts/hello.jsonl").exists()

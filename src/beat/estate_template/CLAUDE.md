@@ -37,6 +37,7 @@ need, say what is missing: that is a finding about beat, worth reporting.
 | Path | Provenance | Written by |
 | --- | --- | --- |
 | `probes/<name>.star` | collection code | you, during discovery (the `discover` skill); the SRE approves by committing |
+| beat's default pack | collection code for any Linux host (`hello`, `host-base`, `systemd-units`, `listeners`, `sysctl-persist`, `journal`, `beat-sensor`) | beat, read-only, upgraded with beat: a reference and a quick start, not a complete or always-fitting set. `@BEAT@ probes` lists every probe and where it comes from. A probe in `probes/` wins over the pack's of the same name; to change a pack probe, `@BEAT@ probes fork <name>` first, never a copy by hand |
 | `hosts/<host>/facts/<probe>.jsonl` | **observed** | only `@BEAT@ run <probe> <hosts...>`: one record per line. Never by hand. |
 | `hosts/<host>/model.md` | **interpreted** | you, during discovery; the SRE approves by committing |
 | `hosts/<host>/questions.md` | open questions | you; the SRE answers them, usually by stating an annotation |

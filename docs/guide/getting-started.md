@@ -175,6 +175,10 @@ claude
 - `CLAUDE.md` and two skills, `discover` (map what runs on hosts) and `investigate` (chase a problem across them):
   how to work with beat, and where the findings go (`hosts/`, `probes/`).
 
+beat comes with a default set of probes for any Linux host (`beat probes` lists them): asked to discover your hosts,
+Claude runs them all first, so the first answer takes a minute, then explores what they do not cover. They are a
+starting point: where one does not fit a host, Claude adapts it for your estate.
+
 In Claude, `/mcp` should list `beat` as connected. Then ask about your hosts, for example "which hosts have a
 failed systemd unit, and why?", or `/discover` to have it map what runs where.
 

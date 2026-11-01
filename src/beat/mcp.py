@@ -118,7 +118,7 @@ def tool_defs(guide: str | None, hosts: list[str]) -> list[types.Tool]:
         types.Tool(name="survey", description=SURVEY, inputSchema={
             "type": "object",
             "properties": {
-                "probe": {"type": "string", "description": "A saved probe of this estate, by name (probes/<name>.star): "
+                "probe": {"type": "string", "description": "A saved probe, by name: this estate's probes/<name>.star, else beat's default pack's (`beat probes`): "
                           "the same question as `beat run <name>`, so surveys of it show drift. Or give `source`."},
                 "source": {"type": "string", "description": "A Starlark probe: constants, functions and main()."},
                 "name": {"type": "string", "description": "File name, e.g. nginx.star: the same name and source "

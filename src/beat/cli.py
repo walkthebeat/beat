@@ -26,6 +26,12 @@ def _main() -> None:
     er.add_argument("hosts", nargs="+")
     er.add_argument("--no-commit", action="store_true")
     er.add_argument("--stdout", action="store_true", help="also print the probe's text output (print())")
+    pr = sub.add_parser("probes", help="the probes this estate runs: its own (probes/) and beat's default pack; "
+                        "`fork NAME`: copy the pack's into probes/ to change it; `run [HOSTS]`: every probe at once on "
+                        "the hosts (default: every trusted live sensor), facts committed as `beat run` does")
+    pr.add_argument("action", nargs="?", choices=["list", "fork", "run"], default="list")
+    pr.add_argument("args", nargs="*", help="fork: the probe's name; run: the hosts")
+    pr.add_argument("--no-commit", action="store_true", help="run: write the facts, commit nothing")
     ak = sub.add_parser("ask", help="ask a question (a .star file) of every live sensor, or of --host ones; "
                         "answers grouped by answer hash")
     ak.add_argument("question", help="a .star file")
@@ -157,6 +163,9 @@ def _main() -> None:
     if a.cmd == "org":
         return _trust(a)
 
+    if a.cmd == "probes":
+        return _probes(a)
+
     if a.cmd == "run":
         from . import estate
         failed = False
@@ -193,6 +202,46 @@ def _main() -> None:
         except estate.EstateError as e:
             raise SystemExit(f"error: {e}")
         return
+
+
+def _probes(a) -> None:
+    """`beat probes`: list, fork, run (estate.py)."""
+    import asyncio
+    from . import ask, estate
+    try:
+        repo = estate.root()
+        if a.action == "list":
+            for p in estate.probes(repo):
+                print(f"{p['name']}\t{p['origin']}\t{p['summary']}")
+            return
+        if a.action == "fork":
+            if len(a.args) != 1:
+                raise SystemExit("error: beat probes fork NAME")
+            path = estate.fork(repo, a.args[0])
+            print(f"{path.relative_to(repo)}: the estate's now (the pack's upgrades no longer reach it); commit it "
+                  "when you have changed it")
+            return
+        hosts = a.args or sorted(h for h, e in asyncio.run(ask.sensors()).items() if "untrusted" not in e)
+        if not hosts:
+            raise SystemExit("error: no trusted live sensor (`beat sensors`)")
+        failed = False
+        for name, survey, results in estate.run_every(hosts, commit=not a.no_commit):
+            for host, r in results.items():
+                if isinstance(r, Exception):
+                    print(f"{name}\t{host}\terror: {r}")
+                    failed = True
+                    continue
+                bad = r["assertions_failed"] or ([n for n in r["notes"] if n.startswith("error")] if r["exit"] else [])
+                failed = failed or r["exit"] != 0
+                print(f"{name}\t{host}\t{r['records']} records, {r['seconds']} s, "
+                      + (f"{'assertion failed' if r['assertions_failed'] else 'failed'}: {bad[0]}" if bad
+                         else "ok" if r["exit"] == 0 else f"exit {r['exit']}")
+                      + (f"; committed {r['commit']}" if r["commit"] else ""))
+            if survey and len(hosts) > 1:
+                print(f"{name}\tsurvey {survey}: `beat analyze {survey}` compares the hosts")
+    except (estate.EstateError, RuntimeError) as e:
+        raise SystemExit(f"error: {e}")
+    raise SystemExit(1 if failed else 0)
 
 
 def _service(a) -> None:

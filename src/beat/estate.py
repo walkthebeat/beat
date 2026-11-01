@@ -6,6 +6,10 @@
   annotations/*.md          stated by people (through the agent or by hand), each with the hosts it applies to
   probes/*.star             collection code: written by the agent during discovery, approved by a person
 
+Probes come from the estate's probes/ and, after it, beat's default pack (pack/: probes for any Linux host,
+installed with beat and read-only, so its fixes reach every estate with `uv tool upgrade beat`). A probe of the estate
+wins over the pack's of the same name; `beat probes fork <name>` makes the pack's the estate's, to change it.
+
 `beat init <dir>` creates it from estate_template/ (CLAUDE.md, .mcp.json, the discover skill, the investigator
 subagent). `beat run <probe> <hosts>` asks the probe of the hosts in one survey and commits each host's records only
 if they changed, so `git log -p hosts/<host>/facts/` is the host's drift history: no timestamps or other per-run
@@ -24,6 +28,8 @@ from pathlib import Path
 
 
 TEMPLATE = Path(__file__).parent / "estate_template"
+PACK = Path(__file__).parent / "pack"
+FORKED = "# Forked from beat's default pack"
 
 class EstateError(Exception):
     pass
@@ -72,14 +78,93 @@ def init(target: Path) -> None:
 
 
 def probe_path(repo: Path, probe: str) -> Path:
-    """A probe by file path, or by name under probes/ (`nginx` -> probes/nginx.star)."""
+    """A probe by file path, or by name: the estate's probes/<name>.star, else the default pack's."""
     p = Path(probe)
     if p.exists() and p.suffix == ".star":
         return p.resolve()
     n = probe if probe.endswith(".star") else f"{probe}.star"
-    if (repo / "probes" / n).exists():
-        return repo / "probes" / n
-    raise EstateError(f"no probe {probe!r} (a .star file, or probes/<name>.star)")
+    for d in (repo / "probes", PACK):
+        if (d / n).exists():
+            return d / n
+    raise EstateError(f"no probe {probe!r} (a .star file, probes/<name>.star, or the default pack's: `beat probes`)")
+
+
+def origin(repo: Path, path: Path) -> str:
+    """Where a probe comes from, as facts record it: probes/<name>.star, pack:<name>.star, or the file's path."""
+    if path.parent == PACK:
+        return f"pack:{path.name}"
+    return str(path.relative_to(repo)) if path.is_relative_to(repo) else str(path)
+
+
+def _summary(text: str) -> str:
+    """A probe's first docstring line."""
+    for line in text.splitlines():
+        line = line.strip().strip('"').strip()
+        if line and not line.startswith("#"):
+            return line
+    return ""
+
+
+def probes(repo: Path) -> list[dict]:
+    """Every probe a name finds: {name, origin ("estate", "pack", "estate, forked from the pack", "estate, over the
+    pack's"), summary}, by name."""
+    mine = {p.stem: p for p in (repo / "probes").glob("*.star")}
+    pack = {p.stem: p for p in PACK.glob("*.star")}
+    out = []
+    for name in sorted(mine.keys() | pack.keys()):
+        p = mine.get(name) or pack[name]
+        text = p.read_text()
+        where = "pack" if name not in mine else "estate" if name not in pack else (
+            "estate, forked from the pack" if text.startswith(FORKED) else "estate, over the pack's")
+        out.append({"name": name, "origin": where, "summary": _summary(text)})
+    return out
+
+
+def fork(repo: Path, name: str) -> Path:
+    """The pack's probe copied into the estate's probes/, marked as forked: from now on it is the estate's (and
+    the pack's upgrades no longer reach it). Not committed: the person reviews it like any change."""
+    n = name if name.endswith(".star") else f"{name}.star"
+    src, dst = PACK / n, repo / "probes" / n
+    if not src.exists():
+        raise EstateError(f"the default pack has no {n} (`beat probes`)")
+    if dst.exists():
+        raise EstateError(f"{dst.relative_to(repo)} exists already")
+    text = src.read_text()
+    sha = hashlib.sha256(text.encode()).hexdigest()[:16]
+    dst.write_text(f"{FORKED} (pack:{n}, sha256 {sha}); the estate's now.\n{text}")
+    return dst
+
+
+def run_every(hosts: list[str], commit: bool = True, workers: int = 8) -> list[tuple[str, str | None, dict]]:
+    """Every probe a name finds (`probes`), asked of the hosts at once: one survey per probe, all of them in
+    flight together, then each host's facts written and committed as `run_probe` does. [(probe, survey id or None,
+    {host: run_probe's result, or an EstateError})], by probe."""
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    from . import ask, seal
+    repo = root()
+    # Renewed once, before the threads each use them: the login, and the member credential (renewing it in each
+    # thread at once would race, and could leave one thread's key with another's credential).
+    asyncio.run(ask.whoami())
+    seal.member()
+    names = [p["name"] for p in probes(repo)]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {n: pool.submit(ask_star, n, hosts) for n in names}
+    out = []
+    for n in names:  # facts and commits one at a time: git is not shared between threads
+        try:
+            survey, answers = futures[n].result()
+        except EstateError as e:
+            out.append((n, None, {h: e for h in hosts}))
+            continue
+        results = {}
+        for h in hosts:
+            try:
+                results[h] = run_probe(n, h, commit=commit, answer=answers.get(h))
+            except EstateError as e:
+                results[h] = e
+        out.append((n, survey, results))
+    return out
 
 
 def ask_star(probe: str, hosts: list[str]) -> tuple[str, dict]:
@@ -127,7 +212,7 @@ def run_probe(probe: str, host: str, commit: bool = True, answer: dict | None = 
     recs = sorted(d["records"], key=lambda x: (x.get("subject", ""), x.get("key", ""), x.get("value", ""),
                                                x.get("source", "")))
     (out / f"{name}.jsonl").write_text("".join(json.dumps(x, sort_keys=True) + "\n" for x in recs))
-    meta = {"probe": str(path.relative_to(repo)) if path.is_relative_to(repo) else str(path),
+    meta = {"probe": origin(repo, path),
             "probe_sha256": hashlib.sha256(script.encode()).hexdigest()[:16],
             "exit": d["exit"], "assertions_failed": d["assertions_failed"], "notes": d["notes"],
             "stderr": d["stderr"][-4000:], "records": len(recs)}
