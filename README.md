@@ -44,6 +44,7 @@ With Nix (x86_64 Linux):
 nix build .#beat                 # the client: beat, beat-mcp
 nix build .#beat-sensor          # the sensor, for a host with Nix
 nix build .#beat-sensor-image    # the sensor's image and installer, for a host without
+# NixOS hosts: nixosModules.beat-sensor (docs/guide/getting-started.md, step 5)
 nix flake check                  # every test
 ```
 

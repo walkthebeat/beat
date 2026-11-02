@@ -34,12 +34,12 @@ pub struct Runner {
     pub hide: Vec<PathBuf>,
     /// More properties for every question's unit (`--unit-property`): MountImages= when installed from an image.
     pub unit_props: Vec<String>,
+    /// Where the host's systemd-run and systemctl are (`--systemd`): /usr/bin, or the systemd package's bin on NixOS.
+    pub systemd: PathBuf,
 }
 
 /// A question's memory limit (the unit's MemoryMax): past it the kernel kills beat-probe, not the sensor.
 const MEMORY_MAX: &str = "1G";
-const SYSTEMD_RUN: &str = "/usr/bin/systemd-run";
-const SYSTEMCTL: &str = "/usr/bin/systemctl";
 /// Every question's capabilities: reading files whatever their mode, and other processes' /proc entries.
 const BASE_CAPS: &str = "CAP_DAC_READ_SEARCH CAP_SYS_PTRACE";
 /// What a question's trace() entries may add (`beat-probe needs`), and nothing else whatever it says.
@@ -176,10 +176,10 @@ impl Runner {
         }
         // systemd-run exits 1 whenever the unit failed, even when it never started (namespace set-up: 226): the
         // unit's own status is systemd's. A failed unit stays loaded until reset (no --collect, so it can be read).
-        let show = Command::new(SYSTEMCTL).args(["show", "-p", "ExecMainStatus,Result,MemoryPeak", &unit]).output()
+        let show = Command::new(self.systemd.join("systemctl")).args(["show", "-p", "ExecMainStatus,Result,MemoryPeak", &unit]).output()
             .await.map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
         let prop = |k: &str| show.lines().find_map(|l| l.strip_prefix(k)?.strip_prefix('=')).unwrap_or("").to_string();
-        let _ = Command::new(SYSTEMCTL).args(["reset-failed", &unit]).output().await;
+        let _ = Command::new(self.systemd.join("systemctl")).args(["reset-failed", &unit]).output().await;
         let code = prop("ExecMainStatus").parse::<i32>().ok().filter(|c| *c != 0).or(run.status.code());
         Ok((Exit { stdout, stderr, status: status_text(code), result: prop("Result"),
                    memory_peak: prop("MemoryPeak").parse().ok() }, code))
@@ -219,8 +219,8 @@ impl Runner {
         }
         let meta: String = secrets.iter().map(|s| format!("{}\n", s.2)).collect();
         let meta = { use base64::Engine; base64::engine::general_purpose::STANDARD.encode(meta) };
-        let mut argv: Vec<String> = [SYSTEMD_RUN, "--quiet", "--wait", "--service-type=exec"]
-            .iter().map(|s| s.to_string()).collect();
+        let mut argv: Vec<String> = vec![self.systemd.join("systemd-run").display().to_string()];
+        argv.extend(["--quiet", "--wait", "--service-type=exec"].iter().map(|s| s.to_string()));
         argv.push(format!("--unit={unit}"));
         argv.push(format!("--description=beat question {name}"));
         for p in props {

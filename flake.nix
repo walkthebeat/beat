@@ -94,10 +94,12 @@
           cat > $out/bin/beat-sensor-run <<EOF
           #!${pkgs.runtimeShell}
           # The service's entry point: beat-sensor with this build's beat-probe, tools, osquery and eBPF catalog.
+          # BEAT_SYSTEMD: where the host's systemd-run, systemctl and journalctl are (NixOS: the NixOS module sets it).
           exec ${sensorBin}/bin/beat-sensor --nats "\$BEAT_NATS" --api "\$BEAT_API" --name "\$BEAT_SENSOR_NAME" \\
             --version "$(basename $out)" --probe ${probe}/bin/beat-probe --tools ${wasm.tools} \\
             --cache /var/lib/beat-sensor/wasm-cache --osqueryi ${pkgs.osquery}/bin/osqueryi \\
-            --journalctl /usr/bin/journalctl --bpf-tools ${libbpfTools}/bin \\
+            --journalctl "\''${BEAT_SYSTEMD:-/usr/bin}/journalctl" --systemd "\''${BEAT_SYSTEMD:-/usr/bin}" \\
+            --bpf-tools ${libbpfTools}/bin \\
             --placeholders $out/share/beat-sensor/placeholders \\
             --key /var/lib/beat-sensor/keys/sensor.key --roots /etc/beat-sensor/roots --deny /var/lib/beat-sensor/state/deny.json \\
             --collector-keys /etc/beat-sensor/collectors \\
@@ -126,6 +128,9 @@
       beatDev = pythonSet.mkVirtualEnv "beat-dev-env" workspace.deps.all; # + pytest
     in
     {
+      # The sensor on NixOS hosts (packaging/nix/module.nix): `services.beat-sensor.enable = true;`, then configure.
+      nixosModules.beat-sensor = import ./packaging/nix/module.nix { inherit sensor probe; tools = wasm.tools; };
+
       packages.${system} = {
         default = beat;
         inherit beat;

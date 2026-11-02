@@ -3,7 +3,7 @@
 //!   beat-sensor --nats URL --probe PATH --tools DIR --cache DIR --key FILE --roots DIR --collector-keys DIR
 //!               [--name NAME] [--deny FILE]
 //!               [--label k=v]... [--osqueryi PATH] [--journalctl PATH] [--bpf-tools DIR] [--placeholders DIR | --no-sandbox]
-//!               [--concurrency N] [--unit-property P]...
+//!               [--concurrency N] [--unit-property P]... [--systemd DIR]
 //!   beat-sensor keygen FILE     creates the sensor's signing key when missing; prints its public key (to enroll)
 //!   beat-sensor enroll --api URL [--name NAME] [--key FILE]
 //!                               asks the service to admit this sensor; waits for a member's approval (enroll.rs)
@@ -26,6 +26,8 @@
 //! --name defaults to the host name. --no-sandbox runs beat-probe directly (development, no root).
 //! --unit-property: a systemd property for every question's unit, as `systemd-run -p` takes it; installed from an
 //! image, MountImages= gives the questions the image's /nix/store (docs/security.md M16).
+//! --systemd: the directory of the host's systemd-run and systemctl, /usr/bin by default (NixOS: the systemd
+//! package's bin; the NixOS module passes it).
 
 mod aws;
 mod bus;
@@ -81,7 +83,7 @@ struct Config {
 fn parse(argv: &[String]) -> anyhow::Result<Config> {
     let (mut nats, mut api, mut name, mut probe, mut tools, mut cache) = (None, None, None, None, None, None);
     let (mut osqueryi, mut journalctl, mut placeholders, mut no_sandbox) = (None, None, None, false);
-    let (mut bpf_tools, mut unit_props) = (None, vec![]);
+    let (mut bpf_tools, mut unit_props, mut systemd) = (None, vec![], PathBuf::from("/usr/bin"));
     let (mut key, mut roots, mut collector, mut deny_file) = (None, None, None, None);
     let mut labels = serde_json::Map::new();
     let mut concurrency = 2;
@@ -106,6 +108,7 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
             "--deny" => deny_file = Some(PathBuf::from(val()?)),
             "--collector-keys" => collector = Some(PathBuf::from(val()?)),
             "--unit-property" => unit_props.push(val()?),
+            "--systemd" => systemd = PathBuf::from(val()?),
             "--concurrency" => concurrency = val()?.parse().context("--concurrency")?,
             "--version" => version = val()?,
             "--label" => {
@@ -161,6 +164,7 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
             secret_mounts_denied: Default::default(),
             hide: vec![key.clone()],
             unit_props,
+            systemd,
         },
     })
 }

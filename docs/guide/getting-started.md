@@ -121,6 +121,18 @@ in `/opt/beat-sensor` as one image that systemd mounts for the sensor alone, add
 on, and configures nothing: the sensor stays stopped until step 6 points it at a service and a root. Run it again
 to upgrade.
 
+**On NixOS**, skip the installer and use the flake's module. In your flake's inputs add
+`beat.url = "github:walkthebeat/beat/v<release>";`, then in the host's configuration:
+
+```
+imports = [ beat.nixosModules.beat-sensor ];
+services.beat-sensor.enable = true;
+```
+
+It installs the sensor the same way: closed until step 6. There, run the configure line as
+`sudo beat-sensor configure ...`, not under `/opt/beat-sensor`. Leave its configuration out of your Nix config: the
+line writes `/etc/beat-sensor.env` and `/etc/beat-sensor/`, which NixOS does not manage and a rebuild keeps.
+
 ## 6. Enrol the host
 
 A sensor's answers count once the service has enrolled it. Pick one way.
