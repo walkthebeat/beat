@@ -1,6 +1,8 @@
 """Host base: OS, kernel (running vs installed), boot, hardware, filesystems, network, DNS, time sync, login users.
 
-Applies to: any Linux host with a beat sensor (first written on Ubuntu 24.04 on EC2).
+Applies to: any Linux host with a beat sensor (first written on Ubuntu 24.04 on EC2); on NixOS, which keeps no
+  /boot/vmlinuz-*, the booted, current and next-boot system generations instead (from walkthebeat's own estate,
+  NixOS 26.05, 2026-11-02).
 Assumes: osquery tables os_version, system_info, kernel_info, uptime, mounts, users; the sensor runs in its own
   mount and network namespace, so the host's mounts, interfaces and routes are read from /proc/1/ (PID 1's view).
 Cannot see: chrony's live sync state (no chronyc; only config and unit state), IPv6 addresses, authorized_keys
@@ -13,7 +15,10 @@ SUDOERS = ["/etc/sudoers"]
 SUDOERS_GLOB = "/etc/sudoers.d/*"
 CHRONY_CONF = "/etc/chrony/chrony.conf"
 CHRONY_CONFD = "/etc/chrony/conf.d/*.conf"
-NOLOGIN = ["/usr/sbin/nologin", "/sbin/nologin", "/bin/false", "/usr/bin/false", "/bin/sync"]
+NOLOGIN = ["nologin", "false", "sync"]   # by basename: NixOS shells live under /run/current-system/sw/bin or the store
+NIXOS_CURRENT = "/run/current-system"
+NIXOS_BOOTED = "/run/booted-system"
+NIXOS_PROFILE = "/nix/var/nix/profiles/system"
 
 # OS release, running kernel vs the images in /boot, reboot-required flag
 def os_and_kernel():
@@ -25,6 +30,9 @@ def os_and_kernel():
     running = k["version"]
     emit("kernel", "running", running, "osq.kernel_info", kind = "semantic")
     emit("kernel", "cmdline", k["arguments"], "osq.kernel_info", kind = "semantic")
+    if stat(NIXOS_CURRENT):
+        nixos_generations(running)
+        return
     images = [path_basename(p)[len("vmlinuz-"):] for p in glob("/boot/vmlinuz-*")]
     expect(len(images) > 0, "no /boot/vmlinuz-* images")
     for v in images:
@@ -34,6 +42,23 @@ def os_and_kernel():
     emit("kernel", "running_is_newest", "yes" if newest == running else "no", "kernel_info vs /boot", kind = "semantic")
     expect(running in images, "running kernel %s has no image in /boot" % running)
     emit("host", "reboot_required_flag", "yes" if stat("/var/run/reboot-required") else "no", "stat:/var/run/reboot-required", kind = "semantic")
+
+# NixOS keeps no /boot/vmlinuz-*: both sides are system closures. booted = what the kernel started from,
+# current = what is activated now, profile = what the next boot's bootloader entry comes from.
+def nixos_generations(running):
+    for name, link in [("booted", NIXOS_BOOTED), ("current", NIXOS_CURRENT)]:
+        target = readlink(link)
+        expect(target != None, "expected %s to be a symlink" % link)
+        emit("nixos:" + name, "system", target, "readlink:" + link, kind = "semantic")
+        modules = list_dir(link + "/kernel-modules/lib/modules")
+        emit("nixos:" + name, "kernel", one(modules, "expected one kernel in " + link), link + "/kernel-modules/lib/modules", kind = "semantic")
+    profile = readlink(NIXOS_PROFILE)
+    expect(profile != None, "expected %s to be a symlink" % NIXOS_PROFILE)
+    emit("nixos:profile", "generation", profile, "readlink:" + NIXOS_PROFILE, kind = "semantic")
+    generation = stat(path_join(path_dirname(NIXOS_PROFILE), profile))
+    expect(generation != None, "profile generation missing: " + profile)
+    emit("nixos:profile", "system", readlink(path_join(path_dirname(NIXOS_PROFILE), profile)) or "", "readlink", kind = "semantic")
+    emit("nixos:profile", "generations_count", str(len(glob(NIXOS_PROFILE + "-*-link"))), "glob", kind = "metric")
 
 # hostname, hardware, memory, uptime and boot time
 def boot_and_hardware():
@@ -121,14 +146,21 @@ def time_sync():
 # accounts with a login shell, authorized_keys presence, sudo rules
 def users():
     rows = osq("select username, uid, shell, directory from users")
-    logins = [r for r in rows if r["shell"] not in NOLOGIN]
+    logins = [r for r in rows if path_basename(r["shell"]) not in NOLOGIN]
     emit("users", "login_shell_count", str(len(logins)), "osq.users", kind = "metric")
     for r in logins:
         s = "user:" + r["username"]
         emit(s, "uid", str(r["uid"]), "osq.users", kind = "semantic")
         emit(s, "shell", r["shell"], "osq.users", kind = "semantic")
         home = r["directory"]
-        emit(s, "authorized_keys_present", "yes" if stat(home + "/.ssh/authorized_keys") else "no", "stat", kind = "semantic")
+        # the sensor hides secret directories: stat of a file inside one gives None, the same as missing
+        ssh_dir = stat(home + "/.ssh")
+        if ssh_dir != None and (ssh_dir.secret or not ssh_dir.readable):
+            emit(s, "authorized_keys_present", "hidden", "stat:" + home + "/.ssh", kind = "semantic")
+        else:
+            emit(s, "authorized_keys_present", "yes" if stat(home + "/.ssh/authorized_keys") else "no", "stat", kind = "semantic")
+        # NixOS declares keys here (users.users.<name>.openssh.authorizedKeys), and sshd reads both
+        emit(s, "authorized_keys_d_present", "yes" if stat("/etc/ssh/authorized_keys.d/" + r["username"]) else "no", "stat", kind = "semantic")
     for f in SUDOERS + glob(SUDOERS_GLOB):
         st = stat(f)
         if st == None or not st.readable or f.endswith("README"):
