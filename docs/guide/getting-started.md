@@ -167,20 +167,30 @@ Once per AWS account:
 
 1. Turn on outbound identity federation: `aws iam enable-outbound-web-identity-federation`.
    `aws iam get-outbound-web-identity-federation-info` prints the account's issuer URL.
-2. Allow the instances' role to call `sts:GetWebIdentityToken`:
-   `{"Effect": "Allow", "Action": "sts:GetWebIdentityToken", "Resource": "*"}`.
-3. On the laptop, trust that role's instances (one line; `<account>` is the AWS account id, `<role>` the instance
-   role's name):
+2. Allow each role whose instances should be sensors to call `sts:GetWebIdentityToken` for beat's audience:
+
+```
+{"Effect": "Allow", "Action": "sts:GetWebIdentityToken", "Resource": "*",
+ "Condition": {"ForAllValues:StringEquals": {"sts:IdentityTokenAudience": ["beat-enroll"]},
+               "NumericLessThanEquals": {"sts:DurationSeconds": 300}}}
+```
+
+3. On the laptop, trust the account's instances (one line; `<account>` is the AWS account id):
 
 ```
 A='https://sts.amazonaws.com/'
 beat org trust add aws --issuer <issuer URL from 1> \
-    --claim "$A/aws_account=<account>" --claim "$A/principal_id=arn:aws:iam::<account>:role/<role>" \
-    --name-from "$A/ec2_source_instance_arn"
+    --claim "$A/aws_account=<account>" --name-from "$A/ec2_source_instance_arn"
 ```
 
-Name the role: the account's issuer signs for every principal in it, people's sessions too. Each sensor is named
-by its instance id.
+This is per account, not per host or role: every instance whose role has the permission from 2 enrols, now and
+later. That permission is what makes a role's instances sensors, so it is decided in IAM, with your other roles. Only
+an instance's token names an instance (`ec2_source_instance_arn`): a person's session with the permission is refused.
+Each sensor is named by its instance id.
+
+Stricter, if not everyone who manages IAM in the account should decide what is a sensor: name the roles in the
+trust instead, one policy per role, `--claim "$A/principal_id=arn:aws:iam::<account>:role/<role>"` added to the
+line (a policy's claims must all match).
 
 Then `beat sensors add --attest aws` prints the configure line, the same for every instance: run it on each (by
 hand, user data, or your configuration management). Each enrols at once.
