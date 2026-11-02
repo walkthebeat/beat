@@ -1,6 +1,6 @@
 # A tag v<release> (pyproject.toml `version`, which flake.nix reads as `release`: one version for the client and the
-# sensor) publishes the sensor's image and installer as a GitHub release. The image is
-# built to be reproducible: anyone can build `.#beat-sensor-image` at the tag and compare beat-sensor.roothash.
+# sensor) publishes the sensor's image and installer as a GitHub release. The image is meant to be reproducible
+# (anyone builds `.#beat-sensor-image` at the tag and compares beat-sensor.roothash); not yet: docs/reproducibility.md.
 name: release
 on:
   push:
@@ -48,7 +48,7 @@ jobs:
 
               curl -fsSL https://github.com/${{ github.repository }}/releases/download/$GITHUB_REF_NAME/install.sh | sudo sh
 
-          The image's root hash: \`$(cat dist/beat-sensor.roothash)\`. Build \`.#beat-sensor-image\` at this tag and
-          compare: equal hashes mean this image is what the source builds.
+          The image's root hash: \`$(cat dist/beat-sensor.roothash)\`. Not yet reproducible bit for bit: a rebuild
+          at this tag can differ in a few eBPF tools' type order (docs/reproducibility.md).
           NOTES
           gh release create "$GITHUB_REF_NAME" dist/* --title "beat-sensor $RELEASE" --notes-file notes.md

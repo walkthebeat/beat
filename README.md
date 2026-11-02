@@ -47,9 +47,10 @@ nix build .#beat-sensor-image    # the sensor's image and installer, for a host 
 nix flake check                  # every test
 ```
 
-**The image is built to be reproducible:** build `.#beat-sensor-image` from a release's tag and compare
-`beat-sensor.roothash` with the release's. Equal root hashes mean the image you install is the one this source
-builds.
+**The image is meant to be reproducible, and is not yet:** building `.#beat-sensor-image` from a release's tag
+should give the release's `beat-sensor.roothash`, so that equal root hashes prove the image you install is the one
+this source builds. Today a few of the eBPF tools inside it can differ in the order of their type information, a bug
+in LLVM's BPF backend; everything else matches. `docs/reproducibility.md` tells the story and what is left.
 
 Without Nix: `cargo build --release` in `sensor/` and `probe/` (Rust stable), `uv sync` for the client (Python 3.12).
 

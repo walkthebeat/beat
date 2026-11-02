@@ -55,15 +55,17 @@
       # derivation (probeDeps, rebuilt only when Cargo.lock changes); the package skips the tests, which are the check
       # beat-probe-test: the probes in probe/tests against a fixture host, with the real tools behind pipe() and
       # osqueryi behind osq().
-      probeArgs = { pname = "beat-probe"; version = release; src = ./probe; strictDeps = true; };
-      sensorArgs = { pname = "beat-sensor-bin"; version = release; src = ./sensor; strictDeps = true; };
+      probeArgs = { pname = "beat-probe"; version = release; src = ./probe; strictDeps = true; env = wasm.reproducible; };
+      sensorArgs = { pname = "beat-sensor-bin"; version = release; src = ./sensor; strictDeps = true; env = wasm.reproducible; };
       probeDeps = craneLib.buildDepsOnly probeArgs;
       sensorDeps = craneLib.buildDepsOnly sensorArgs;
       probe = craneLib.buildPackage (probeArgs // { cargoArtifacts = probeDeps; doCheck = false; });
       probeTest = craneLib.cargoTest (probeArgs // {
         cargoArtifacts = probeDeps;
-        env.BEAT_WASM_TOOLS = "${wasm.tools}"; # all of them: the log built-ins need drain.wasm
-        env.BEAT_OSQUERYI = "${pkgs.osquery}/bin/osqueryi"; # the osq() test
+        env = probeArgs.env // {
+          BEAT_WASM_TOOLS = "${wasm.tools}"; # all of them: the log built-ins need drain.wasm
+          BEAT_OSQUERYI = "${pkgs.osquery}/bin/osqueryi"; # the osq() test
+        };
       });
 
       # --- beat-sensor: the sensor with its probe, tools, osquery and eBPF catalog ----------------------------------
@@ -76,7 +78,7 @@
       # The sensor's tests, with the protocol's test vectors (tests/, shared with the client's tests).
       sensorTest = craneLib.cargoTest (sensorArgs // {
         cargoArtifacts = sensorDeps;
-        env.BEAT_TEST_VECTORS = "${./tests}";
+        env = sensorArgs.env // { BEAT_TEST_VECTORS = "${./tests}"; };
       });
       libbpfTools = pkgs.callPackage ./sensor/libbpf-tools.nix { }; # the catalog behind trace()
       sensor = pkgs.stdenvNoCC.mkDerivation {

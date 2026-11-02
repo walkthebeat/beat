@@ -12,9 +12,21 @@ let
   # crane over the same toolchain: dependencies and our crates in separate derivations (flake.nix, decision B1)
   craneLib = (crane.mkLib pkgs).overrideToolchain (_: rust);
 
+  # Reproducible across Nix installations: rustc writes the build directory into binaries (panic locations, build
+  # scripts' OUT_DIR), and that directory is /build under Determinate Nix but /nix/var/nix/builds/nix-<pid>-<random>
+  # under upstream Nix (GitHub's runner): v0.3.0's image differed by exactly that. Every Rust build here runs rustc
+  # through this wrapper, which maps the directory to /build. A wrapper, not RUSTFLAGS: cargo fingerprints RUSTFLAGS,
+  # so a per-build path there would make crane's package build recompile every dependency.
+  remap = pkgs.writeShellScript "rustc-remap-build-dir" ''
+    rustc="$1"; shift
+    exec "$rustc" ''${NIX_BUILD_TOP:+--remap-path-prefix=$NIX_BUILD_TOP=/build} "$@"
+  '';
+  reproducible = { RUSTC_WRAPPER = "${remap}"; };
+
   # cargo build --target wasm32-wasip1 over vendored dependencies; installs the named binaries as $out/<name>.wasm.
   buildWasm = { pname, version, src, cargoDeps, bins, cargoFlags ? "" }: pkgs.stdenv.mkDerivation {
     inherit pname version src cargoDeps;
+    env = reproducible;
     nativeBuildInputs = [ rust pkgs.rustPlatform.cargoSetupHook ];
     buildPhase = ''
       runHook preBuild
@@ -28,7 +40,7 @@ let
   };
 in
 rec {
-  inherit rust craneLib;
+  inherit rust craneLib reproducible;
 
   # Stage 0: one program that tries files, environment, processes, network and resource use (wasm/demo).
   demo = buildWasm {
@@ -90,7 +102,7 @@ rec {
 
   # drain: log template summaries (docs/security.md C21), ours, over the pinned drain3 crate (wasm/drain).
   # crane, as the native crates: the dependencies (drain3, regex, serde_json) are built once per Cargo.lock.
-  drainArgs = { pname = "beat-drain"; version = "0.1.0"; src = ./drain; strictDeps = true; };
+  drainArgs = { pname = "beat-drain"; version = "0.1.0"; src = ./drain; strictDeps = true; env = reproducible; };
   drainWasmArgs = drainArgs // { CARGO_BUILD_TARGET = target; doCheck = false; };
   drainDeps = craneLib.buildDepsOnly drainWasmArgs;
   drain = craneLib.buildPackage (drainWasmArgs // {

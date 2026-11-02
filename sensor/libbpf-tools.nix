@@ -18,9 +18,13 @@ stdenv.mkDerivation {
   hardeningDisable = [ "all" ];
   # Each catalog entry names one of these (probe/src/catalog.rs).
   apps = "biolatency runqlat execsnoop opensnoop tcpconnect tcplife offcputime cpudist syscount";
+  # The BPF objects' BTF names their source files: relative to libbpf-tools/, not the build directory (and not mapped
+  # to /build: LLVM reads the source lines back through the mapped path). Their type order is not yet reproducible
+  # (docs/reproducibility.md).
   buildPhase = ''
     cd libbpf-tools
-    make -j$NIX_BUILD_CORES V=1 USE_BLAZESYM=0 BPFTOOL=bpftool CLANG="clang -idirafter ${linuxHeaders}/include" LLVM_STRIP=llvm-strip APPS="$apps" APP_ALIASES=
+    make -j$NIX_BUILD_CORES V=1 USE_BLAZESYM=0 BPFTOOL=bpftool LLVM_STRIP=llvm-strip APPS="$apps" APP_ALIASES= \
+      CLANG="clang -idirafter ${linuxHeaders}/include -ffile-prefix-map=$PWD=."
   '';
   installPhase = ''
     mkdir -p $out/bin
