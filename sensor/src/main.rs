@@ -50,7 +50,10 @@ use serde_json::json;
 
 use runner::Runner;
 
-const VERSION: &str = concat!("beat-sensor/", env!("CARGO_PKG_VERSION"));
+/// The release (pyproject.toml's, which the flake passes in); a cargo build has only the crate's version.
+static VERSION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    format!("beat-sensor/{}", option_env!("BEAT_RELEASE").unwrap_or(env!("CARGO_PKG_VERSION")))
+});
 const MAX_TIMEOUT_S: u64 = 300;
 const HEARTBEAT: Duration = Duration::from_secs(10);
 const ACK_AFTER: Duration = Duration::from_secs(1); // short questions answer before this: no ack
@@ -489,6 +492,11 @@ async fn heartbeat(cfg: Arc<Config>, js: jetstream::Context) {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let argv: Vec<String> = std::env::args().skip(1).collect();
+    if argv == ["--version"] {
+        // alone, the operator's question; with a value, the version the service reports (beat-sensor-run)
+        println!("{}", *VERSION);
+        return Ok(());
+    }
     if argv.first().map(String::as_str) == Some("keygen") {
         let path = argv.get(1).context("usage: beat-sensor keygen FILE")?;
         println!("{}", seal::keygen(std::path::Path::new(path))?);
@@ -496,10 +504,10 @@ async fn main() -> anyhow::Result<()> {
     }
     if argv.first().map(String::as_str) == Some("enroll") {
         // blocking HTTP, before anything else runs on the runtime
-        return tokio::task::block_in_place(|| enroll::run(&argv[1..], VERSION));
+        return tokio::task::block_in_place(|| enroll::run(&argv[1..], &VERSION));
     }
     if argv.first().map(String::as_str) == Some("configure") {
-        return tokio::task::block_in_place(|| configure::run(&argv[1..], VERSION));
+        return tokio::task::block_in_place(|| configure::run(&argv[1..], &VERSION));
     }
     let cfg = Arc::new(parse(&argv)?);
     // Its own login (bus.rs): a JWT for its key from the API, renewed at half life, handed over at every connection.

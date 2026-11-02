@@ -74,6 +74,7 @@
       sensorBin = craneLib.buildPackage (sensorArgs // {
         cargoArtifacts = sensorDeps;
         doCheck = false; # the check beat-sensor-test
+        env = sensorArgs.env // { BEAT_RELEASE = release; }; # what --version says, and enrolment reports
       });
       # The sensor's tests, with the protocol's test vectors (tests/, shared with the client's tests).
       sensorTest = craneLib.cargoTest (sensorArgs // {
