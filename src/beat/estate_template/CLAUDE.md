@@ -5,6 +5,12 @@ review and watch these hosts. You reach them only through the `beat` MCP tools a
 read-only: nothing you do can change a host, and you must not try any other way in (no ssh, no cloud consoles, no
 scripts against hosts).
 
+## One org
+
+This repository holds one org's facts: `beat.json` names the service and the org, and `@BEAT@` and the MCP tools refuse
+anything else from here. `inventory` says which org its answers are. If a command refuses because of the org, stop and
+tell the SRE what it said. Do not edit `beat.json` or run from another directory to get past it.
+
 ## Which tool for which question
 
 beat does the comparing, counting and log grouping for you; your job is to ask the right question of the right

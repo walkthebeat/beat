@@ -27,9 +27,13 @@ def _version() -> str:
 def _main() -> None:
     ap = argparse.ArgumentParser(prog="beat")
     ap.add_argument("--version", action="version", version=f"beat {_version()}")
+    ap.add_argument("--org", dest="say_org", metavar="ID", help="the org this command is in, when several are signed in "
+                    "and no estate's beat.json says (also BEAT_ORG); it may not contradict the estate's")
     sub = ap.add_subparsers(dest="cmd", required=True)
     ei = sub.add_parser("init", help="create an estate repository (git)")
     ei.add_argument("dir", nargs="?", default=".", help="a new or empty directory (default: this one)")
+    ei.add_argument("--org", metavar="ID", help="the org this estate is pinned to (beat.json); needed when several are "
+                    "signed in here")
     er = sub.add_parser("run", help="run a probe on hosts; records go to hosts/<host>/facts/<probe>.jsonl "
                         "in the estate repo here, committed if they changed")
     er.add_argument("probe", help="probes/<name>.star by name, or a .star file")
@@ -57,10 +61,14 @@ def _main() -> None:
                         "service trusts), then this machine's login is kept and renewed (login.py)")
     lg.add_argument("url", nargs="?", help="the service (https://HOST, or http://HOST:8480), kept as this machine's "
                     "from then on; without it, the one kept, else https://api.walkthebeat.ai (BEAT_API, when set, wins over all)")
+    lg.add_argument("--org", metavar="ID", help="sign in to this org; without it, the estate's here, else you choose "
+                    "when approving. A machine keeps one login per org")
     wh = sub.add_parser("whoami", help="who this machine is signed in as, as the service sees it, and which service")
     wh.add_argument("--sensor-api", action="store_true", help="print only the URL the org's sensors call (their "
                     "--api: the service's, with /o/<org>), for scripts")
-    sub.add_parser("logout", help="forget this machine's login to its service, and revoke it")
+    lo = sub.add_parser("logout", help="forget this machine's login to its service in this org, and revoke it")
+    lo.add_argument("--org", metavar="ID", help="that org's login")
+    lo.add_argument("--all", action="store_true", help="every org's login to this service")
     sn = sub.add_parser("sensors", help="list the live sensors (the NATS directory); `add`: the command that "
                         "configures a host's sensor for this service and org; `pending`, `approve CODE`, `deny CODE`: "
                         "sensors asking to join (beat-sensor configure or enroll on the host); `remove NAME`: "
@@ -83,12 +91,13 @@ def _main() -> None:
                         "service: `org trust` lists its trust policies, which "
                         "admit sensors by an identity their platform gives them (docs/security.md H13); `org trust add "
                         "NAME --issuer URL --name-from CLAIM`, `org trust remove NAME`")
-    og.add_argument("what", choices=["init", "trust"])
+    og.add_argument("what", choices=["init", "trust", "list", "pin"], help="also `list`: the orgs signed in on this "
+                    "machine; `pin [ID]`: pin this estate repository to an org (beat.json, committed)")
     og.add_argument("--keep", action="store_true", help="init: also keep the root on this machine (BEAT_KEYS/org): "
                     "credentials renew silently, and whoever gets this machine's files can certify anyone")
     og.add_argument("--force", action="store_true", help="init: even when the org's sensors already pin a root (a "
                     "second root: every host must be configured again to trust it)")
-    og.add_argument("action", nargs="?", choices=["add", "remove"])
+    og.add_argument("action", nargs="?", help="trust: add or remove; pin: the org's id")
     og.add_argument("name", nargs="?", help="the policy's name")
     og.add_argument("--issuer", help="add: the OIDC issuer, as tokens name it in iss (a cluster's, a cloud's)")
     og.add_argument("--audience", help="add: what the platform was told the token is for (default beat-enroll)")
@@ -177,6 +186,11 @@ def _main() -> None:
     cr.add_argument("--name", help="init: the member's name (default: the login's subject, else user@host)")
     cr.add_argument("--days", type=int, default=30, help="init: how long it lasts (default 30, at most 90)")
     a = ap.parse_args()
+    said = a.say_org or getattr(a, "org", None)
+    if a.say_org and getattr(a, "org", None) and a.say_org != a.org:
+        raise SystemExit(f"error: two orgs given, {a.say_org} and {a.org}")
+    if said:
+        os.environ["BEAT_ORG"] = said  # what login.wanted reads: one path for the flag, the variable and beat-mcp
 
     if a.cmd in ("login", "whoami", "logout"):
         return _login(a)
@@ -207,6 +221,12 @@ def _main() -> None:
 
     if a.cmd == "org" and a.what == "init":
         return _org_init(a)
+
+    if a.cmd == "org" and a.what == "list":
+        return _org_list()
+
+    if a.cmd == "org" and a.what == "pin":
+        return _org_pin(a)
 
     if a.cmd == "org":
         return _trust(a)
@@ -651,6 +671,8 @@ def _trust(a) -> None:
     import json
     from . import ask
 
+    if a.action not in (None, "add", "remove"):
+        raise SystemExit(f"error: `beat org trust` takes add or remove, not {a.action!r}")
     if a.action is None:
         policies = asyncio.run(ask.api("trust.list"))["policies"]
         for p in policies:
@@ -707,9 +729,13 @@ def configure_line(token_file: str | None = None, attest: str | None = None) -> 
     if not keys:
         raise SystemExit(f"error: {seal.NO_MEMBER}")
     try:
-        api = sensor_api(asyncio.run(ask.whoami()))
+        me = asyncio.run(ask.whoami())
     except RuntimeError as e:
         raise SystemExit(f"error: {e}")
+    api = sensor_api(me)
+    if me.get("org"):  # stderr: the line itself may be going into a script
+        print(f"For org {me['org_name']} ({me['org']}):" if me.get("org_name") else f"For org {me['org']}:",
+              file=sys.stderr)
     flags = " ".join(f"--org-root {n}={k}" for n, k in keys.items())
     token = (f" \\\n    --token-file {token_file}" if token_file else "") + (f" \\\n    --attest {attest}" if attest else "")
     return f"sudo /opt/beat-sensor/current/bin/beat-sensor configure --api {api} \\\n    {flags}{token}"
@@ -726,8 +752,11 @@ def _login(a) -> None:
             login.login(a.url)
             print("")
         elif a.cmd == "logout":
-            e = login.logout()
-            print(f"signed out of {wire.api_url()}" if e else f"not signed in to {wire.api_url()}")
+            gone = login.logout(everyone=a.all)
+            for e in gone:
+                print(f"signed out of {wire.api_url()}, org {login.org_of(e) or '?'}")
+            if not gone:
+                print(f"not signed in to {wire.api_url()}")
             return
         me = asyncio.run(ask.whoami())
     except RuntimeError as e:
@@ -735,10 +764,15 @@ def _login(a) -> None:
     if getattr(a, "sensor_api", False):
         print(sensor_api(me))
         return
-    print(f"Signed in to {wire.api_url()} as {me.get('sub')}" + (f", org {me['org']}" if me.get("org") else "")
+    org_label = f"{me['org_name']} ({me['org']})" if me.get("org_name") else me.get("org")
+    print(f"Signed in to {wire.api_url()} as {me.get('sub')}" + (f", org {org_label}" if org_label else "")
           + (f", role {me['role']}" if me.get("role") else "") + (f" (issuer {me['iss']})" if me.get("iss") else ""))
     if me.get("sensor_api"):
         print(f"  the org's sensors call {sensor_api(me)} (beat sensors add)")
+    print(f"  this org: {login.resolve()[1]}")
+    others = [o for o in login.logins_here() if o["org"] != me.get("org")]
+    if others:
+        print("  also signed in here: " + ", ".join(_org_label(o) for o in others))
     why = wire.api_source()[1]
     print("  the service: " + ("BEAT_API's" if why == "BEAT_API" else "walkthebeat's (the default; `beat login URL` changes it)"
                                if why == "the default" else f"kept in {why} (`beat login URL` changes it)"))
@@ -934,6 +968,37 @@ def paste_root() -> tuple:
     return seal.parse_root(getpass.getpass("Paste your org root (the beat-org-root:... line; it is not shown): "))
 
 
+def _org_label(o: dict) -> str:
+    return f"{o['org_name']} ({o['org']})" if o.get("org_name") else str(o["org"])
+
+
+def _org_list() -> None:
+    """`beat org list`: this machine's logins (local). All your orgs are on the portal's account page."""
+    from . import login, wire
+    here = login.logins_here()
+    try:
+        current = login.resolve()[0]
+    except login.OrgRefused:
+        current = None
+    for o in here:
+        print(("* " if o["org"] == current else "  ") + _org_label(o))
+    if not here:
+        print(f"not signed in to {wire.api_url()}: `beat login`")
+
+
+def _org_pin(a) -> None:
+    """`beat org pin [ID]`: which org this estate repository is, on purpose (estate.py)."""
+    from . import estate, login
+    repo = estate.root()
+    org = a.action or os.environ.get("BEAT_ORG") or login.org_for_new_estate()
+    if not org:
+        raise SystemExit("error: which org? `beat org pin ID` (`beat org list`)")
+    if not login.ORG.match(org):
+        raise SystemExit(f"error: {org!r} is not an org id")
+    estate.write_pin(repo, org, f"This estate is org {org}")
+    print(f"{repo}: org {org} ({repo / login.PIN})")
+
+
 def _org_init(a) -> None:
     """`beat org init`: the org's root, made once (docs/security.md H16, where the root lives): shown once to keep in a password
     manager, pasted back to prove it was kept, this machine certified with it, and forgotten unless --keep."""
@@ -958,7 +1023,8 @@ def _org_init(a) -> None:
     # the date and the key's fingerprint: two roots of one org never share a name (hosts pin roots by name)
     name = f"{time.strftime('%Y%m%d', time.gmtime())}-{seal.fingerprint(seal.public_raw(key))[:4]}"
     line = seal.root_line(name, key)
-    print(f"Your org's root, {name}. Sensors trust questions only from members it certified.\n")
+    label = f"{me['org_name']} ({me['org']})" if me.get("org_name") else me.get("org", "")
+    print(f"The root of org {label}, {name}. Its sensors trust questions only from members it certified.\n")
     print(f"  {line}\n")
     print("Save this line now in your password manager (any will do: it is one line of text, a password or a note).")
     print("It is shown once" + (" and also kept on this machine (--keep)." if a.keep else

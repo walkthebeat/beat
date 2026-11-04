@@ -28,7 +28,7 @@ import urllib.request
 from pathlib import Path
 
 
-from . import login, seal, wire
+from . import estate, login, seal, wire
 
 async def sensors(untrusted: bool = False) -> dict[str, dict]:
     """The directory: live sensors by name, the trusted ones (enrolled and fresh, as the service checks them:
@@ -65,6 +65,7 @@ async def ask(name: str, source: str, hosts: list[str] | None = None, timeout: i
     sensor, answer}}, down, no_answer, running (not decided when the wait ended), not_live (expected hosts with no
     directory entry when asked: down from the start), live, sealed, behind (the collector's backlog, messages) and
     standing (what it all says, ask.standing)."""
+    estate.pin_on_first_use()
     try:
         key, cred = seal.member()
     except seal.Refused as e:  # no credential here, or expired (no root on this machine): `beat creds init`

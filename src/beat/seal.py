@@ -34,8 +34,9 @@ sensor/src/seal.rs; tests/seal_vectors.json keeps both sides in step.
   one from the root pasted or read (`root_line`, `parse_root`, `new_member`), and keeps the root's public half
   next to it (root.pub: what `beat sensors add` gives hosts to pin).
 
-Keys on disk, raw 32-byte keys in base64, one per file, split by owner. The client's (BEAT_KEYS, default
-~/.local/share/beat/keys):
+Keys on disk, raw 32-byte keys in base64, one per file, split by owner. A machine signed in to several orgs keeps
+each org's under orgs/<org>/ of both directories below, in the same layout, and an org's root and credential are never
+another's (login.org_home, adopt_flat; docs/hosted.md H21). The client's (BEAT_KEYS, default ~/.local/share/beat/keys):
   org/<name>.key, .pub           the org's root keys (a Keyring): `org/current` names the one that certifies members
                                  (only when kept here: `beat org init --keep`); every .pub here is pinned by the sensors
                                  (/etc/beat-sensor/roots/<name>.pub, `beat-sensor configure --org-root`)
@@ -80,18 +81,46 @@ class Refused(ValueError):
     """A message that is not signed by whom it must be, or cannot be opened."""
 
 
-def keys_dir() -> Path:
-    """The client's keys: the org's root keys."""
+def _keys_base() -> Path:
     return Path(os.environ.get("BEAT_KEYS") or DEFAULT_KEYS)
 
 
-def ccache_dir() -> Path:
-    """The member key and credential (as Kerberos's ccache, KRB5CCNAME): BEAT_CCACHE, else $XDG_RUNTIME_DIR/beat, else
-    ~/.cache/beat/creds. Never /tmp: shared, so a predictable name there can be made by someone else first."""
+def _ccache_base() -> Path:
     if os.environ.get("BEAT_CCACHE"):
         return Path(os.environ["BEAT_CCACHE"])
     run = os.environ.get("XDG_RUNTIME_DIR")
     return Path(run) / "beat" if run else Path.home() / ".cache/beat/creds"
+
+
+def keys_dir() -> Path:
+    """The client's keys: the root keys of the org this command is in (login.org_home)."""
+    from . import login
+    return login.org_home(_keys_base())
+
+
+def ccache_dir() -> Path:
+    """The member key and credential of the org this command is in (as Kerberos's ccache, KRB5CCNAME; login.org_home):
+    BEAT_CCACHE, else $XDG_RUNTIME_DIR/beat, else ~/.cache/beat/creds. Never /tmp: shared, so a predictable name there
+    can be made by someone else first."""
+    from . import login
+    return login.org_home(_ccache_base())
+
+
+def adopt_flat(org: str) -> list[str]:
+    """Gives the files at the top of both directories to `org`, under orgs/<org>/: an older client's layout, and one
+    org's, moved when it stops being the only one, so `beat org init` or `beat creds init` in the next org cannot
+    replace them. A file already there stays. If `org` is a wrong guess it fails closed: sensors refuse the root.
+    Returns the directories that got something."""
+    moved = []
+    for base, names in ((_keys_base(), ("org",)), (_ccache_base(), ("key", "credential", "root.pub"))):
+        d = base / "orgs" / org
+        for n in names:
+            if (base / n).exists() and not (d / n).exists():
+                d.mkdir(mode=0o700, parents=True, exist_ok=True)
+                (base / n).rename(d / n)
+                if str(d) not in moved:
+                    moved.append(str(d))
+    return moved
 
 
 def _cache(cache: Path | None) -> Path:
