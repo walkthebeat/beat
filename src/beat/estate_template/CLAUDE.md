@@ -64,7 +64,8 @@ expiring, unsourced) are drawn here, from the records, not inside probes.
   probes that apply. Explore live (`run`) for what those do not answer.
 - An annotation that contradicts observed facts is a finding: report it, do not silently prefer either.
 - A host that is up (heartbeating) and did not answer (`no_answer`) is a finding, as a stalled worker is: look into
-  it. Many at once points at beat or the bus first. A survey that is not complete (the collector is behind) is beat
+  it. Many at once points at beat or the bus first. If the reply carries `service_loss`, the service dropped messages
+  unread while the survey was open: ask again before looking into those hosts. A survey that is not complete (the collector is behind) is beat
   being slow: wait and read it again before analysing it.
 - Never put secret material into any file or record: private keys, password hashes, tokens, keytab contents, and
   passwords in configuration files or connection strings (emit `password=<set>`, never the value; do not print

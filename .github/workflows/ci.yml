@@ -27,3 +27,33 @@ jobs:
           gc-max-store-size-linux: 8G
       - run: nix flake check -L
       - run: nix build .#beat-sensor-image -L && cat result/beat-sensor.roothash
+
+  # What a question must keep being able to do to debug a host (sensor/src/runner.rs, debugging_regression): real
+  # systemd units, real tools and osquery, as root, which a flake check's sandbox cannot give. Its own job, so that it does
+  # not lengthen `check`: a security change must not take a debugging move away unnoticed.
+  debugging-regression:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: nixbuild/nix-quick-install-action@v35
+        with:
+          nix_conf: |
+            keep-env-derivations = true
+            keep-outputs = true
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-store-regression-${{ runner.os }}-${{ hashFiles('flake.lock', '**/Cargo.lock', 'uv.lock') }}
+          restore-prefixes-first-match: nix-store-regression-${{ runner.os }}-
+          gc-max-store-size-linux: 8G
+      - run: |
+          probe=$(nix build .#beat-probe --no-link --print-out-paths)
+          tools=$(nix build .#wasm-tools --no-link --print-out-paths)
+          osq=$(nix build nixpkgs#osquery --no-link --print-out-paths --inputs-from .)
+          test=$(cd sensor && nix develop .. --command cargo test --no-run --message-format=json 2>/dev/null \
+            | python3 -c 'import json,sys
+          for l in sys.stdin:
+              m = json.loads(l)
+              if m.get("executable") and m.get("profile", {}).get("test"): print(m["executable"])' | tail -1)
+          sudo mkdir -p /var/lib/beat-regression-cache
+          sudo env BEAT_TEST_PROBE="$probe/bin/beat-probe" BEAT_TEST_TOOLS="$tools" BEAT_TEST_CACHE=/var/lib/beat-regression-cache \
+            BEAT_TEST_OSQUERYI="$osq/bin/osqueryi" BEAT_TEST_PACK="$PWD/src/beat/pack" "$test" debugging_regression --ignored --nocapture

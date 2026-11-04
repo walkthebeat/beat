@@ -107,15 +107,20 @@ async def ask(name: str, source: str, hosts: list[str] | None = None, timeout: i
             blobs[h] = json.loads(await blob(h) or b"null")
         answers[t["target"]] = {"answer_hash": h, "outcome": t["outcome"], "started": t["started"],
                                 "finished": t["finished"], "sensor": t["sensor_version"], "answer": blobs[h]}
+        if t.get("phases"):  # where its time went (Beat-Phases): an older service or sensor has none
+            answers[t["target"]]["phases"] = t["phases"]
     by = lambda *states: [t["target"] for t in g["targets"] if t["outcome"] in states]  # noqa: E731
     out = {"survey": survey, "question": r["question"], "expected": r["expected"], "answers": answers,
            "down": by("down"), "no_answer": by("no_answer"), "running": by("pending", "running"),
            "not_live": r["not_live"], "live": r["live"], "sealed": bool(g["survey"].get("sealed_at")),
-           "behind": (g.get("collector") or {}).get("behind") or 0}
+           "behind": (g.get("collector") or {}).get("behind") or 0,
+           "maybe_lost": [t["target"] for t in g["targets"] if t.get("maybe_lost")]}
+    if g.get("service_loss"):
+        out["service_loss"] = g["service_loss"]
     counts: dict = {}
     for t in g["targets"]:
         counts[t["outcome"]] = counts.get(t["outcome"], 0) + 1
-    out["standing"] = standing(counts, out["sealed"], out["behind"])
+    out["standing"] = standing(counts, out["sealed"], out["behind"], out.get("service_loss"))
     return out
 
 
@@ -146,10 +151,11 @@ LATE_S = 300   # how long `ask` waits past the deadline for a collector that is 
 SETTLE_S = 5   # and once it has caught up, for the seal (it decides at its next idle check, within 2 s)
 
 
-def standing(counts: dict, sealed: bool, behind: int = 0) -> list[str]:
+def standing(counts: dict, sealed: bool, behind: int = 0, service_loss: dict | None = None) -> list[str]:
     """What a survey's outcome counts say, in words, for people and agents (C25). An up sensor answers, so every one
     that did not is a finding. Where a pattern of them points: many at once (a tenth of the targets or more, a default
-    to revise with data) points at beat or the bus before the hosts; many down at once at the estate."""
+    to revise with data) points at beat or the bus before the hosts; many down at once at the estate. `service_loss`:
+    the service dropped messages unread while the survey was open (H23), whatever the count: that points at beat."""
     n = sum(counts.values())
     undecided = counts.get("pending", 0) + counts.get("running", 0)
     no_answer = counts.get("no_answer", 0) + counts.get("silent", 0) + counts.get("lost", 0)  # the last two: pre-C25
@@ -164,7 +170,10 @@ def standing(counts: dict, sealed: bool, behind: int = 0) -> list[str]:
     if no_answer:
         out.append(f"{no_answer} of {n} up (heartbeating) but did not answer by the deadline: an up sensor answers, "
                    "so each is a finding to investigate"
-                   + ("; this many at once points at beat (the bus, the sensors' queues) before the hosts"
+                   + (f"; the service dropped {service_loss.get('messages_dropped', 'some')} messages unread while this "
+                      "survey was open, and theirs may be among them: this points at beat: ask again before looking "
+                      "into those hosts" if service_loss else
+                      "; this many at once points at beat (the bus, the sensors' queues) before the hosts"
                       if many(no_answer) else "; look at those sensors and their hosts (load, the sensor's queue)"))
     if down:
         out.append(f"{down} of {n} down (no fresh heartbeat in the directory)"
@@ -172,10 +181,32 @@ def standing(counts: dict, sealed: bool, behind: int = 0) -> list[str]:
     return out
 
 
+def secret_walk_note(walk: dict | None) -> str:
+    """What a heartbeat's `secret_walk` needs a reader to know, or "": nothing when it covered all it should. Skipped
+    or cut trees were not looked in for secret files (docs/security.md)."""
+    if not walk:
+        return ""
+    parts = []
+    if walk.get("error"):
+        parts.append(f"walk failing: {walk['error']}")
+    elif not walk.get("at"):
+        parts.append("first walk not finished")
+    if walk.get("cut"):
+        parts.append(f"walk cut short: {walk['cut']}")
+    for name, key in (("not looked in", "skipped"), ("not covered", "uncovered")):
+        if walk.get(key):  # skipped: [path, why] pairs; uncovered: paths
+            parts.append(f"{name}: " + ", ".join(f"{i[0]} ({i[1]})" if isinstance(i, list) else str(i) for i in walk[key]))
+    return "; ".join(parts)
+
+
 def why_not(survey: dict, host: str) -> str:
     """Why `host` has no answer in `survey`, for people."""
     if host in survey.get("not_live", []):
         return "down: " + not_live_reason(host, survey.get("live", []))
+    if host in survey.get("maybe_lost", []):
+        return ("up (heartbeating) with no recorded answer, and the service dropped messages unread while this survey "
+                "was open: its answer may be among them. This points at beat, not the host: ask again before looking "
+                "into it")
     if host in survey.get("no_answer", []):
         return ("up (heartbeating) but did not answer by the deadline: an up sensor answers, so this is a finding: "
                 "look at the sensor and the host (its load, the sensor's queue)")
@@ -284,7 +315,8 @@ async def dataset(name: str, source: str, hosts: list[str] | None = None, timeou
 def dataset_standing(p: dict) -> dict:
     """The pointer with `standing` (ask.standing): whether the dataset is complete, and what its outcomes point at."""
     if "outcomes" in p:
-        p["standing"] = standing(p["outcomes"], p.get("sealed", False), (p.get("collector") or {}).get("behind") or 0)
+        p["standing"] = standing(p["outcomes"], p.get("sealed", False), (p.get("collector") or {}).get("behind") or 0,
+                                p.get("service_loss"))
     return p
 
 

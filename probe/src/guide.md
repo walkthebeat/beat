@@ -153,7 +153,8 @@ Text (pure):
   enumerate, dict, list comprehensions, "%s" % x. No while loops, no recursion.
 
 Tools (WebAssembly programs; arguments are passed as given, never through a shell). A tool has /proc's own files and
-/proc/sys, not /proc/<pid>: pipe(["wc", "-l"], stdin = read("/proc/1/mounts")):
+/proc/sys, not /proc/<pid>, nor / itself (list_dir("/")); a path through a symlink out of its top-level directory, such
+as /etc/os-release, works when it is a whole argument: pipe(["wc", "-l"], stdin = read("/proc/1/mounts")):
   <tool>(*args, stdin="") -> struct   .stdout .stderr .status (list of exit codes) .ok
   pipe([tool, arg...], [tool, arg...], stdin="")   the same, stdout of each into the next
   A non-zero exit is a value, not a failure: check .ok or .status yourself.

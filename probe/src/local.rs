@@ -53,8 +53,9 @@ const LINKS_MAX: usize = 40;
 /// directory, and /proc/<pid> must not be. Small files that do not block; not kcore, kmsg, kallsyms or pagemap.
 const PROC_FILES: &[&str] = &["buddyinfo", "cgroups", "cmdline", "consoles", "cpuinfo", "crypto", "devices", "diskstats",
                               "execdomains", "filesystems", "interrupts", "iomem", "ioports", "loadavg", "locks", "meminfo",
-                              "misc", "modules", "pagetypeinfo", "partitions", "schedstat", "slabinfo", "softirqs", "stat",
+                              "misc", "modules", "mounts", "pagetypeinfo", "partitions", "schedstat", "slabinfo", "softirqs", "stat",
                               "swaps", "uptime", "version", "vmallocinfo", "vmstat", "zoneinfo"];
+const ROOT_HINT: &str = "a tool does not see / itself, only what is in it: use list_dir(\"/\") to list it";
 const PROC_HINT: &str = "a tool sees /proc's own files and directories such as /proc/sys, not /proc/<pid>: read the file and pass it in, as pipe([tool, ...], stdin = read(path))";
 
 
@@ -411,6 +412,33 @@ impl LocalHost {
         out
     }
 
+    /// A tool's argument, if it names a path through a symlink out of its top-level directory (/etc/os-release ->
+    /// ../usr/lib/os-release, /etc/resolv.conf, /var/run): the path it leads to. The host is mapped to tools one top-level
+    /// directory at a time (`tool_maps`), and a preopen refuses a link out of itself. The result is a path a tool could
+    /// name anyway, so this opens nothing new; a target in /proc/<pid> stays out, as /proc/self/mounts becomes the copy
+    /// of /proc's own file. Only whole arguments: a path a tool builds, or `--file=/etc/x`, still fails.
+    fn tool_arg(&self, arg: &str) -> String {
+        let unchanged = || arg.to_string();
+        let Some(normal) = arg.starts_with('/').then(|| normalize(arg)).flatten() else { return unchanged() };
+        if normal.starts_with("/proc/") {
+            return unchanged(); // /proc/<pid>/root resolves to "/" in any mount namespace: the wrong file, not a path
+        }
+        let Some(m) = self.maps.iter().find(|m| m.guest == "/") else { return unchanged() };
+        let Ok(root) = m.host.canonicalize() else { return unchanged() };
+        let Ok(real) = m.host.join(normal.trim_start_matches('/')).canonicalize() else { return unchanged() };
+        let Ok(rel) = real.strip_prefix(&root) else { return unchanged() };
+        let target = format!("/{}", rel.display());
+        let top = |p: &str| p.split('/').nth(1).unwrap_or("").to_string();
+        if top(&target) == top(&normal) {
+            return unchanged();
+        }
+        if top(&target) == "proc" {
+            let file = target.rsplit('/').next().unwrap_or("");
+            return if PROC_FILES.contains(&file) { format!("/proc/{file}") } else { unchanged() };
+        }
+        target
+    }
+
     fn id_names(&self, path: &str) -> HashMap<u32, String> {
         let Some((m, rel)) = self.resolve(path) else { return HashMap::new() };
         let Ok(bytes) = m.read(&rel) else { return HashMap::new() };
@@ -573,13 +601,19 @@ impl LocalHost {
 impl Host for LocalHost {
     fn pipe(&self, stages: &[Vec<String>], stdin: &[u8]) -> HostResult<ToolResult> {
         let tools = self.tools.as_ref().ok_or_else(|| HostError::Tool("this host has no WASM tools".into()))?;
+        let stages: Vec<Vec<String>> = stages.iter()
+            .map(|st| st.iter().enumerate().map(|(i, a)| if i == 0 { a.clone() } else { self.tool_arg(a) }).collect())
+            .collect();
         let names_proc = stages.iter().flatten().any(|a| a.contains("/proc"));
+        let names_root = stages.iter().flatten().any(|a| a == "/");
         let copies = if names_proc { self.proc_files() } else { None };
         let maps = self.tool_maps(copies.as_ref());
-        let mut r = tools.pipe(stages, stdin, &maps, &self.limits)?;
-        if names_proc && r.status.iter().any(|s| *s != 0) {
-            r.stderr.push_str(PROC_HINT);
-            r.stderr.push('\n');
+        let mut r = tools.pipe(&stages, stdin, &maps, &self.limits)?;
+        if r.status.iter().any(|s| *s != 0) {
+            for hint in [(names_proc, PROC_HINT), (names_root, ROOT_HINT)].iter().filter(|h| h.0).map(|h| h.1) {
+                r.stderr.push_str(hint);
+                r.stderr.push('\n');
+            }
         }
         Ok(r)
     }
@@ -892,6 +926,44 @@ mod scan_tests {
         assert_eq!(prepared_from_text(text)["/etc/a.key"].0, "key");
         let (_, none) = secrets_from_text("{\"report\":{\"skipped\":[],\"cut_root\":null,\"uncovered\":[]}}\n");
         assert_eq!(none, None, "nothing left out: no note");
+    }
+}
+
+#[cfg(test)]
+mod tool_arg_tests {
+    use super::*;
+
+    #[test]
+    fn a_link_out_of_its_top_level_directory_is_followed_for_the_tool() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("beat-toolarg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for d in ["etc", "usr/lib", "run/x", "var", "proc/self", "proc/7/root/etc"] {
+            std::fs::create_dir_all(root.join(d)).unwrap();
+        }
+        std::fs::write(root.join("usr/lib/os-release"), "NAME=x\n").unwrap();
+        std::fs::write(root.join("run/x/f"), "f").unwrap();
+        std::fs::write(root.join("etc/plain"), "p").unwrap();
+        std::fs::write(root.join("proc/self/mounts"), "m").unwrap();
+        std::fs::write(root.join("proc/self/environ"), "e").unwrap();
+        symlink("../usr/lib/os-release", root.join("etc/os-release")).unwrap();
+        symlink("plain", root.join("etc/inside")).unwrap();
+        symlink("../run", root.join("var/run")).unwrap();
+        symlink("../proc/self/mounts", root.join("etc/mtab")).unwrap();
+        symlink("../proc/self/environ", root.join("etc/env")).unwrap();
+        let h = LocalHost::new(LocalConfig { root: root.clone(), maps: vec!["/".into()], tools: None,
+                                             limits: ToolLimits::default(), osqueryi: None, journalctl: None,
+                                             bpf_tools: None }).unwrap();
+        assert_eq!(h.tool_arg("/etc/os-release"), "/usr/lib/os-release");
+        assert_eq!(h.tool_arg("/var/run/x/f"), "/run/x/f");
+        assert_eq!(h.tool_arg("/etc/mtab"), "/proc/mounts");
+        // Not a way into /proc/<pid>, not rewritten when a tool can follow it itself, not for what is no path.
+        assert_eq!(h.tool_arg("/etc/env"), "/etc/env");
+        assert_eq!(h.tool_arg("/etc/inside"), "/etc/inside");
+        assert_eq!(h.tool_arg("/proc/7/root/etc"), "/proc/7/root/etc");
+        assert_eq!(h.tool_arg("-n"), "-n");
+        assert_eq!(h.tool_arg("/nope"), "/nope");
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }
 

@@ -110,3 +110,8 @@ The collector makes the stream and the buckets; a sensor uses them.
 including the sensor's own `busy` and `too_large`) or **not answered**: **down** (no fresh heartbeat: one every 10 s,
 stale after 35 s) or **up, no answer**. The deadline is the only clock, judged by when a message reached the stream,
 not when it was processed. There is no threshold: every up sensor that did not answer is reported.
+
+An up sensor's answer can also be lost at the service: a stream over its limit drops its oldest messages unread, and what
+is dropped cannot be read. A target with no answer in a survey open during such a gap stays `no_answer` and is marked
+`maybe_lost`, and the survey carries `service_loss` (messages dropped, hosts in doubt). That points at beat, not the host:
+ask again first. It is a doubt, not a verdict: a stalled host in that survey is marked too.

@@ -66,7 +66,7 @@ size and its time on a host (try it on one first), times the number of hosts. A 
 needs: counts, distributions and summaries for what is common, individual records only for the rare (failures, \
 outliers); for raw detail, `run` the few hosts that stand out. An answer over about 1 MB comes back as a \
 `too_large` error.
-Hosts that did not answer: `down` (no heartbeat) or `no_answer` (up, and did not answer by the deadline). An up sensor answers, so each `no_answer` is a finding to look into, like a stalled worker; many at once points at beat or the bus before the hosts. A reply that says the survey is not complete (the collector is behind) is beat being slow, not the hosts: wait and read the survey again (`analyze`, `beat survey show`, `beat dataset`) before you analyse it.
+Hosts that did not answer: `down` (no heartbeat) or `no_answer` (up, and did not answer by the deadline). An up sensor answers, so each `no_answer` is a finding to look into, like a stalled worker; many at once points at beat or the bus before the hosts. A reply with `service_loss` means the service dropped messages unread while the survey was open: the hosts it names have no recorded answer because of beat, perhaps, not because of them, so ask again before looking into them. A reply that says the survey is not complete (the collector is behind) is beat being slow, not the hosts: wait and read the survey again (`analyze`, `beat survey show`, `beat dataset`) before you analyse it.
 Do not fetch raw records to compare, count or aggregate them yourself (jq, grep, regexes over many lines, loops \
 over log lines): if `survey` or `logs` cannot show what you need, say what is missing. When anything about beat itself is wrong or \
 missing, say so and offer the `report` skill (`beat report draft`): the person decides what is sent."""
@@ -105,7 +105,7 @@ QUERY = (
     "template_id, template, param (p3: the template's 4th <*>), value, minute, lines, surveys.\n"
     "- `runs` (host, probe, survey_id, asked_at, previous run), `surveys` (survey_id, question_hash, selector, "
     "asked_by, asked_at, deadline), `survey_answers` (survey_id, target: the host, answer_hash, outcome, started, "
-    "finished, sensor_version).\n"
+    "finished, sensor_version, phases: milliseconds as queue=N,secrets=N,run=N).\n"
     "Times are UTC timestamps. Some words are reserved as bare aliases or columns (`key`, `at`, `first`, `last`, "
     "`minutes`): write `as` and another name (`key as k`, `min(minute) as first_min`). Returns at most "
     "`limit` rows (default 200) and says when it cut.")
@@ -196,7 +196,8 @@ async def _ask_one(host: str, name: str, source: str, timeout: int = 120) -> dic
     if a is None:
         why = ask.why_not(s, host)
         return {"ok": False, "survey": s["survey"], "error": f"{host}: {why}"}
-    return {"ok": True, "survey": s["survey"], "answer_hash": a["answer_hash"], **a["answer"]}
+    return {"ok": True, "survey": s["survey"], "answer_hash": a["answer_hash"], **a["answer"],
+            **({"phases": a["phases"]} if a.get("phases") else {})}
 
 
 def _cap_log_summaries(out: dict, budget: int | None = None) -> dict:
@@ -267,6 +268,8 @@ async def _inventory() -> dict:
     for name, e in sorted(live.items()):
         row = {"host": name, "sensor": e.get("sensor"), "labels": e.get("labels", {}), "since": e.get("started"),
                "sandbox": e.get("sandbox", "full")}
+        if note := ask.secret_walk_note(e.get("secret_walk")):
+            row["secret_files"] = note
         if repo:
             row["in_estate_repo"] = {"facts": (repo / "hosts" / name / "facts").is_dir(),
                                      "model": (repo / "hosts" / name / "model.md").exists()}

@@ -140,3 +140,21 @@ def test_mcp_run_caps_but_catalog_does_not(monkeypatch):
     assert "cut" in r and mcp._size({**r, "cut": None}) <= mcp.RUN_MAX_BYTES
     c = asyncio.run(mcp._call("catalog", {"host": "a"}))  # needs every record: a table list is not a log summary
     assert "cut" not in c and len(c["osquery_tables"]) == len(big)
+
+
+def test_a_loss_at_the_service_does_not_send_the_agent_to_the_host():
+    loss = {"messages_dropped": 3, "hosts": 1, "note": "..."}
+    say = " ".join(ask.standing({"ok": 9, "no_answer": 1}, True, 0, loss))
+    assert "points at beat" in say and "look at those sensors" not in say
+    assert "look at those sensors" in " ".join(ask.standing({"ok": 9, "no_answer": 1}, True))  # no loss: as before
+    survey = {"no_answer": ["a", "b"], "maybe_lost": ["a"]}
+    assert "points at beat" in ask.why_not(survey, "a")
+    assert "look at the sensor" in ask.why_not(survey, "b")
+
+
+def test_a_secret_walk_is_mentioned_only_when_something_was_not_looked_at():
+    assert ask.secret_walk_note(None) == ""
+    assert ask.secret_walk_note({"at": "t", "secrets": 3, "skipped": [], "cut": None, "error": None, "uncovered": []}) == ""
+    note = ask.secret_walk_note({"at": "t", "skipped": [["/var/lib/docker", "container storage"]], "uncovered": ["/a b"]})
+    assert "/var/lib/docker (container storage)" in note and "/a b" in note
+    assert "not finished" in ask.secret_walk_note({"at": None})

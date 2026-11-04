@@ -305,7 +305,9 @@ def _service(a) -> None:
             labels = " ".join(f"{k}={v}" for k, v in sorted((e.get("labels") or {}).items()))
             sandbox = "" if e.get("sandbox", "full") == "full" else f"\tsandbox: {e['sandbox']}"
             bad = f"\tUNTRUSTED: {e['untrusted']} (not asked)" if "untrusted" in e else ""
-            print(f"{name}\t{e.get('sensor', '?')}\tsince {e.get('started', '?')}\t{labels}{sandbox}{bad}")
+            walk = ask.secret_walk_note(e.get("secret_walk"))
+            walk = f"\tsecret files: {walk}" if walk else ""
+            print(f"{name}\t{e.get('sensor', '?')}\tsince {e.get('started', '?')}\t{labels}{sandbox}{walk}{bad}")
         return
 
     if a.cmd == "survey":
@@ -1003,8 +1005,8 @@ def _survey_delete(a) -> None:
     if cached.exists():
         shutil.rmtree(cached)
         print(f"  deleted this machine's cached dataset {cached}")
-    print("not reached: cached datasets on other machines (~/.cache/beat/datasets/<survey>), agent transcripts "
-          "that showed the answer, and the secret itself on the host: rotate it")
+    print("not reached: cached datasets on other machines (~/.cache/beat/datasets/<survey>) and agent transcripts "
+          "that showed the answer.\nIf you deleted this because of a leak, the secret is still live on the host: rotate it.")
 
 
 def _survey(a) -> None:
@@ -1052,7 +1054,7 @@ def _survey(a) -> None:
         counts: dict = {}
         for x in r["targets"]:
             counts[x["outcome"]] = counts.get(x["outcome"], 0) + 1
-        for line in ask.standing(counts, bool(s["sealed_at"]), (r.get("collector") or {}).get("behind") or 0):
+        for line in ask.standing(counts, bool(s["sealed_at"]), (r.get("collector") or {}).get("behind") or 0, r.get("service_loss")):
             print(f"          {line}")
         print(f"\nanswers by hash ({len(r['categories'])} distinct):")
         for c in r["categories"]:
@@ -1065,12 +1067,13 @@ def _survey(a) -> None:
         print("\ntargets:")
         for x in r["targets"]:
             print(f"  {x['target']:20} {x['outcome']:8} {(x['answer_hash'] or '-')[:12]:12}  "
-                  f"{t(x['started'])}  {x['sensor_version'] or ''}")
+                  f"{t(x['started'])}  {x['sensor_version'] or ''}  {x.get('phases') or ''}")
         print(f"\none answer: beat survey answer {s['survey_id']} <target>")
     elif a.survey_cmd == "answer":
         ans = r["answer"] or {}
         print(f"survey {r['survey_id']}  target {r['target']}  {r['outcome']}  answer {r['answer_hash']}")
-        print(f"started {t(r['started'])}  finished {t(r['finished'])}  sensor {r['sensor_version']}")
+        print(f"started {t(r['started'])}  finished {t(r['finished'])}  sensor {r['sensor_version']}"
+              + (f"  ms: {r['phases']}" if r.get("phases") else ""))
         if ans.get("error"):
             e = ans["error"]
             print(f"\nerror ({e.get('kind')}): {e.get('message')}" + (f"  at {e['span']}" if e.get("span") else ""))
