@@ -72,3 +72,71 @@ def test_mcp_survey_by_saved_probe_is_the_same_question_as_beat_run(tmp_path, mo
     assert r["ok"] and seen == {"name": "nginx.star", "source": "def main():\n    pass\n", "hosts": ["lb-1"]}
     assert not asyncio.run(mcp._call("survey", {"probe": "nope"}))["ok"]
     assert "probe" in asyncio.run(mcp._call("survey", {}))["error"]
+
+
+def _summary_records(log: str, templates: int, minutes: int = 0) -> list[dict]:
+    """What emit_log_summary emits: the log's totals, and per template its text, lines and per-minute counts. The
+    first template has the most lines; the last is outside the curated set (`new`), with one line."""
+    rows = [{"subject": f"log:{log}", "key": "lines_count", "value": "999", "kind": "metric", "source": "drain"}]
+    for t in range(templates):
+        s = f"log:{log}#{t:016x}"
+        rows += [{"subject": s, "key": "template", "value": f"template {t} " + "x" * 200, "source": "drain"},
+                 {"subject": s, "key": "lines_count", "value": str(1 if t == templates - 1 else 1000 - t),
+                  "kind": "metric", "source": "drain"}]
+        rows += [{"subject": s, "key": f"lines_count@2026-11-01T00:{m:02d}", "value": "1", "kind": "metric",
+                  "source": "drain"} for m in range(minutes)]
+    rows.append({"subject": f"log:{log}#{templates - 1:016x}", "key": "new", "value": "yes", "source": "drain"})
+    return rows
+
+
+def test_a_run_answer_that_fits_is_left_alone():
+    from beat import mcp
+    out = {"ok": True, "survey": "s1", "records": _summary_records("app", 3, 2)}
+    assert mcp._cap_log_summaries(out) is out
+
+
+def test_a_large_run_answer_loses_its_per_minute_records_first_and_says_so():
+    from beat import mcp
+    records = _summary_records("app", 5, 40)
+    out = {"ok": True, "survey": "s1", "records": records}
+    budget = mcp._size(out) // 2
+    r = mcp._cap_log_summaries(out, budget)
+    assert mcp._size(r) <= budget
+    assert not any("@" in x["key"] for x in r["records"])
+    assert {x["subject"] for x in r["records"]} == {x["subject"] for x in records}  # every template still there
+    assert r["cut"]["per_minute_records_omitted"] == 200 and "templates_kept_per_log" not in r["cut"]
+    assert "s1" in r["cut"]["the_rest"] and "`logs`" in r["cut"]["the_rest"]
+
+
+def test_a_larger_one_keeps_its_top_templates_and_the_new_ones_and_other_records():
+    from beat import mcp
+    other = {"subject": "nginx", "key": "version", "value": "1.24", "source": "osq"}
+    records = [other] + _summary_records("app", 64, 2)
+    out = {"ok": True, "survey": "s1", "answer_hash": "h", "records": records}
+    r = mcp._cap_log_summaries(out, 8000)
+    assert mcp._size({**r, "cut": None}) <= 8000
+    subjects = {x["subject"] for x in r["records"]}
+    assert other in r["records"] and "log:app" in subjects  # what is not a template stays, the log's totals too
+    assert f"log:app#{0:016x}" in subjects and f"log:app#{63:016x}" in subjects  # the most lines; the new one
+    assert f"log:app#{40:016x}" not in subjects
+    kept, _, total = r["cut"]["templates_kept_per_log"]["log:app"].partition(" of ")
+    assert total == "64" and int(kept) < 64 and r["answer_hash"] == "h"
+
+
+def test_a_large_answer_with_no_log_summary_is_not_cut():
+    from beat import mcp
+    out = {"ok": True, "survey": "s1", "records": [{"subject": "x", "key": "k", "value": "v" * 100}] * 100}
+    assert mcp._cap_log_summaries(out, 1000) is out
+
+
+def test_mcp_run_caps_but_catalog_does_not(monkeypatch):
+    from beat import mcp
+    big = _summary_records("app", 400, 30)
+
+    async def ask_one(host, name, source, timeout=120):
+        return {"ok": True, "survey": "s1", "records": big}
+    monkeypatch.setattr(mcp, "_ask_one", ask_one)
+    r = asyncio.run(mcp._call("run", {"host": "a", "source": "x"}))
+    assert "cut" in r and mcp._size({**r, "cut": None}) <= mcp.RUN_MAX_BYTES
+    c = asyncio.run(mcp._call("catalog", {"host": "a"}))  # needs every record: a table list is not a log summary
+    assert "cut" not in c and len(c["osquery_tables"]) == len(big)

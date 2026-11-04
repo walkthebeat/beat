@@ -4,7 +4,8 @@
 Tools (descriptions say first when to use each: in the agent's terms, not beat's):
 - `survey`: a Starlark question to several hosts (default every live one), answered as the comparison: categories,
   the analysis (analysis.get) and the logs across hosts (logs.get); raw records only on request (ask.report).
-- `run`: a Starlark question to one host (a survey of one); the answer comes back, and the collector keeps it.
+- `run`: a Starlark question to one host (a survey of one); the answer comes back, and the collector keeps it. An
+  answer too large for a tool's output has its log summaries cut, and says so (`cut`).
 - `inventory`: the live sensors (the service's directory), and whether this estate repository has the host.
 - `catalog`, `describe_osquery_table`: osquery's tables and columns on a host, asked as questions too.
 - `analyze`: a survey's answers across its hosts (slot kinds, groups, dimensions, rare values, inconsistencies,
@@ -182,6 +183,12 @@ def tool_defs(guide: str | None, hosts: list[str]) -> list[types.Tool]:
     ]
 
 
+# Claude Code refuses an MCP tool's output past 25000 tokens by default (MAX_MCP_OUTPUT_TOKENS). Answers of 59-73 KB hit
+# it (first discovery, 2026-11-01). JSON of records runs about 3 characters a token, so this leaves room for the rest of
+# the turn: a judgement, not a measurement of any one client.
+RUN_MAX_BYTES = 40_000
+
+
 async def _ask_one(host: str, name: str, source: str, timeout: int = 120) -> dict:
     s = await ask.ask(name, source, [host], timeout, via="beat-mcp")
     a = s["answers"].get(host)
@@ -189,6 +196,64 @@ async def _ask_one(host: str, name: str, source: str, timeout: int = 120) -> dic
         why = ask.why_not(s, host)
         return {"ok": False, "survey": s["survey"], "error": f"{host}: {why}"}
     return {"ok": True, "survey": s["survey"], "answer_hash": a["answer_hash"], **a["answer"]}
+
+
+def _cap_log_summaries(out: dict, budget: int | None = None) -> dict:
+    """A `run` answer the agent's client can take: over RUN_MAX_BYTES, its log summaries are cut, first the per-minute
+    records, then the templates with the fewest lines (those outside curated templates kept first, as they are what
+    is new), and `cut` says so and where the rest is. The answer is whole in the survey; anything else in it stays."""
+    budget = RUN_MAX_BYTES if budget is None else budget
+    records = out.get("records")
+    if not records or _size(out) <= budget:
+        return out
+    logs: dict[str, dict[str, list]] = {}
+    for r in records:
+        log, _, template = str(r.get("subject", "")).partition("#")
+        if log.startswith("log:") and template:
+            logs.setdefault(log, {}).setdefault(template, []).append(r)
+    if not logs:
+        return out
+
+    def minute(r: dict) -> bool:
+        return "@" in str(r.get("key", "")) and "#" in str(r.get("subject", ""))
+
+    def lines(rows: list) -> tuple:
+        by_key = {r.get("key"): r.get("value") for r in rows}
+        try:
+            n = float(by_key.get("lines_count") or 0)
+        except (TypeError, ValueError):
+            n = 0
+        return (by_key.get("new") != "yes", -n)
+
+    ranked = {log: sorted(ts, key=lambda t: lines(ts[t])) for log, ts in logs.items()}
+    no_minutes = [r for r in records if not minute(r)]
+    dropped_minutes = len(records) - len(no_minutes)
+
+    def keeping(top: int | None) -> list:
+        gone = {f"{log}#{t}" for log, ts in ranked.items() for t in (ts[top:] if top is not None else [])}
+        return [r for r in no_minutes if r.get("subject") not in gone]
+
+    kept, top = keeping(None), None
+    if _size({**out, "records": kept}) > budget:
+        top = max(len(ts) for ts in ranked.values())
+        while top > 1:
+            top //= 2
+            kept = keeping(top)
+            if _size({**out, "records": kept}) <= budget:
+                break
+    cut = {"why": f"this answer was over {budget} bytes, too large for a tool's output: it is cut here, whole in the "
+                  f"survey", "per_minute_records_omitted": dropped_minutes}
+    if top is not None:
+        cut["templates_kept_per_log"] = {log: f"{min(top, len(ts))} of {len(ts)}" for log, ts in ranked.items()}
+    survey = out.get("survey")
+    cut["the_rest"] = (f"`logs` with survey {survey!r} for every template; `query` for the records and per-minute "
+                       f"counts (`observations` where survey_id = {survey!r}, `log_minutes`, `log_values`); or ask again "
+                       f"with log_summary(top=...) or a narrower time window")
+    return {**out, "records": kept, "cut": cut}
+
+
+def _size(v: dict) -> int:
+    return len(json.dumps(v, default=str))
 
 
 async def _inventory() -> dict:
@@ -245,8 +310,8 @@ async def _call(name: str, args: dict) -> dict:
                                                int(args.get("history") or 3), bool(args.get("records")),
                                                via="beat-mcp")}
     if name == "run":
-        return await _ask_one(host, args.get("name") or "probe.star", args.get("source", ""),
-                              int(args.get("timeout") or 120))
+        return _cap_log_summaries(await _ask_one(host, args.get("name") or "probe.star", args.get("source", ""),
+                                                 int(args.get("timeout") or 120)))
     if name == "analyze":
         params = {k: args[k] for k in ("survey", "history") if args.get(k) is not None}
         try:
