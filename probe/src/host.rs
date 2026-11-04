@@ -113,6 +113,9 @@ pub trait Host {
     fn readlink(&self, path: &str) -> HostResult<Option<String>>;
     /// osquery SQL; `?` are bound to `params` on the host side. Rows as JSON objects keyed by column name, typed.
     fn osq(&self, query: &str, params: &[serde_json::Value]) -> HostResult<Vec<serde_json::Value>>;
+    /// A process's environment, as (name, value): for `environ()`, which never hands a question the value of a name it
+    /// does not know to be safe (environ.rs).
+    fn environ(&self, pid: u32) -> HostResult<Vec<(String, String)>>;
     /// Journal entries, oldest first: ts, unit, pid, priority, message.
     fn journal(&self, opts: &JournalOptions) -> HostResult<Vec<serde_json::Value>>;
     /// The files matching `patterns` (globs) read at once, then again after `seconds`: counters in /proc and /sys.

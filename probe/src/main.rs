@@ -18,14 +18,16 @@
 //!       The builtins reference for agents (what the sensor's `run` tool describes), with the tool list.
 //!   beat-probe tools --tools DIR
 //!       The tools part of the manifest (§7): name and SHA-256 of the .wasm providing it.
-//!   beat-probe secrets [--root DIR] [--map /]...
+//!   beat-probe secrets [--root DIR] [--map /]... [--live | --walk] [--budget-s N] [--budget-entries N]
 //!       Metadata of the secret files a probe must not read, as JSON lines (path kind mode uid gid size mtime): what a
-//!       sensor reads outside its sandbox, to hide those files and pass their metadata in as BEAT_SECRETS.
+//!       sensor reads outside its sandbox, to hide those files and pass their metadata in (BEAT_SECRETS_FILE). --live: the
+//!       fixed paths and single-level globs, cheap, for every question. --walk: the recursive patterns, in the background
+//!       (scan.rs). A last line {"scan": ...} says what was left out.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use beat_probe::{check, host::Host, local::{LocalConfig, LocalHost}, run, tools::{default_tools, ToolLimits, Tools}};
+use beat_probe::{check, local::{LocalConfig, LocalHost}, run, scan::Budget, tools::{default_tools, ToolLimits, Tools}};
 
 struct Args {
     files: Vec<String>,
@@ -37,11 +39,20 @@ struct Args {
     journalctl: Option<PathBuf>,
     bpf_tools: Option<PathBuf>,
     name: Option<String>,
+    scope: Option<Scope>,
+    budget: Budget,
+}
+
+/// Which secret files `beat-probe secrets` enumerates; neither flag: both.
+#[derive(Clone, Copy, PartialEq)]
+enum Scope {
+    Live,
+    Walk,
 }
 
 fn parse(argv: &[String]) -> anyhow::Result<Args> {
     let mut a = Args { files: Vec::new(), root: PathBuf::from("/"), maps: Vec::new(), tools: None, cache: None,
-                        osqueryi: None, journalctl: None, bpf_tools: None, name: None };
+                        osqueryi: None, journalctl: None, bpf_tools: None, name: None, scope: None, budget: Budget::default() };
     let mut it = argv.iter();
     while let Some(x) = it.next() {
         let mut val = || it.next().cloned().ok_or_else(|| anyhow::anyhow!("{x} needs a value"));
@@ -54,6 +65,10 @@ fn parse(argv: &[String]) -> anyhow::Result<Args> {
             "--journalctl" => a.journalctl = Some(PathBuf::from(val()?)),
             "--bpf-tools" => a.bpf_tools = Some(PathBuf::from(val()?)),
             "--name" => a.name = Some(val()?),
+            "--live" => a.scope = Some(Scope::Live),
+            "--walk" => a.scope = Some(Scope::Walk),
+            "--budget-s" => a.budget.seconds = val()?.parse()?,
+            "--budget-entries" => a.budget.entries = val()?.parse()?,
             s if s.starts_with("--") => anyhow::bail!("unknown option {s}"),
             _ => a.files.push(x.clone()),
         }
@@ -156,8 +171,8 @@ fn real_main(argv: &[String]) -> anyhow::Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         "secrets" => {
-            if std::env::var_os("BEAT_SECRETS").is_some() {
-                anyhow::bail!("secrets: BEAT_SECRETS is set; this command finds secrets itself");
+            if std::env::var_os(beat_probe::local::SECRETS_FILE).is_some() {
+                anyhow::bail!("secrets: {} is set; this command finds secrets itself", beat_probe::local::SECRETS_FILE);
             }
             let host = LocalHost::new(LocalConfig {
                 root: a.root.clone(),
@@ -168,7 +183,21 @@ fn real_main(argv: &[String]) -> anyhow::Result<ExitCode> {
                 journalctl: None,
                 bpf_tools: None,
             })?;
-            for s in host.secrets().map_err(|e| anyhow::anyhow!("{e:?}"))? {
+            let e = |e| anyhow::anyhow!("{e:?}");
+            let (mut list, mut report) = (Vec::new(), serde_json::Map::new());
+            if a.scope != Some(Scope::Walk) {
+                let (live, skipped) = host.secrets_live().map_err(e)?;
+                list.extend(live);
+                report.insert("skipped".into(), serde_json::json!(skipped));
+            }
+            if a.scope != Some(Scope::Live) {
+                let (walked, r) = host.secrets_walk(&a.budget).map_err(e)?;
+                list.extend(walked);
+                report = serde_json::to_value(&r)?.as_object().cloned().unwrap_or_default();
+            }
+            list.sort_by(|x, y| x.path.cmp(&y.path));
+            list.dedup_by(|x, y| x.path == y.path);
+            for s in list {
                 let mut row = serde_json::json!({"path": s.path, "kind": s.kind, "mode": s.mode, "uid": s.uid,
                                                  "gid": s.gid, "size": s.size, "mtime": s.mtime});
                 // Transformer answers for the sandbox, which covers these files (docs/security.md).
@@ -177,6 +206,7 @@ fn real_main(argv: &[String]) -> anyhow::Result<ExitCode> {
                 }
                 println!("{row}");
             }
+            println!("{}", serde_json::json!({"scan": report}));
             Ok(ExitCode::SUCCESS)
         }
         other => anyhow::bail!("unknown command {other}"),

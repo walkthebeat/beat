@@ -168,6 +168,9 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
             hide: vec![key.clone()],
             unit_props,
             systemd,
+            walk: tokio::sync::watch::Sender::new(None),
+            walk_error: Default::default(),
+            uncovered: Default::default(),
         },
     })
 }
@@ -310,19 +313,21 @@ async fn handle(cfg: Arc<Config>, client: async_nats::Client, js: jetstream::Con
     // The runner's own bound is the limit plus 15 s (runner.rs: waiting for systemd-run): the promise includes it.
     let answer_by = iso_at(unix_now() + timeout as i64 + 15);
     let started = iso_now();
+    let phases = runner::Phases::default();
     let work = async {
         let q = match wire::parse_question(&msg.payload) {
             Err(e) => return wire::answer_error("rejected", &e),
             Ok(q) => q,
         };
         let _permit = slots.acquire_owned().await.expect("the semaphore is never closed");
+        phases.queue_ms.store(arrived.elapsed().as_millis() as u64, std::sync::atomic::Ordering::Relaxed);
         let left = Duration::from_secs(timeout).saturating_sub(arrived.elapsed());
         if left < Duration::from_secs(1) {
             let waited = arrived.elapsed().as_secs();
             return wire::answer_error("busy", &format!("waited {waited} s for a free slot: the {timeout} s time limit \
                                                          was used up before the question could start"));
         }
-        match cfg.runner.run(&q.name, &q.source, left.as_secs()).await {
+        match cfg.runner.run(&q.name, &q.source, left.as_secs(), &phases).await {
             Ok(result) => wire::answer_from_result(&result),
             // The runner had what was left of the limit; the caller knows the limit they set.
             Err(e) if e.kind == "timeout" => wire::answer_error("timeout", &format!(
@@ -339,6 +344,8 @@ async fn handle(cfg: Arc<Config>, client: async_nats::Client, js: jetstream::Con
         }
     };
     let finished = iso_now();
+    // In a header, like the times above: in the answer they would make equal answers differ (their hash names them).
+    let phase_text = phases.text();
     let mut body = wire::canonical(&answer);
     // Over the server's message limit the publish fails and the sensor would be silent: say so instead.
     let limit = (client.server_info().max_payload).saturating_sub(wire::HEADROOM + seal::OVERHEAD);
@@ -364,7 +371,7 @@ async fn handle(cfg: Arc<Config>, client: async_nats::Client, js: jetstream::Con
     };
     let fields: seal::Headers = [("Beat-Survey", survey.as_str()), ("Beat-Question", &question_hash),
                                  ("Beat-Target", &cfg.name), ("Beat-Outcome", &outcome), ("Beat-Started", &started),
-                                 ("Beat-Finished", &finished), ("Beat-Sensor", &cfg.version)]
+                                 ("Beat-Finished", &finished), ("Beat-Phases", &phase_text), ("Beat-Sensor", &cfg.version)]
         .iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
     let h = header_map(seal::sign(&cfg.key, "answer", fields, &body));
     let subject = wire::answer_subject(&survey);
@@ -373,7 +380,7 @@ async fn handle(cfg: Arc<Config>, client: async_nats::Client, js: jetstream::Con
         match js.publish_with_headers(subject.clone(), h.clone(), body.clone().into()).await {
             Ok(ack) => match ack.await {
                 Ok(_) => {
-                    eprintln!("survey {survey}: answered {outcome} ({size} bytes, {})", &answer_hash[..12]);
+                    eprintln!("survey {survey}: answered {outcome} ({size} bytes, {}; ms: {phase_text})", &answer_hash[..12]);
                     return;
                 }
                 Err(e) => eprintln!("survey {survey}: answer not acknowledged (attempt {attempt}): {e}"),
@@ -473,7 +480,8 @@ async fn heartbeat(cfg: Arc<Config>, js: jetstream::Context) {
         let root_keys: serde_json::Map<String, serde_json::Value> = seal::read_keys(&cfg.roots).unwrap_or_default().iter()
             .map(|c| (c.name.clone(), STANDARD.encode(c.key.as_bytes()).into())).collect();
         let entry = json!({"name": cfg.name, "sensor": cfg.version, "labels": cfg.labels, "started": started,
-                           "guide": guide, "sandbox": cfg.runner.sandbox_mode(), "at": iso_now(),
+                           "guide": guide, "sandbox": cfg.runner.sandbox_mode(), "secret_walk": cfg.runner.walk_state(),
+                           "at": iso_now(),
                            "roots": roots, "collectors": collectors, "root_keys": root_keys,
                            "deny": deny_seq});
         let entry = serde_json::Value::Object(seal::sign_entry(&cfg.key, entry.as_object().cloned().unwrap_or_default()));
@@ -530,6 +538,10 @@ async fn main() -> anyhow::Result<()> {
     eprintln!("{} as {:?}: listening on {} and {} via {}", cfg.version, cfg.name, wire::ASK_ALL,
               wire::ask_host(&cfg.name), cfg.nats);
     tokio::spawn(heartbeat(cfg.clone(), js.clone()));
+    if cfg.runner.sandbox.is_some() {
+        let walking = cfg.clone();
+        tokio::spawn(async move { walking.runner.walk_forever().await });
+    }
 
     let slots = Arc::new(tokio::sync::Semaphore::new(cfg.concurrency));
     let seen = Seen::default();

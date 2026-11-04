@@ -98,9 +98,65 @@ A question is a Starlark program (`docs/probes.md`) run by `beat-probe` in a tra
 
 ## Secrets
 
-- **Placeholders.** Before each question, `beat-probe secrets` finds secret files (keys, keytabs, credential caches,
-  `/etc/shadow`, …) and the unit binds a placeholder over each. A question sees that a file is a secret, and its
-  metadata through `secrets()`, never its bytes.
+- **Placeholders.** The unit binds a placeholder over each secret file (keys, keytabs, credential caches,
+  `/etc/shadow`, …). A question sees that a file is a secret, and its metadata through `secrets()`, never its bytes.
+  Placeholders need concrete paths before the unit starts, so the patterns are enumerated in two ways:
+  - **Fixed paths and single-level globs** (`/etc/shadow`, `/etc/ssh/ssh_host_*_key`, `/home/*/.ssh`, …): checked live
+    before each question (`beat-probe secrets --live`). They are never stale.
+  - **Recursive patterns** (`/etc/**/*.key`, `/opt/**/*.key`, `/opt/**/*.keytab`, `/srv/**/*.key`,
+    `/var/lib/**/*.keytab`): walked in the background at the sensor's start and five minutes after each walk ends, in a
+    unit of its own (read-only, no network, a quarter of a CPU, 256 MiB, idle I/O priority), and questions use the latest
+    result, with each path checked against the disk first. **So a new file under one of these patterns has no
+    placeholder until the next walk ends:** `read()` refuses it at once, as beat-probe checks the patterns itself on
+    every read, but a tool or `osqueryi` in a question could read it in that window.
+  - A question never runs without this. Until the first walk ends (it waits up to half of its time limit), when the
+    latest walk is over an hour old, or when the live check takes over 10 s, it is refused with an error of kind
+    `secrets`.
+  - **What the walk does not enter:** container storage, where it is configured (Docker's data root, containerd,
+    Podman, kubelet's pods), and network, FUSE and layered mounts. A budget (300 s, 5 million entries) stops it on
+    anything else that is large. The live check does not touch network mounts either, so `.ssh` in NFS homes has no
+    placeholder. Files in those places stay readable to a tool or `osqueryi` in a question, and `read()` refuses only
+    what the patterns name. The heartbeat (`secret_walk`) and the note of any run that calls `secrets()` say what was
+    left out.
+  - **Paths systemd cannot express** (a quote or a control character in the name) get no placeholder, and are reported
+    the same way.
+  - `/proc/*/environ` is not enumerated: `read()` refuses it, and so does each other way there (below).
+- **Processes' environments.** A question gets them through `environ(pid)`: every variable's name; the value of a short
+  list of names known not to be secrets (`PATH`, `PYTHONPATH`, `CLASSPATH`, `LD_LIBRARY_PATH`, `JAVA_HOME`, `LANG`,
+  `LC_*`, `TZ`, `HOME`, `USER`, `PWD`, `SHELL`, and the JVM option variables `JAVA_OPTS`, `JAVA_TOOL_OPTIONS`,
+  `_JAVA_OPTIONS`, `JDK_JAVA_OPTIONS`, `CATALINA_OPTS`); and for any other value, a token the question cannot read.
+  - **Allowed values are masked first:** a URL's password or token in any of them, and in the JVM variables, the value of
+    any option named like password, passwd, pwd, secret, token, credential or key. Gate 1 then scans what is emitted.
+  - **Other values leave the host as an unkeyed SHA-256, sealed to the collector, which replaces it with an HMAC under
+    the org's estate key before anything stores it.** A sensor has no key an org's hosts share, and a plain hash of a
+    short value can be guessed, so the hash is keyed at the collector. So hosts compare equal when values are, the
+    collector process briefly holds the digest, and running `beat-probe run` on its own (no collector) shows the digest.
+    A service whose rules predate `beat-env-value` keeps the digest in the answer: the service's rules must be updated
+    before a sensor with `environ()`.
+  - `osq()` refuses `process_envs`, `docker_container_envs`, `process_events` and `docker_containers.env_variables`
+    (name that table's columns: no `*`), reading the query as SQLite's tokenizer does, so case, quotes, comments,
+    aliases and subqueries do not help, and refuses osqueryi's dot commands. A string equal to one of these table names
+    is refused too, as SQLite takes a string as a table name in `FROM`.
+  - `read()` and `sample()` refuse `/proc/<pid>/environ` and `mem`, in `task/<tid>/` too.
+  - **Tools have no `/proc/<pid>`:** nothing under it is mapped into them, as a mapping cannot leave one file out and a
+    tool can build any path. A pipe that names `/proc` gets a copy of its own small files (`meminfo`, `stat`, ...) and its
+    directories (`/proc/sys`). For the rest, `stdin = read(path)`, which a tool's failure says.
+- **`/proc` is how a question debugs, so a path through it is judged by what it leads to.** With `CAP_SYS_PTRACE`,
+  `/proc/1/root/etc/shadow` is the real file, past every placeholder, and `/proc/1/root/tmp/x` is how a question reaches
+  a file in the host's `/tmp`, its own being private.
+  - `read()` and `sample()` resolve `/proc/<pid>/root/...` and `cwd/...` inside that process's root (symlinks followed
+    there, `..` stopping at it) and apply the patterns to the result. So a container's `/etc/shadow` is refused and its
+    other files are as readable as the host's. The check and the read are two steps: a process that swaps a symlink
+    between them could win that race.
+  - `/proc/<pid>/fd/N` and `map_files` are judged by the file the link names, a deleted one by its old name. A socket,
+    pipe or memfd names no file and is refused; `readlink` and `list_dir` work on all of them.
+  - A symlink on the host is judged by where it leads. The sensor's keys are refused by path, as `/proc/<pid>/root`
+    would otherwise reach them past the mount that hides them.
+  - **The patterns are what is refused, not secrets in general:** a key at a path no pattern names, or a hard link to one,
+    is readable through these doors as it is directly.
+  - **`osq()`, best effort:** for `hash`, `file`, `yara` and `augeas`, literal paths through a process's root, cwd or fd
+    are refused, as written or as a pattern, and so is any query that builds strings (`||`, `printf()`, `replace()`...).
+    This is not a boundary: a path taken from another table's column is not seen. `osqueryi` holds `CAP_SYS_PTRACE`.
   - On RHEL-family hosts SELinux may forbid systemd to mount over some of them. The sensor then runs questions
     without the placeholders and says so in its heartbeat (`sandbox: no-secret-mounts`). `beat-probe` still refuses
     to read those files, but a program it starts (`osqueryi`) could.

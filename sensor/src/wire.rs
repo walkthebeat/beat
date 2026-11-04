@@ -14,7 +14,7 @@
 //!   beat.ack.<survey>                    JetStream   no payload          Beat-Survey, Beat-Question, Beat-Target,
 //!                                                                         Beat-Answer-By, Beat-Sensor (only when the
 //!                                                                         answer is not out within a second)
-//!   KV bucket beat-directory, key <name>             sensor heartbeats: {name, sensor, labels, started, guide, sandbox, at, collectors, signature}; signed (kind heartbeat, over the entry without its signature); readers trust enrolled and fresh (<35 s) entries only
+//!   KV bucket beat-directory, key <name>             sensor heartbeats: {name, sensor, labels, started, guide, sandbox, secret_walk, at, collectors, signature}; signed (kind heartbeat, over the entry without its signature); readers trust enrolled and fresh (<35 s) entries only
 //!
 //! Questions, acks and answers carry Beat-Signature (seal.rs): questions the collector's, acks and answers ours.
 //!   KV bucket beat-guides, key <sha256>              the builtins guide a sensor's beat-probe prints (`guide` above)

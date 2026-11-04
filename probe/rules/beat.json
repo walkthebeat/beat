@@ -1,5 +1,10 @@
 {"source": "beat's own rules: host-shaped secrets the Betterleaks rules miss (eval/secrets)",
  "rules": [
+  {"id": "beat-env-value",
+   "note": "environ(): the digest of an environment value, which gate 2 replaces with a keyed hash (the sensor has no key: probe/src/environ.rs)",
+   "regex": "(beat-env-value:[0-9a-f]{64})",
+   "keywords": ["beat-env-value"], "confidence": "medium", "action": "hash", "group": null, "max_entropy": null,
+   "reject_regex": [], "reject_contains": []},
   {"id": "beat-libpq-password",
    "note": "libpq keyword/value DSN: password=X followed by another key (generic-password wants a delimiter after the value); orders-api.ini",
    "regex": "(?i)(?:^|[\\s'\"])password\\s*=\\s*([^\\s'\"]{4,})(?:\\s+\\w+\\s*=|\\s*$)",

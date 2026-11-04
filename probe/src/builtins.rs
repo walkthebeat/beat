@@ -61,6 +61,8 @@ pub struct RunState {
     pub unwinding: bool,
     /// Kind of the last host error raised (limit, tool, endpoint, io), to classify the run's error (§5).
     pub error_kind: Option<String>,
+    /// environ(): what stands for a value in the question, and the digest gate 1 puts there (environ.rs).
+    pub env_tokens: Vec<(String, String)>,
 }
 
 /// What the builtins reach through `Evaluator::extra`.
@@ -336,6 +338,29 @@ fn beat_builtins(builder: &mut GlobalsBuilder) {
         let params = params.items.iter().map(|v| v.to_json_value()).collect::<anyhow::Result<Vec<_>>>()?;
         let rows = ctx(eval).host.osq(query, &params).map_err(|e| host_error(eval, e))?;
         Ok(eval.heap().alloc(rows))
+    }
+
+    /// A process's environment: a struct per variable with .name, .value and .hash. .value is the value of a name known
+    /// to be safe, with passwords in it masked, else None. .hash stands for any other value: put it in a record, and the
+    /// answer says a keyed hash there, equal on two hosts when the values are equal. The value itself is not in the
+    /// question's reach.
+    fn environ<'v>(pid: u32, eval: &mut Evaluator<'v, '_, '_>) -> starlark::Result<Value<'v>> {
+        let vars = ctx(eval).host.environ(pid).map_err(|e| host_error(eval, e))?;
+        let heap = eval.heap();
+        let mut items: Vec<Value<'v>> = Vec::with_capacity(vars.len());
+        for (name, value) in vars {
+            let shown = crate::environ::shown(&name, &value);
+            let hash = match &shown {
+                Some(_) => None,
+                None => Some(crate::environ::token(&mut ctx(eval).state.borrow_mut().env_tokens, &value)),
+            };
+            items.push(heap.alloc(AllocStruct([
+                ("name", heap.alloc(name)),
+                ("value", shown.map_or(Value::new_none(), |v| heap.alloc(v))),
+                ("hash", hash.map_or(Value::new_none(), |v| heap.alloc(v))),
+            ])));
+        }
+        Ok(heap.alloc(items))
     }
 
     /// Journal entries, oldest first, as dicts: ts, unit, pid, priority, message. `since` as journalctl takes it

@@ -321,6 +321,7 @@ fn gate_fields(rules: &Rules, fields: Vec<(String, &mut String)>, masked: &mut V
 pub fn gate(st: &mut RunState) -> Option<Json> {
     let rules = rules();
     let (mut masked, mut flagged) = (Vec::new(), Vec::new());
+    crate::environ::resolve_tokens(st);
     let mut i = 0;
     while i < st.records.len() {
         let mut j = i + 1;

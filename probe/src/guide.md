@@ -51,8 +51,13 @@ Files (read-only; paths absolute):
                                       .der_bytes; OpenSSH keys also .cipher .public_fingerprint (as ssh-keygen -l)
                                       These three read secret files too: take the path from the config or the
                                       environment that names it (ssl_certificate, KRB5_KTNAME, default_keytab_name).
+  environ(pid) -> list[struct]        a process's environment: .name of every variable, .value of names known to be
+                                      safe (PATH, CLASSPATH, JAVA_OPTS, ...; passwords in them masked), else None, and
+                                      .hash for the others: emit it as a value and the answer holds a keyed hash there,
+                                      equal across hosts for equal values. osq()'s process_envs is refused for this
   secrets() -> list[struct]           secret files (shadow, keys, keytabs): .path .kind .mode .uid .gid .size
-                                      .mtime; their content is never readable
+                                      .mtime; their content is never readable. A run note says
+                                      what was not checked (container storage, network mounts)
 
 Live state (the probe itself runs as a transient unit beat-question-<pid>-<n>.service, child processes of
 beat-sensor: leave them out of unit and process lists, or every run looks like a change):
@@ -147,7 +152,8 @@ Text (pure):
   and Starlark's own: str methods (split, splitlines, strip, startswith, partition, ...), json.decode, sorted,
   enumerate, dict, list comprehensions, "%s" % x. No while loops, no recursion.
 
-Tools (WebAssembly programs; arguments are passed as given, never through a shell):
+Tools (WebAssembly programs; arguments are passed as given, never through a shell). A tool has /proc's own files and
+/proc/sys, not /proc/<pid>: pipe(["wc", "-l"], stdin = read("/proc/1/mounts")):
   <tool>(*args, stdin="") -> struct   .stdout .stderr .status (list of exit codes) .ok
   pipe([tool, arg...], [tool, arg...], stdin="")   the same, stdout of each into the next
   A non-zero exit is a value, not a failure: check .ok or .status yourself.

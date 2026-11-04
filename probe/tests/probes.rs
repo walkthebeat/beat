@@ -33,7 +33,7 @@ fn source(name: &str) -> String {
 fn run_probe(name: &str) -> Value {
     let host = LocalHost::new(LocalConfig {
         root: dir().join("root"),
-        maps: vec!["/etc".to_string(), "/var/log".to_string()],
+        maps: vec!["/etc".to_string(), "/var/log".to_string(), "/proc".to_string()],
         tools: tools(),
         limits: ToolLimits::default(),
         osqueryi: std::env::var_os("BEAT_OSQUERYI").map(PathBuf::from),
@@ -350,4 +350,16 @@ fn trace_without_a_catalog_is_an_error() {
     let r = run_probe("trace.star");
     assert_eq!(r["outcome"], "error", "{r:#}");
     assert_eq!(r["error"]["kind"], "source", "{r:#}");
+}
+
+#[test]
+fn environ_gives_names_safe_values_and_tokens() {
+    let r = run_probe("environ.star");
+    let text = r.to_string();
+    assert!(has(&r, "env:PATH", "value", "/usr/bin"), "{r:#}");
+    assert!(has(&r, "env:DB_PASSWORD", "hidden", "True"), "{r:#}");
+    assert!(!text.contains("hunter2") && !text.contains("Sup3rS3cret!"), "{r:#}");
+    assert!(text.contains("beat-env-value:") && text.contains("beat-env-option:masked"), "{r:#}");
+    assert_eq!(r["failures"].as_array().unwrap().len(), 1, "a process gone is a failure: {r:#}");
+    assert!(r["secrets"]["flagged"].as_array().unwrap().iter().any(|f| f["rule"] == "beat-env-value" && f["action"] == "hash"), "{r:#}");
 }

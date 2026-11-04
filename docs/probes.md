@@ -153,6 +153,7 @@ osq(query: str, *params) -> list[dict[str, typing.Any]]
 journal(kernel: bool = False, unit: str | None = None, since: str | None = None, grep: str | None = None,
         limit: int = 1000) -> list[dict[str, typing.Any]]      # .ts, .unit, .pid, .priority, .message
 secrets() -> list[Secret]           # .path, .kind, .mode, .uid, .gid, .size, .mtime
+environ(pid: int) -> list[EnvVar]   # .name; .value (known-safe names, passwords masked) or .hash (a token: docs/security.md)
 sample(patterns: list[str], seconds: float = 1.0) -> Sample   # .seconds .before .after ({path: content})
 ```
 
@@ -403,9 +404,13 @@ native sensor implements it directly, and a WASM evaluator would implement it wi
 Where the first version (2026-10-03) fell short of this spec, and may still:
 - **Stages of a pipe run one after another** over in-memory buffers, so intermediate streams are bounded too
   ([B5] wants them unbounded). Same output by Kahn's theorem; concurrency later.
+- **Tools have no `/proc/<pid>`** (`docs/security.md`, Processes' environments): they get a copy of `/proc`'s own small
+  files when a pipe names `/proc`, and its directories. Probes read the rest with `read()` and `sample()` and may pass it
+  on as `stdin`.
 - **Tools can read secret files** under a mapped directory ([B9] wants `EACCES`); `read` and `stat` enforce it.
-  Under beat-sensor the sandbox covers them with placeholders (`sensor/src/runner.rs`); `beat-probe run` on its own
-  does not.
+  Under beat-sensor the sandbox covers them with placeholders (`sensor/src/runner.rs`), with the limits
+  `docs/security.md` states (new files under recursive patterns wait for the next walk; container storage and network
+  mounts are not walked); `beat-probe run` on its own does not.
 - **`osq` runs `osqueryi` twice per call**: `--json` gives every value as a string (NULL as ""), so the first call
   gets the column names and the second wraps the query in SQLite's `json_object()` for typed values. ~0.6 s per
   `osq`; a live run with 2 queries and a journal read took 2.5 s.

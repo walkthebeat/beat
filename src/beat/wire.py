@@ -20,7 +20,7 @@ sensor.
                                                                         answer is not out within a second)
   beat.answer.<survey>                 JetStream   payload: sealed     Beat-Survey, Beat-Question, Beat-Target,
                                                    answer              Beat-Outcome, Beat-Started, Beat-Finished,
-                                                                        Beat-Sensor (the answer's hash is computed
+                                                                        Beat-Phases, Beat-Sensor (the answer's hash is computed
                                                                         by the collector, once opened)
   beat.api.<method>                    request/reply  the API (api.py), served by the collector; survey.start is the
                                                       only way to ask (the collector announces and publishes).
