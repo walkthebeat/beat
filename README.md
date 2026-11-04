@@ -1,5 +1,11 @@
 # beat
 
+Everyone wants an agent on their production, including the people who built the system. Logs alone are not enough, and
+giving an agent your own production credentials works and is not safe. beat is the third way: your agent reads your
+Linux hosts as deep as root can, across the fleet, without your production credentials, and with no way to run anything but read-only questions, and
+finds things you never thought to ask about. What it has found, and how far that is tested:
+[`docs/guide/index.md`](docs/guide/index.md). It is alpha, and we invite you to try it.
+
 beat lets an agent, or a person, ask questions of Linux hosts: small, read-only Starlark programs that run in a
 sandbox on each host and return records. This repository is the open part of beat:
 
