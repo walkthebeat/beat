@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import difflib
 import getpass
+import http.client
 import json
 import os
 import shutil
@@ -300,10 +301,49 @@ def cache_dir() -> Path:
 
 async def fetch(p: dict) -> dict:
     """Downloads a dataset.get pointer's files (its signed links) into the cache; the pointer then says where they are
-    (`dataset`). A sealed survey's files already there (same `written_at`) are not downloaded again."""
+    (`dataset`). A sealed survey's files already there, whole (same `written_at`, the sizes it states), are not
+    downloaded again. The cache takes a dataset only when every file arrived whole, or not at all."""
     if "links" not in p:
         return p
     return await asyncio.to_thread(_fetch, p)
+
+
+class _Short(Exception):
+    """A download that ended early: a body shorter than the size stated for it."""
+
+
+def _size(p: dict, name: str) -> int | None:
+    """The size a sealed survey's pointer states for a file: final, as its files are. None when it states none (a
+    pointer from an older service), or for an open survey, whose files a later dataset.get may write again."""
+    if not p.get("sealed"):
+        return None
+    return ((p.get("tables") or {}).get(name.removesuffix(".parquet")) or {}).get("bytes")
+
+
+def _whole(p: dict, d: Path) -> bool:
+    """Whether a sealed survey's cached dataset is the one the pointer describes, with every file its stated size.
+    A file cut short by an older client, kept as if complete, fails this and is downloaded again."""
+    try:
+        if json.loads((d / "dataset.json").read_text())["written_at"] != p["written_at"]:
+            return False
+        for name in p.get("tables") or {}:
+            have, size = (d / f"{name}.parquet").stat().st_size, _size(p, f"{name}.parquet")
+            if size is not None and have != size:
+                return False
+        return True
+    except (OSError, ValueError, KeyError):
+        return False
+
+
+def _download(url: str, path: Path, size: int | None) -> None:
+    """One file. A dropped connection ends a sized body with no error from urllib, so the bytes are counted, against
+    the response's Content-Length and the size the pointer states: _Short when they differ."""
+    with urllib.request.urlopen(url, timeout=120) as r, open(path, "wb") as out:
+        shutil.copyfileobj(r, out)
+        got, length = out.tell(), r.headers.get("Content-Length")
+    for what, want in (("Content-Length", int(length) if length and length.isdigit() else None), ("the pointer", size)):
+        if want is not None and got != want:
+            raise _Short(f"got {got} bytes, {what} says {want}")
 
 
 def _fetch(p: dict) -> dict:
@@ -311,25 +351,29 @@ def _fetch(p: dict) -> dict:
     p.pop("expires", None)
     d = cache_dir() / p["survey"]
     p = dict(p, dataset=str(d), next=NEXT.format(dir=d))
-    try:
-        if p["sealed"] and json.loads((d / "dataset.json").read_text())["written_at"] == p["written_at"]:
-            return p
-    except (OSError, ValueError, KeyError):
-        pass
+    if p.get("sealed") and _whole(p, d):
+        return p
     tmp = d.with_name(d.name + ".tmp")
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(parents=True)
-    for name, url in links.items():
-        try:
-            # A link is a path on the service (resolved against the service's URL), or a URL of its own (S3, hosted)
-            with urllib.request.urlopen(urllib.parse.urljoin(wire.api_url() + "/", url), timeout=120) as r, \
-                    open(tmp / name, "wb") as out:
-                shutil.copyfileobj(r, out)
-        except OSError as e:  # HTTPError (403 bad link, 410 expired), no datasets service
-            raise RuntimeError(f"downloading {name} of {p['survey']} failed: {e}") from None
-    (tmp / "dataset.json").write_text(json.dumps(p, indent=1) + "\n")
-    shutil.rmtree(d, ignore_errors=True)
-    tmp.rename(d)
+    try:
+        for name, url in links.items():
+            # A link is a path on the service (resolved against the service's URL), or a URL of its own
+            url = urllib.parse.urljoin(wire.api_url() + "/", url)
+            try:
+                try:
+                    _download(url, tmp / name, _size(p, name))
+                except urllib.error.HTTPError:
+                    raise  # the service's answer (403 bad link, 410 expired, 503): the same again
+                except (_Short, OSError, http.client.HTTPException):  # the connection dropped: once more
+                    _download(url, tmp / name, _size(p, name))
+            except (_Short, OSError, http.client.HTTPException) as e:  # no datasets service, too
+                raise RuntimeError(f"downloading {name} of {p['survey']} failed: {e}") from None
+        (tmp / "dataset.json").write_text(json.dumps(p, indent=1) + "\n")
+        shutil.rmtree(d, ignore_errors=True)
+        tmp.rename(d)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     return p
 
 
