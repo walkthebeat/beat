@@ -27,5 +27,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/beat"]
 
+[tool.hatch.build.targets.wheel.force-include]  # `beat report` masks transcripts with the sensor's rules
+"probe/rules/betterleaks.json" = "beat/rules/betterleaks.json"
+"probe/rules/beat.json" = "beat/rules/beat.json"
+"probe/rules/LICENSE.betterleaks" = "beat/rules/LICENSE.betterleaks"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

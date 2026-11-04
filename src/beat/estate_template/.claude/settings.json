@@ -8,13 +8,16 @@
       "Bash(@BEAT@ survey:*)",
       "Bash(@BEAT@ analyze:*)",
       "Bash(@BEAT@ logs:*)",
+      "Bash(@BEAT@ report draft:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
       "Bash(git show:*)"
     ],
     "deny": [
-      "Bash(@BEAT@ survey delete:*)"
+      "Bash(@BEAT@ survey delete:*)",
+      "Bash(@BEAT@ report send:*)",
+      "Bash(@BEAT@ report delete:*)"
     ]
   }
 }

@@ -70,6 +70,7 @@ def init(target: Path) -> None:
     mcp = {"mcpServers": {"beat": {"command": str(bindir / "beat-mcp"), "args": [], "env": env}}}
     (target / ".mcp.json").write_text(json.dumps(mcp, indent=1) + "\n")
     for f in (target / "CLAUDE.md", target / ".claude" / "skills" / "discover" / "SKILL.md",
+              target / ".claude" / "skills" / "report" / "SKILL.md",
               target / ".claude" / "settings.json"):
         f.write_text(f.read_text().replace("@BEAT@", str(bindir / "beat")))
     _git(target, "init", "-q")

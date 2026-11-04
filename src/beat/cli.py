@@ -1,5 +1,5 @@
 """beat: the operator CLI. Questions to the beat service over HTTP (ask, sensors, survey, ...: BEAT_API), the org's
-signing keys (keys), signing in (login, whoami, logout), the org's trust policies (org trust), estate repositories (init, run). The service has its own command,
+signing keys (keys), signing in (login, whoami, logout), the org's trust policies (org trust), estate repositories (init, run), telling walkthebeat what is wrong (report). The service has its own command,
 `beat-service`."""
 from __future__ import annotations
 
@@ -99,6 +99,22 @@ def _main() -> None:
     og.add_argument("--name-from", help="add: the claim that names the sensor, e.g. kubernetes.io/node/name")
     og.add_argument("--jwks", metavar="FILE", help="add: the issuer's public keys (JWKS), for an issuer the service "
                     "cannot reach; default: its discovery document")
+    rp = sub.add_parser("report", help="tell walkthebeat something is wrong with beat: `draft` writes it here and sends "
+                        "nothing; `send` asks you, at a terminal, before each part: the summary as a public issue, the "
+                        "transcript privately to the service; `list`, `delete ID`: the transcripts your org has sent")
+    rps = rp.add_subparsers(dest="report_cmd", required=True)
+    rd = rps.add_parser("draft", help="write a report to a local directory and show it; sends nothing")
+    rd.add_argument("--summary", help="what went wrong (no hostnames: it may become public)")
+    rd.add_argument("--summary-file", help="the same from a file, or - for stdin")
+    rd.add_argument("--title", help="the issue's title (default: the summary's first line)")
+    rd.add_argument("--survey", action="append", default=[], help="a survey id that shows it (repeatable)")
+    rd.add_argument("--transcript", help="a transcript to offer, masked first")
+    rd.add_argument("--session", action="store_true", help="offer this directory's newest Claude Code session")
+    rn = rps.add_parser("send", help="send a draft; asks you at a terminal before each part, with no flag to skip that")
+    rn.add_argument("id", nargs="?", help="the draft (default: the newest)")
+    rps.add_parser("list", help="the transcripts your org's service holds")
+    rx = rps.add_parser("delete", help="delete a transcript your org sent")
+    rx.add_argument("id")
     sv = sub.add_parser("survey", help="recorded surveys: list them, drill into one, its answers and question")
     svs = sv.add_subparsers(dest="survey_cmd", required=True)
     sl = svs.add_parser("list", help="recent surveys, newest first")
@@ -184,6 +200,10 @@ def _main() -> None:
 
     if a.cmd in ("ask", "sensors", "survey", "logs", "analyze", "dataset"):
         return _service(a)
+
+    if a.cmd == "report":
+        from . import report
+        return report.main(a, f"beat {_version()}")
 
     if a.cmd == "org" and a.what == "init":
         return _org_init(a)

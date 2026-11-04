@@ -30,7 +30,8 @@ hosts and interpret the answer. Load the MCP tools you need first if they are de
 `run` asks ONE host: use it to explore and to try a probe before saving it, not to visit hosts one by one.
 **Do not fetch raw records and compare, count or aggregate them yourself** (jq, grep, regexes or loops over many
 log lines): `survey`, `logs` and `analyze` do that, and they remember earlier surveys. If they cannot show what you
-need, say what is missing: that is a finding about beat, worth reporting.
+need, say what is missing. When anything about beat itself is wrong or missing, say so and offer the `report` skill:
+it drafts a report for walkthebeat, and the SRE decides what is sent.
 
 ## Layout and who writes what
 

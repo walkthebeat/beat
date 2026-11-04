@@ -237,3 +237,27 @@ To use beat from Claude in any directory instead, add the server once for your u
 A host: see [the sensor](sensor.md), "Remove". `beat sensors remove NAME` unenrols it at the service.
 
 Your account: write to us; it is done by hand for now.
+
+## Tell us what is wrong
+
+We want to hear what broke, what confused you, and what your agent could not see. Open an issue at
+[github.com/walkthebeat/feedback](https://github.com/walkthebeat/feedback), or ask Claude to use the `report` skill, or
+run it yourself:
+
+```
+beat report draft --summary "what went wrong" --survey SURVEY_ID --session
+beat report send
+```
+
+`draft` writes the report to `~/.cache/beat/reports/` and sends nothing, so you can read and edit it. `send` asks you
+at your own terminal before each of two parts, and an agent cannot answer for you:
+
+- **The summary** becomes a **public** GitHub issue, through your own `gh`, or a link you open if you have no `gh`.
+  Keep hostnames and configuration out of it. `send` warns when it sees one of your sensors' names.
+- **The transcript**, only if you offered one, goes privately to the beat service under your org's login, gzipped.
+  **walkthebeat's staff read it, and it holds your hostnames and configuration, and possibly secrets.** It is masked
+  first, on your machine, with the sensor's rules, and you can read the masked copy before you send it. Masking
+  catches known kinds of secret, not every secret. The public issue names only the report's id.
+
+The service keeps a transcript for 90 days. `beat report list` shows what your org has sent, and
+`beat report delete ID` removes one at once (a backup of the service may hold it for up to 7 more days).

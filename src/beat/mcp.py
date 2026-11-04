@@ -68,7 +68,8 @@ outliers); for raw detail, `run` the few hosts that stand out. An answer over ab
 `too_large` error.
 Hosts that did not answer: `down` (no heartbeat) or `no_answer` (up, and did not answer by the deadline). An up sensor answers, so each `no_answer` is a finding to look into, like a stalled worker; many at once points at beat or the bus before the hosts. A reply that says the survey is not complete (the collector is behind) is beat being slow, not the hosts: wait and read the survey again (`analyze`, `beat survey show`, `beat dataset`) before you analyse it.
 Do not fetch raw records to compare, count or aggregate them yourself (jq, grep, regexes over many lines, loops \
-over log lines): if `survey` or `logs` cannot show what you need, say what is missing, so beat can be improved."""
+over log lines): if `survey` or `logs` cannot show what you need, say what is missing. When anything about beat itself is wrong or \
+missing, say so and offer the `report` skill (`beat report draft`): the person decides what is sent."""
 
 SURVEY = (
     "Ask several hosts (default: every live one) the same Starlark question and get back how they compare. Use it "

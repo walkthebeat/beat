@@ -246,13 +246,13 @@ async def blob(h: str) -> bytes | None:
     return data if status == 200 else None
 
 
-def _http(path: str, body: bytes | None, timeout: float) -> tuple[int, bytes]:
-    """A request to the service, with the login's access token (login.py): POST with a body, else GET; (status,
+def _http(path: str, body: bytes | None, timeout: float, method: str | None = None) -> tuple[int, bytes]:
+    """A request to the service, with the login's access token (login.py): POST with a body, else GET or `method`; (status,
     body), an HTTP error's too. Raises RuntimeError when not signed in, or when the service refuses the login."""
     headers = {"Authorization": f"Bearer {login.access_token()}"}
     if body is not None:
         headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(wire.api_url() + path, data=body, method="GET" if body is None else "POST",
+    req = urllib.request.Request(wire.api_url() + path, data=body, method=method or ("GET" if body is None else "POST"),
                                  headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout + 10) as r:
