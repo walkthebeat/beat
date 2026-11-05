@@ -2,6 +2,7 @@
 name = "drain"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
 publish = false
 description = "Log template summaries for probes (docs/security.md C21): the drain3 crate as a WASI tool"
 

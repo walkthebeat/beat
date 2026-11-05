@@ -44,7 +44,7 @@ uv tool update-shell
 It installs two commands, `beat` and `beat-mcp` (in `~/.local/bin`), needs no root, and configures nothing. Open
 a new terminal again and check that `beat --version` works.
 
-It needs `git`: while the repository is private, git uses your GitHub login (`gh auth setup-git` once, if git does not already have it).
+It needs `git`.
 
 To upgrade later (`uv tool install` does not replace an installed beat): `uv tool upgrade walkthebeat` (the package's name; the commands are `beat` and `beat-mcp`).
 
@@ -103,14 +103,6 @@ and it is fine that it ends up in the host's logs (sudo records the command). Co
 
 ```
 curl -fsSL https://github.com/walkthebeat/beat/releases/latest/download/install.sh | sudo sh
-```
-
-**While the repository is private** (until its first public release), downloads need your GitHub login, so fetch
-the release with the GitHub CLI and install from the files:
-
-```
-gh release download -R walkthebeat/beat -p '*' -D beat-sensor
-sudo BEAT_SENSOR_BASE=file://$PWD/beat-sensor sh beat-sensor/install.sh
 ```
 
 Each release lists its files and the image's root hash; `docs/security.md` says how to check it against the source.

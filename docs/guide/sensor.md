@@ -1,10 +1,11 @@
 # The sensor
 
-Draft, 2026-10-30: the page an evaluator reads before putting a root daemon on company hosts. To be written in
-full, each statement checked against the code. In short, today:
+What you are putting on a host, in short. [`docs/security.md`](https://github.com/walkthebeat/beat/blob/main/docs/security.md)
+has the full model, with each claim's place in the code.
 
 - It runs as a systemd service, `beat-sensor`, as root, so its questions can read what an administrator can.
-- It listens on no port. It connects out to your beat service's message bus, and nowhere else.
+- It listens on no port. It connects out to your beat service: its message bus, and its API for the bus login and at
+  `configure` and `enroll`. With `--attest aws`, also to the instance metadata service and AWS STS.
 - It runs only questions signed by a member of your org, certified by your org root (pinned on the host at
   configure), and countersigned by your beat service. The service alone cannot ask anything.
 - Questions are Starlark programs that read the host and return records. Each runs in its own short-lived systemd

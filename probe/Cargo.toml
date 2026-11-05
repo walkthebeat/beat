@@ -2,6 +2,7 @@
 name = "beat-probe"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
 description = "Starlark probes with beat builtins: checks before sending, evaluation on the host (docs/probes.md)."
 
 [dependencies]

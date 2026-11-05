@@ -224,16 +224,21 @@ NATS runs in operator mode: nobody connects without a login, and each login allo
   the sensor signs a nonce only if it is 8-64 characters of `[A-Za-z0-9_-]`, which nats-server's nonces are and a
   JSON object never is: a bus (or something impersonating it) cannot get a beat message signed by sending it as a
   nonce.
-- **Not built yet:** TLS between the sensor and the bus (with production); an attested sensor attesting again for
-  each login (today it renews with its key, as the others do).
+- **TLS to the bus:** a `tls://` bus address, as the hosted service gives, uses TLS. A `nats://` address does not, so
+  keep that to a network you trust; answers are sealed and signed either way, but who talks to whom is visible.
+- **Not built yet:** an attested sensor attesting again for each login (today it renews with its key, as the others
+  do).
 
 ## The binary you run
 
 - **M16. One image, checked block by block.** The sensor ships as a squashfs image of its Nix closure with a
   dm-verity hash tree (`packaging/sensor/`). systemd mounts it at `/nix/store` in the sensor's unit and in each
   question's unit only; the kernel checks every block as it is read, so a modified image fails on read. The
-  installer checks every file against SHA-256 hashes built into it, and the build is deterministic: `nix build
-  .#beat-sensor-image` and compare your `beat-sensor.roothash` with the release's.
+  installer checks every file against SHA-256 hashes built into it.
+- **Not yet reproducible bit for bit.** `nix build .#beat-sensor-image` at a release's tag is meant to give the
+  release's `beat-sensor.roothash`, but a rebuild can differ in the type order of a few eBPF tools, so today equal
+  hashes prove the image and different ones prove nothing: `docs/reproducibility.md`. Public releases carry a build
+  attestation (`gh attestation verify FILE -R walkthebeat/beat`), which says which workflow built a file.
 - On a host with Nix, the sensor can also run as a Nix closure (`packaging/nix/`).
 
 ## What a compromised beat service can do

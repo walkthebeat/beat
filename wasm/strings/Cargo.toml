@@ -2,6 +2,7 @@
 name = "strings"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
 description = "strings(1) for probes: the printable runs in a binary on stdin, one per line."
 
 [dependencies]

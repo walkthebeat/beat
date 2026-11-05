@@ -31,6 +31,7 @@ pkgs.runCommand "beat-sensor-image-${version}" { nativeBuildInputs = [ pkgs.squa
     --salt=0000 --uuid=00000000-0000-0000-0000-000000000000 \
     | sed -n 's/^Root hash:[[:space:]]*//p' > $out/beat-sensor.roothash
   [ -s $out/beat-sensor.roothash ]
+  cp ${../../THIRD-PARTY.md} $out/THIRD-PARTY.md  # not installed: it goes with the release's files
   cp ${subst "beat-sensor.service" ./beat-sensor.service} $out/beat-sensor.service
   cp ${subst "beat-sensor" ./beat-sensor.sh} $out/beat-sensor
   (cd $out && sha256sum beat-sensor.raw beat-sensor.verity beat-sensor.roothash beat-sensor.service beat-sensor) \

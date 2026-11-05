@@ -2,6 +2,7 @@
 name = "beat-sensor"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
 description = "beat's sensor: answers questions published on NATS by running them with beat-probe (docs/protocol.md)"
 
 [dependencies]
