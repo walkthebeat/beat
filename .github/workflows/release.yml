@@ -1,5 +1,5 @@
 # A tag v<release> (pyproject.toml `version`, which flake.nix reads as `release`: one version for the client and the
-# sensor) publishes the sensor's image and installer as a GitHub release. The image is meant to be reproducible
+# sensor) publishes the sensor's image and installer as a GitHub release, then the client on PyPI. The image is meant to be reproducible
 # (anyone builds `.#beat-sensor-image` at the tag and compares beat-sensor.roothash); not yet: docs/reproducibility.md.
 name: release
 on:
@@ -52,3 +52,32 @@ jobs:
           at this tag can differ in a few eBPF tools' type order (docs/reproducibility.md).
           NOTES
           gh release create "$GITHUB_REF_NAME" dist/* --title "beat-sensor $RELEASE" --notes-file notes.md
+  # The client's wheel, built with no write access to anything; the upload below only takes the file.
+  pypi-build:
+    needs: release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - run: pipx run build --wheel
+      - name: the wheel is this tag's version
+        run: test -f "dist/walkthebeat-${GITHUB_REF_NAME#v}-py3-none-any.whl"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: wheel
+          path: dist/
+  # PyPI trusts this workflow in this environment (trusted publishing: no stored token). The environment `pypi` waits
+  # for a reviewer's approval and takes tags v* only. A version can never be uploaded twice.
+  pypi-publish:
+    needs: pypi-build
+    runs-on: ubuntu-24.04
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          name: wheel
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # release/v1

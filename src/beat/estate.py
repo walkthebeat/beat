@@ -7,7 +7,7 @@
   probes/*.star             collection code: written by the agent during discovery, approved by a person
 
 Probes come from the estate's probes/ and, after it, beat's default pack (pack/: probes for any Linux host,
-installed with beat and read-only, so its fixes reach every estate with `uv tool upgrade beat`). A probe of the estate
+installed with beat and read-only, so its fixes reach every estate with `uv tool upgrade walkthebeat`). A probe of the estate
 wins over the pack's of the same name; `beat probes fork <name>` makes the pack's the estate's, to change it.
 
 `beat init <dir>` creates it from estate_template/ (CLAUDE.md, .mcp.json, the discover skill, the investigator

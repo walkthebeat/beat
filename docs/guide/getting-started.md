@@ -33,18 +33,15 @@ curl -LsSf https://astral.sh/uv/install.sh | sh     # Linux or macOS
 brew install uv                                     # or, on macOS with Homebrew
 ```
 
-Open a new terminal so it is on your PATH. Then install beat from the repository (PyPI later), and let uv put its
-commands on your PATH:
+Open a new terminal so it is on your PATH. Then install beat, and let uv put its commands on your PATH:
 
 ```
-uv tool install git+https://github.com/walkthebeat/beat
+uv tool install walkthebeat
 uv tool update-shell
 ```
 
 It installs two commands, `beat` and `beat-mcp` (in `~/.local/bin`), needs no root, and configures nothing. Open
 a new terminal again and check that `beat --version` works.
-
-It needs `git`.
 
 To upgrade later (`uv tool install` does not replace an installed beat): `uv tool upgrade walkthebeat` (the package's name; the commands are `beat` and `beat-mcp`).
 
