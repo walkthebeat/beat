@@ -18,7 +18,7 @@ deterministic and to write nothing about where or when it ran.
 
 ## How we found out
 
-v0.1.0 matched between GitHub's runner and our development machine. v0.3.0 did not: 2 files of 2064 differed,
+An early release matched between GitHub's runner and our development machine. A later one did not: 2 files of 2064 differed,
 `jq.wasm` and `beat-probe`. Both machines had used the same store paths, the same compilers and the same sources.
 
 ## Cause 1: the build directory (fixed)

@@ -14,7 +14,7 @@ let
 
   # Reproducible across Nix installations: rustc writes the build directory into binaries (panic locations, build
   # scripts' OUT_DIR), and that directory is /build under Determinate Nix but /nix/var/nix/builds/nix-<pid>-<random>
-  # under upstream Nix (GitHub's runner): v0.3.0's image differed by exactly that. Every Rust build here runs rustc
+  # under upstream Nix (GitHub's runner): an early image differed by exactly that. Every Rust build here runs rustc
   # through this wrapper, which maps the directory to /build. A wrapper, not RUSTFLAGS: cargo fingerprints RUSTFLAGS,
   # so a per-build path there would make crane's package build recompile every dependency.
   remap = pkgs.writeShellScript "rustc-remap-build-dir" ''
