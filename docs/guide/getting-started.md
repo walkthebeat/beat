@@ -203,7 +203,7 @@ cd ~/estate
 claude
 ```
 
-`beat init` makes the directory a git repository that Claude works in, with:
+`beat init` makes the directory a git repository that Claude works in (it needs `git`), with:
 
 - `.mcp.json`: Claude starts `beat-mcp` here, which talks to the service you signed in to in step 3.
 - `.claude/settings.json`: Claude may use the beat server and the read-only `beat` commands without asking each

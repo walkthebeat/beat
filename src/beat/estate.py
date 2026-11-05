@@ -44,8 +44,18 @@ def root() -> Path:
     raise EstateError("not inside an estate repository (no hosts/ + probes/ here or above); see `beat init`")
 
 
+# beat's own commits (init, run results) when git knows no one here: a machine with no user.name or user.email
+# would refuse them. Only for that commit (git -c), so the person's own identity, once set, is used again and nothing
+# is written to their configuration.
+FALLBACK_IDENTITY = ("-c", "user.name=beat", "-c", "user.email=beat@localhost")
+
+
 def _git(repo: Path, *args: str, check: bool = True) -> str:
-    p = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+    pre: tuple[str, ...] = ()
+    if args[:1] == ("commit",) and subprocess.run(["git", "-C", str(repo), "var", "GIT_COMMITTER_IDENT"],
+                                                  capture_output=True).returncode != 0:
+        pre = FALLBACK_IDENTITY
+    p = subprocess.run(["git", "-C", str(repo), *pre, *args], capture_output=True, text=True)
     if check and p.returncode != 0:
         raise EstateError(f"git {' '.join(args)}: {p.stderr.strip()}")
     return p.stdout
