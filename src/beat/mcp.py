@@ -6,7 +6,8 @@ Tools (descriptions say first when to use each: in the agent's terms, not beat's
   the analysis (analysis.get) and the logs across hosts (logs.get); raw records only on request (ask.report).
 - `run`: a Starlark question to one host (a survey of one); the answer comes back, and the collector keeps it. An
   answer too large for a tool's output has its log summaries cut, and says so (`cut`).
-- `inventory`: the live sensors (the service's directory), and whether this estate repository has the host.
+- `inventory`: the live sensors (the service's directory), which org they are, and whether this estate repository has
+  the host.
 - `catalog`, `describe_osquery_table`: osquery's tables and columns on a host, asked as questions too.
 - `analyze`: a survey's answers across its hosts (slot kinds, groups, dimensions, rare values, inconsistencies,
   drift): the read API's analysis.get, as `beat analyze` calls it.
@@ -25,7 +26,7 @@ import mcp.types as types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
-from . import ask, estate
+from . import ask, estate, login
 
 HOST = {"type": "string", "description": "Target host: a live sensor's name (see `inventory`)."}
 
@@ -258,6 +259,12 @@ def _size(v: dict) -> int:
     return len(json.dumps(v, default=str))
 
 
+def _org() -> dict | None:
+    """Which org these answers come from: the agent and its transcript should say so."""
+    org, why = login.resolve()
+    return {"id": org, "name": login.org_name(org), "why": why} if org else None
+
+
 async def _inventory() -> dict:
     live = await ask.sensors()
     try:
@@ -274,7 +281,7 @@ async def _inventory() -> dict:
             row["in_estate_repo"] = {"facts": (repo / "hosts" / name / "facts").is_dir(),
                                      "model": (repo / "hosts" / name / "model.md").exists()}
         rows.append(row)
-    return {"ok": True, "hosts": rows, "estate_repo": str(repo) if repo else None}
+    return {"ok": True, "org": _org(), "hosts": rows, "estate_repo": str(repo) if repo else None}
 
 
 async def _query(sql: str, limit: int) -> dict:

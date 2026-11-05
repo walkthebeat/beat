@@ -227,6 +227,31 @@ A host: see [the sensor](sensor.md), "Remove". `beat sensors remove NAME` unenro
 
 Your account: write to us; it is done by hand for now.
 
+## Working with several orgs
+
+An org is one set of hosts, one root and one store: yours and a client's, or production and a test. You create
+another on the [account page](https://walkthebeat.ai/account), then sign in to it from the laptop:
+
+```
+beat login --org <its id>
+```
+
+A login is in one org, and this laptop keeps one per org, each approved once. Each org needs a root of its own, so
+run `beat org init` in it (`beat --org <its id> org init`) and keep **one line per org** in your password manager,
+named so you can tell them apart. A root used for two orgs would let the questions of one be obeyed in the other.
+
+**An estate repository is one org's.** `beat init --org <its id>` writes `beat.json`, which you commit: from inside
+that repository, `beat` and Claude ask that org and refuse anything else, so an agent cannot ask the wrong hosts or
+put another org's facts in this repository. A repository from before this pins itself at its first question, to the org
+you were signed in to; if that may be wrong, run `beat org pin <its id>` first.
+
+Outside an estate, with several logins, `beat` asks you to say which, with `beat --org <its id> ...`. There is no
+current-org setting to forget about. `beat org list` shows this laptop's logins, and `beat whoami` which org this
+command is in and why.
+
+Created a second org with an older `beat`? Upgrade first: `uv tool upgrade walkthebeat`. It keeps one login and one
+credential, and would replace the first org's.
+
 ## Tell us what is wrong
 
 We want to hear what broke, what confused you, and what your agent could not see. Open an issue at

@@ -10,6 +10,10 @@ Probes come from the estate's probes/ and, after it, beat's default pack (pack/:
 installed with beat and read-only, so its fixes reach every estate with `uv tool upgrade walkthebeat`). A probe of the estate
 wins over the pack's of the same name; `beat probes fork <name>` makes the pack's the estate's, to change it.
 
+An estate holds one org's facts, so it is pinned to it: beat.json, committed, naming the service and the org (login.py
+refuses anything else from inside it; docs/hosted.md H21). `beat init` writes it when the org is known, and an estate
+without one gets it at the first question asked from inside it, while the machine's one login says which.
+
 `beat init <dir>` creates it from estate_template/ (CLAUDE.md, .mcp.json, the discover skill, the investigator
 subagent). `beat run <probe> <hosts>` asks the probe of the hosts in one survey and commits each host's records only
 if they changed, so `git log -p hosts/<host>/facts/` is the host's drift history: no timestamps or other per-run
@@ -30,6 +34,7 @@ from pathlib import Path
 TEMPLATE = Path(__file__).parent / "estate_template"
 PACK = Path(__file__).parent / "pack"
 FORKED = "# Forked from beat's default pack"
+PIN = "beat.json"
 
 class EstateError(Exception):
     pass
@@ -61,10 +66,37 @@ def _git(repo: Path, *args: str, check: bool = True) -> str:
     return p.stdout
 
 
+def write_pin(repo: Path, org: str, message: str) -> None:
+    """Writes the estate's pin and commits it, alone, with `message`. A commit that fails leaves the file: the pin
+    works, and the person commits it."""
+    from . import wire
+    (repo / PIN).write_text(json.dumps({"service": wire.api_url(), "org": org}, indent=1) + "\n")
+    if subprocess.run(["git", "-C", str(repo), "add", PIN], capture_output=True).returncode == 0:
+        subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", message, "--", PIN], capture_output=True)
+
+
+def pin_on_first_use() -> None:
+    """Before a question: an estate with no pin takes the org this command is in. Says so on stderr (stdout is the
+    MCP server's protocol)."""
+    from . import login
+    try:
+        repo = root()
+    except EstateError:
+        return
+    if (repo / PIN).exists():
+        return
+    org, _ = login.resolve()
+    if org:
+        write_pin(repo, org, f"This estate is org {org}")
+        print(f"beat: this estate is now org {org}: pinned in {repo / PIN}", file=sys.stderr, flush=True)
+
+
 def init(target: Path) -> None:
+    from . import login
     target = target.resolve()
     if target.exists() and any(target.iterdir()):
         raise EstateError(f"{target} exists and is not empty")
+    org = login.org_for_new_estate()
     # Copy contents, not permissions: from a Nix-built beat the template is read-only.
     shutil.copytree(TEMPLATE, target, dirs_exist_ok=True, copy_function=shutil.copyfile)
     for p in (target, *target.rglob("*")):
@@ -79,6 +111,9 @@ def init(target: Path) -> None:
     env = {"BEAT_API": os.environ["BEAT_API"]} if os.environ.get("BEAT_API") else {}
     mcp = {"mcpServers": {"beat": {"command": str(bindir / "beat-mcp"), "args": [], "env": env}}}
     (target / ".mcp.json").write_text(json.dumps(mcp, indent=1) + "\n")
+    if org:
+        from . import wire
+        (target / PIN).write_text(json.dumps({"service": wire.api_url(), "org": org}, indent=1) + "\n")
     for f in (target / "CLAUDE.md", target / ".claude" / "skills" / "discover" / "SKILL.md",
               target / ".claude" / "skills" / "report" / "SKILL.md",
               target / ".claude" / "settings.json"):
@@ -154,6 +189,7 @@ def run_every(hosts: list[str], commit: bool = True, workers: int = 8) -> list[t
     from concurrent.futures import ThreadPoolExecutor
     from . import ask, seal
     repo = root()
+    pin_on_first_use()
     # Renewed once, before the threads each use them: the login, and the member credential (renewing it in each
     # thread at once would race, and could leave one thread's key with another's credential).
     asyncio.run(ask.whoami())
