@@ -131,3 +131,25 @@ def test_run_every_asks_every_probe_and_writes_each_hosts_facts(repo, monkeypatc
         assert survey == f"s-{name}.star" and set(results) == {"web-1", "web-2"}
         assert results["web-1"]["probe"] == f"pack:{name}.star" and results["web-1"]["commit"]
     assert (repo / "hosts/web-2/facts/hello.jsonl").exists()
+
+
+def test_init_and_commit_without_a_git_identity(tmp_path, monkeypatch):
+    # A fresh laptop: git knows no name or email, and git itself would refuse to commit.
+    for k in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "none"))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    e = tmp_path / "estate"
+    estate.init(e)
+    log = subprocess.run(["git", "-C", str(e), "log", "--format=%an <%ae>"], capture_output=True, text=True).stdout
+    assert log.strip() == "beat <beat@localhost>"
+    # Nothing written to the repository's configuration: the person's identity, once set, is used.
+    assert "user." not in (e / ".git" / "config").read_text()
+    subprocess.run(["git", "-C", str(e), "config", "user.name", "Someone"], check=True)
+    subprocess.run(["git", "-C", str(e), "config", "user.email", "someone@example.com"], check=True)
+    (e / "notes.md").write_text("x\n")
+    estate._git(e, "add", "notes.md")
+    estate._git(e, "commit", "-q", "-m", "notes")
+    log = subprocess.run(["git", "-C", str(e), "log", "-1", "--format=%an"], capture_output=True, text=True).stdout
+    assert log.strip() == "Someone"
