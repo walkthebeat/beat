@@ -9,7 +9,7 @@ dependencies = [
     # From 49.0 cryptography has macOS wheels for arm64 only; 48.0.1 is the last with one for Intel Macs (universal2).
     # Without the cap there, `uv tool install` builds it from source and fails without Rust and OpenSSL. Here, not in
     # [tool.uv]: installs from git or PyPI read only [project].
-    "cryptography<=48.0.1; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "cryptography<=50.0.0; sys_platform == 'darwin' and platform_machine == 'x86_64'",
     "mcp<2",
 ]
 
