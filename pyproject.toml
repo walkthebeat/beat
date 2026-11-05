@@ -1,6 +1,6 @@
 [project]
 name = "walkthebeat"  # on PyPI (beat there is another project); the commands are beat and beat-mcp, the module beat
-version = "0.1.0"  # the release: the client and the sensor (flake.nix reads it); tag v<version>
+version = "0.1.1"  # the release: the client and the sensor (flake.nix reads it); tag v<version>
 description = "beat's client: the CLI, the MCP server, the signer and the wire protocol"
 requires-python = ">=3.12"
 license = "Apache-2.0"
