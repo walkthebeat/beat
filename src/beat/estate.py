@@ -91,6 +91,16 @@ def pin_on_first_use() -> None:
         print(f"beat: this estate is now org {org}: pinned in {repo / PIN}", file=sys.stderr, flush=True)
 
 
+def _command(name: str) -> str:
+    """How the estate's files name one of this installation's commands. The estate is committed and may be used from
+    several machines (a Linux box and a Mac), so by name when PATH finds this installation's copy: an absolute path
+    is right on one machine only, and a permission rule written with it (settings.json: deleting surveys is denied)
+    would not match the command run on another. The absolute path only when PATH would find another copy or none."""
+    mine = Path(sys.executable).parent / name
+    found = shutil.which(name)
+    return name if found and Path(found).resolve() == mine.resolve() else str(mine)
+
+
 def init(target: Path) -> None:
     from . import login
     target = target.resolve()
@@ -104,12 +114,12 @@ def init(target: Path) -> None:
     for d in ("hosts", "annotations", "probes"):
         (target / d).mkdir(exist_ok=True)
         (target / d / ".gitkeep").touch()
-    # The tools this repo uses come from this beat installation: the MCP server and the CLI next to this Python.
+    # The tools this repo uses are this beat installation's: the MCP server and the CLI next to this Python.
     # The MCP server asks the beat service over HTTP (mcp.py, ask.py): the one `beat login URL` kept, so a new login
     # elsewhere moves Claude too; BEAT_API pins this estate to a service only when it is set now.
-    bindir = Path(sys.executable).parent
     env = {"BEAT_API": os.environ["BEAT_API"]} if os.environ.get("BEAT_API") else {}
-    mcp = {"mcpServers": {"beat": {"command": str(bindir / "beat-mcp"), "args": [], "env": env}}}
+    beat, beat_mcp = _command("beat"), _command("beat-mcp")
+    mcp = {"mcpServers": {"beat": {"command": beat_mcp, "args": [], "env": env}}}
     (target / ".mcp.json").write_text(json.dumps(mcp, indent=1) + "\n")
     if org:
         from . import wire
@@ -117,7 +127,7 @@ def init(target: Path) -> None:
     for f in (target / "CLAUDE.md", target / ".claude" / "skills" / "discover" / "SKILL.md",
               target / ".claude" / "skills" / "report" / "SKILL.md",
               target / ".claude" / "settings.json"):
-        f.write_text(f.read_text().replace("@BEAT@", str(bindir / "beat")))
+        f.write_text(f.read_text().replace("@BEAT@", beat))
     _git(target, "init", "-q")
     _git(target, "add", "-A")
     _git(target, "commit", "-q", "-m", "beat init: empty estate")
