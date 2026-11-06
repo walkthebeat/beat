@@ -51,7 +51,7 @@ a sensor run anything on their own.
     heartbeats say which) and sends you to `beat creds init`; shows the root once, as one line
     (`beat-org-root:NAME:KEY`, NAME the date and the key's fingerprint, so two roots never share a name), to keep
     in a password manager; asks for it to be pasted back; certifies the laptop; and does not keep it (`--keep` does,
-    the user's call: "if i am silly enough to store it on disk this is my problem"). Every laptop, the first included
+    the user's choice, at their own risk: a root on disk is as safe as that disk). Every laptop, the first included
     once its credential runs out, gets a credential with `beat creds init`, pasting the root (hidden) or reading
     it (`--root FILE`, `--root -` from a password manager's command line); `beat keys deny` takes it the same way.
     `beat sensors add` needs only the credential: the root's public half is kept next to it. A stolen laptop then

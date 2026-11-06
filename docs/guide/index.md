@@ -1,8 +1,5 @@
 # Why beat
 
-**Alpha: we are still developing, and we invite you to try it.** The functionality works. The site is not highly
-available: one server, with daily snapshots within one AWS account and no outside monitoring yet. If that server is lost, you could lose up to a day of survey history and enrolment. Commands and the sensor's protocol may still change.
-
 Everyone wants an agent on their production now, including the people who built the system. Today there are two ways
 to get one there. You can give it the logs, which are not enough: logs hold only what someone thought to log. Or you
 can give it your own production credentials, which works and is not safe, and engineers do it anyway, because they
@@ -11,44 +8,16 @@ need the help.
 beat is the third way. Your agent reads your Linux hosts as deep as root can, across the whole fleet at once, without your production credentials, and with no way to run anything but read-only questions.
 
 Then comes the part that is hard to explain until you see it. You say "see what you can figure out", and it comes back
-with things you never thought to ask about. Pointed at our own production, it ran into a 12-hour outage of our API
-that no alert had reported, and traced the cause. It also pointed out that our certificate reload had never run, with
-its first renewal weeks away, and that the next reboot would be that configuration's first cold boot.
-
-I have used this, and I miss it at work. I know now that it is possible, and there I do not have it.
+with things you never thought to ask about. On our own production, it found that our certificate reload had never
+run, with its first renewal weeks away, and that the next reboot would be that configuration's first cold boot.
 
 ## What happened when we asked
 
-**You support a 1000-node Slurm cluster and nodes keep going down. Which of the thousands of jobs is doing it?** In a
-simulated cluster that size, the agent was told only that nodes were being marked down. About 5 minutes later it had
-tied all 47 nodes failing a health check to one user's new build, and set aside the nodes that were failing for other
-reasons.
-
-**Three of your sixteen nodes run every job from `/tmp`, and nobody has noticed. Why?** Nobody asked this: a plain
-discovery of a new cluster flagged it. One follow-up question and 14 minutes later, it named a race in our own
-provisioning: those nodes looked up a home directory just before it was created, and the kernel's NFS client cached
-the miss and never checked again. We had not planted that. We did not know it was there.
-
-**The queue is stuck and the node is idle. What is holding it?** Also not planted. Stopping our lab mid-job left Slurm
-reloading a dead job as running, holding every CPU. The agent read the controller's log and saved state, said which
-part was inference, and confirmed it. When the job was cancelled, the next one started 19 seconds later.
-
-**A job has slowed down and all sixteen nodes look equally busy. Which ones are the cause?** In a coupled job, everyone
-waits for the slowest, so every host looks the same. With faults we injected, the agent named the exact 4 nodes out of
-16, and told their two different causes apart.
-
-**A job hangs and the hosts look fine. How far down does it go?** We paused the cloud volume under a cluster's NFS
-homes. In 7.5 minutes the agent traced the hang to the stalled device and stopped at "trigger: external, not
-identified", with the evidence to check next, where it could have made up a story.
-
-**A certificate is about to expire and nothing will renew it. Would you know?** On a web server in our lab, nobody
-asked about certificates. Discovery reported one six days from expiry with nothing to renew it, and a scheduler agent
-logging "heartbeat ok" without ever contacting its server. We planted those two, to see whether it would look.
-
-**You just deployed. Is it actually running?** We edited a live nginx configuration, `nginx -t` passed, and nobody
-reloaded it. Asked what had changed, the agent compared the file's time with the process's start and said the change
-was probably not in effect. On our own production, we wrote down what had to be true for a fix to hold, and checked
-each item with beat when the moment came. It held through its first test.
+We run beat against scenarios in our labs and on our own hosts: faults we injected, and some we did not know were
+there. In a simulated 1000-node Slurm cluster, it tied 47 failing nodes to one user's new build in about 5 minutes. A
+plain discovery of a fresh 16-node cluster found three nodes running every job from `/tmp`, and traced it to a race
+in our own provisioning that nobody had planted. When a job hung on hosts that looked fine, it followed the hang down
+to a paused cloud volume, and said the trigger was not identified rather than make one up.
 
 ## What it is
 
@@ -79,8 +48,6 @@ and the model provider your agent uses.
 
 - **Scale.** The largest real cluster so far has 16 nodes. The 1000-node result is one run, in simulation. No real
   grid of that size has run beat, and the hosted service has not carried that load.
-- **Deploys** are the least tested. Your agent compares when you ask. There is no automatic pass or fail for a rollout
-  yet, and we have not run a staged rollout as a test.
 - **Evidence.** All of it comes from our labs and our own hosts, and most of the faults were ours. There is no outside
   production record yet.
 - **It can be wrong.** One run invented a trigger, one missed a live setting with confidence, and earlier runs needed
