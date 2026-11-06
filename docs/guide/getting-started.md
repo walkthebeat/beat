@@ -211,6 +211,11 @@ claude
 - `CLAUDE.md` and two skills, `discover` (map what runs on hosts) and `investigate` (chase a problem across them):
   how to work with beat, and where the findings go (`hosts/`, `probes/`).
 
+These files name the commands `beat` and `beat-mcp`, so the estate works from any machine where they are on PATH.
+An estate made by beat 0.2.0 or earlier names them by this machine's full path instead, so on another machine the MCP
+server does not start and the rule denying deletes does not match: replace that path with `beat` and `beat-mcp` in
+`.mcp.json`, `.claude/settings.json`, `CLAUDE.md` and `.claude/skills/`, and commit.
+
 beat comes with a default set of probes for any Linux host (`beat probes` lists them): asked to discover your hosts,
 Claude runs them all first, so the first answer takes a minute, then explores what they do not cover. They are a
 starting point: where one does not fit a host, Claude adapts it for your estate.

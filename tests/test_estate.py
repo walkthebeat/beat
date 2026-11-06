@@ -1,6 +1,8 @@
 """Estate repository: init from the template, run probes into facts/; the MCP tools on offer."""
 import json
 import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -153,3 +155,24 @@ def test_init_and_commit_without_a_git_identity(tmp_path, monkeypatch):
     estate._git(e, "commit", "-q", "-m", "notes")
     log = subprocess.run(["git", "-C", str(e), "log", "-1", "--format=%an"], capture_output=True, text=True).stdout
     assert log.strip() == "Someone"
+
+
+def test_init_names_commands_so_the_estate_works_on_another_machine(tmp_path, monkeypatch):
+    # PATH finds this installation's beat: the files say `beat`, so settings.json's deny rule matches on every machine.
+    bindir = Path(sys.executable).parent
+    monkeypatch.setattr(estate.shutil, "which", lambda name: str(bindir / name))
+    e = tmp_path / "estate"
+    estate.init(e)
+    assert json.loads((e / ".mcp.json").read_text())["mcpServers"]["beat"]["command"] == "beat-mcp"
+    settings = (e / ".claude" / "settings.json").read_text()
+    assert '"Bash(beat survey delete:*)"' in settings and str(bindir) not in settings
+    assert str(bindir) not in (e / "CLAUDE.md").read_text()
+
+
+def test_init_keeps_the_path_when_path_finds_another_beat(tmp_path, monkeypatch):
+    monkeypatch.setattr(estate.shutil, "which", lambda name: "/elsewhere/bin/" + name)
+    e = tmp_path / "estate"
+    estate.init(e)
+    bindir = Path(sys.executable).parent
+    assert json.loads((e / ".mcp.json").read_text())["mcpServers"]["beat"]["command"] == str(bindir / "beat-mcp")
+    assert f'"Bash({bindir / "beat"} survey delete:*)"' in (e / ".claude" / "settings.json").read_text()
