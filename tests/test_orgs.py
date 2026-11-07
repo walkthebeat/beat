@@ -327,6 +327,40 @@ def test_files_stay_with_their_org_when_it_logs_out(machine, monkeypatch):
     assert seal.current_member()[1] == cred_a  # and back
 
 
+def test_a_login_to_another_service_never_gets_the_first_services_files(machine, monkeypatch):
+    """Signed in to one service with its org's root kept here, then to a second service: the second org's hosts must
+    not be given the first org's root, nor its questions be signed under it (2026-11-06: `beat sensors add` for a new
+    org on walkthebeat's service printed a dev service's root, and `beat ask` worked with no `beat org init`)."""
+    monkeypatch.setenv("BEAT_API", "http://other")
+    save({"http://other": entry("orgz")})
+    seal.org_keys().keep("root-z", seal.ed25519.Ed25519PrivateKey.generate())
+    _, cred_z = certify("root-z")
+
+    monkeypatch.setenv("BEAT_API", API)
+    Issuer(monkeypatch, "orga")
+    login.login(**quiet)
+    with pytest.raises(seal.Refused, match="no member credential"):
+        seal.member()
+    assert not seal.org_keys().exists() and seal.member_roots() == {}
+
+    monkeypatch.setenv("BEAT_API", "http://other")
+    assert seal.org_keys().current() == "root-z" and seal.current_member()[1] == cred_z
+
+
+def test_flat_files_beside_logins_to_two_services_are_neither_orgs(machine, monkeypatch):
+    """A machine signed in to two services before the files were kept apart: nothing says whose the flat files are,
+    so neither org gets them, and logging out of one does not hand them to it."""
+    seal.Keyring(machine / "keys" / "org", "org root", make_first=False).keep(
+        "root-z", seal.ed25519.Ed25519PrivateKey.generate())
+    save({"http://other": entry("orgz"), API: entry("orga")})
+    assert not seal.org_keys().exists()
+    monkeypatch.setenv("BEAT_API", "http://other")
+    assert not seal.org_keys().exists()
+    Issuer(monkeypatch, "x")
+    login.logout()
+    assert (machine / "keys" / "org" / "root-z.pub").exists()
+
+
 def test_an_org_said_without_a_login_never_gets_the_flat_files(machine, monkeypatch):
     save({API: entry("orga")})
     certify("root-a")

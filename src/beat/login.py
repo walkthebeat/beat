@@ -177,12 +177,14 @@ def resolve() -> tuple[str | None, str | None]:
 
 def org_home(base: Path) -> Path:
     """Where this org's keys are under `base` (docs/hosted.md H21): base/orgs/<org> once it exists or this org is not
-    the machine's one login; else base itself, as every older client left it, so one org means no migration."""
+    the machine's one login; else base itself, as every older client left it, so one org means no migration. One
+    login of the machine's, to any service: the files on disk are not kept per service, so an org on a second service
+    would otherwise be handed the first one's root."""
     org, _ = resolve()
     if not org:
         return base
     d = base / "orgs" / org
-    have = set(of_service(_read(), wire.api_url()))
+    have = {org_of(e) for e in _read().values()}
     return d if d.is_dir() or (have and have != {org}) else base
 
 
@@ -227,9 +229,10 @@ def _revoke(e: dict, refresh_token: str | None) -> None:
             pass  # the login is forgotten here either way
 
 
-def _left_service(org: str | None, logins: dict, api: str) -> None:
-    """The machine's last login to the service is gone: the files beside it are that org's, not the next login's."""
-    if org and not of_service(logins, api):
+def _left_service(org: str | None, logins: dict) -> None:
+    """The machine's last login, to any service, is gone: the files beside it are that org's, not the next login's.
+    While another login is left, the flat files were not this org's alone (org_home)."""
+    if org and not logins:
         from . import seal
         seal.adopt_flat(org)
 
@@ -332,14 +335,15 @@ def login(url: str | None = None, say=lambda line: print(line, flush=True)) -> d
                          "login is revoked and not kept.")
     with _locked() as box:
         have = of_service(box["logins"], api)
-        if got not in have and len(have) == 1:  # a second org: the files beside the first login are the first org's
-            first = next(iter(have))
+        key = have.get(got) or (api if api not in box["logins"] or not got else f"{api}#{got}")
+        if key not in box["logins"] and len(box["logins"]) == 1:
+            # The machine's second login, to this service or another: the files beside the first are the first org's.
+            first = org_of(next(iter(box["logins"].values())))
             if first:
                 from . import seal
                 moved = seal.adopt_flat(first)
                 if moved:
                     say(f"This machine's keys of org {first} are now in {moved}.")
-        key = have.get(got) or (api if api not in box["logins"] or not got else f"{api}#{got}")
         box["logins"][key] = entry
         box["write"] = True
     if url:
@@ -375,7 +379,7 @@ def access_token() -> str:
         if status != 200:
             del box["logins"][key]
             box["write"] = True
-            _left_service(org, box["logins"], api)
+            _left_service(org, box["logins"])
             raise NotSignedIn(f"the login could not be renewed ({t.get('error_description') or t.get('error')}): "
                               f"`beat login{f' --org {org}' if org else ''}`")
         t.setdefault("refresh_token", e["refresh_token"])
@@ -386,7 +390,7 @@ def access_token() -> str:
             del box["logins"][key]
             box["write"] = True
             _revoke(new, new.get("refresh_token"))
-            _left_service(before, box["logins"], api)
+            _left_service(before, box["logins"])
             raise OrgRefused(f"this login was in org {before}, and its renewal is for {org_of(new) or 'no org it names'}: "
                              f"it is revoked and forgotten. `beat login --org {before}`")
         box["logins"][key] = new
@@ -415,7 +419,7 @@ def logout(everyone: bool = False) -> list[dict]:
         gone = [box["logins"].pop(k) for _, k in keys]
         box["write"] = bool(gone)
         for org, _ in keys:
-            _left_service(org, box["logins"], api)
+            _left_service(org, box["logins"])
     for e in gone:
         _revoke(e, e.get("refresh_token"))
     return gone
