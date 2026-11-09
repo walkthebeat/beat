@@ -160,6 +160,9 @@ sample(patterns: list[str], seconds: float = 1.0) -> Sample   # .seconds .before
 - **[B10]** `osq` is osquery's SQL (its SQLite dialect, joins included), straight to osquery: no other engine
   in between. `?` take the extra arguments, bound on the sensor's side ([P4]). Rows come back as dicts keyed by
   column name, with typed values (int, float, str, None), so `iso_utc(row["start_time"])` needs no conversion.
+  One read per call: a `select` (or `with ... select`, `values`), with no `;` inside. Every call of a run goes to
+  one `osqueryi` session (since 2026-11-08; one process per call cost about 0.36 s before any work, and made
+  discovery's seven calls take 6 s on the lab's hosts, 0.5-0.8 s since), so no call may change what the next sees.
 - **[B11]** `journal` reads the systemd journal: the newest `limit` entries matching `unit`, `since` (as journalctl
   takes it: `-30d`, `2026-10-01`) and `grep` (a regex on the message), oldest first.
 - **[B11a]** `journal(kernel=True)` is the kernel's messages of this boot (`journalctl --dmesg`): what dmesg shows.
@@ -326,8 +329,22 @@ service normalizes its records into semantics, metrics, identity and text.
   failures: [{kind, message, span, stack}],
   error:    {kind, message, span, stack}?,
   diag: <text from print>, notes: ["unmapped path /srv/app treated as missing", ...],
-  usage: {wall_ms, cpu_ms, peak_mem, tool_instances, fuel, bytes_read} }
+  usage: {wall_ms, cpu_ms, peak_mem, tool_instances, fuel, bytes_read},
+  timings: {tools, compile, eval, mask, probe, cpu, cpu_children, read_bytes,   -- not part of the answer
+            builtins: {osq: {ms, calls}, journal: {ms, calls}, ...}} }
 ```
+
+`timings` says where the run's time went (docs/hosted.md H25 in the private repo): `tools` loading the WASM tools,
+`compile` the checks and parsing, `eval` running `main()`, `mask` gate 1, `probe` what `eval` spent outside host
+calls (the probe's own Starlark), CPU ms of beat-probe and of the children it waited for (osqueryi's session is not
+one: it is killed, never waited for), bytes read from storage, and each builtin's time and calls. The sensor sends it
+in the answer's Beat-Phases header, never in the answer, so equal answers stay equal.
+
+`beat-probe run --profile` (a question asked with Beat-Profile: `beat run --profile`, `beat ask --profile`, MCP
+`run` with `profile`) also times each host call, and adds the slowest 50 as records: subject
+`beat:profile:<builtin>#<rank>`, keys `ms` (a metric), `call` (its arguments, shortened to 160 characters) and
+`failed`; then `beat:profile` `calls` and `reported`. They pass gate 1 like any record. The client takes them out of
+the answer's records, so they never reach an estate's facts.
 
 ## 10. Decisions and open questions
 

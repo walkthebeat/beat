@@ -60,52 +60,188 @@ fn run(argv: &[String], cwd: &Path, what: &str) -> HostResult<Vec<u8>> {
     Ok(stdout)
 }
 
-/// osquery through `osqueryi --json`, one short-lived process per call.
+/// osquery through one `osqueryi --json` session per probe run, its queries on stdin (docs/hosted.md H25). One
+/// process per call cost about 0.36 s before any work, measured 2026-11-08: a RocksDB database made from scratch
+/// (`--disable_database` drops it; it was thrown away anyway) and a 200 ms sleep in a thread osqueryi waits for
+/// before it answers a one-off query; discovery's 7 osq() calls took 5.5-6 s on the lab's hosts. The session pays
+/// its start once, and is killed with the run (Drop), never waited for.
 pub struct Osquery {
     pub osqueryi: PathBuf,
+    session: std::sync::Mutex<Option<Session>>,
 }
 
 impl Osquery {
+    pub fn new(osqueryi: PathBuf) -> Osquery {
+        Osquery { osqueryi, session: std::sync::Mutex::new(None) }
+    }
+
+    /// One statement's rows, in the session (started on first use, started again after one that failed).
     fn query(&self, sql: &str) -> HostResult<Vec<Map<String, Value>>> {
-        let tmp = tempdir()?;
-        let argv = vec![
-            self.osqueryi.to_string_lossy().into_owned(),
-            "--json".into(),
-            format!("--database_path={}/db", tmp.0.display()), // a throwaway state directory per call
-            format!("--extensions_socket={}/sock", tmp.0.display()),
-            "--disable_extensions".into(),
-            "--logger_min_status=3".into(),
-            sql.into(),
-        ];
-        let out = run(&argv, &tmp.0, "osquery")?;
-        let rows: Vec<Map<String, Value>> = serde_json::from_slice(if out.is_empty() { b"[]" } else { &out })
-            .map_err(|e| HostError::Source(format!("osquery did not return JSON ({e}): {}", String::from_utf8_lossy(&out[..out.len().min(300)]))))?;
-        Ok(rows)
+        let mut held = self.session.lock().unwrap_or_else(|e| e.into_inner());
+        if held.is_none() {
+            *held = Some(Session::start(&self.osqueryi)?);
+        }
+        let r = held.as_mut().unwrap().query(sql);
+        if matches!(r, Err(HostError::Limit(_))) || held.as_ref().is_some_and(|s| s.dead) {
+            *held = None; // a query that ran over its limits, or osqueryi gone: the next one starts afresh
+        }
+        r
     }
 
     /// `osqueryi --json` gives every value as a string (NULL as ""). Typed values come from SQLite's own
-    /// `json_object()`, which needs the column names: the first call gives them, the second the typed rows.
+    /// `json_object()`, which needs the column names. The query runs once, into a temporary table: its columns from
+    /// `pragma table_info`, its typed rows from that table (one run of an expensive table such as systemd_units,
+    /// where two runs of the query used to read it twice).
     pub fn osq(&self, query: &str, params: &[Value]) -> HostResult<Vec<Value>> {
         let sql = bind(query, params)?;
         let sql = sql.trim().trim_end_matches(';').trim().to_string();
         if let Some(why) = refused(&sql) {
             return Err(HostError::Denied(why));
         }
-        let first = self.query(&sql)?;
-        let Some(row) = first.first() else { return Ok(Vec::new()) };
-        let pairs: Vec<String> = row
-            .keys()
-            .map(|k| format!("'{}', \"{}\"", k.replace('\'', "''"), k.replace('"', "\"\"")))
-            .collect();
-        let typed = self.query(&format!("select json_object({}) as j from ({sql})", pairs.join(", ")))?;
-        typed
-            .into_iter()
-            .map(|r| match r.get("j") {
-                Some(Value::String(j)) => serde_json::from_str(j).map_err(|e| HostError::Source(format!("osquery json_object: {e}"))),
-                _ => Err(HostError::Source("osquery: no json_object column".into())),
-            })
-            .collect()
+        let t = format!("beat_q{}", NEXT_TABLE.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+        self.query(&format!("create temp table {t} as {sql}"))?;
+        let rows = (|| {
+            let cols = self.query(&format!("pragma table_info({t})"))?;
+            let names: Vec<String> = cols.iter().filter_map(|c| c.get("name")?.as_str().map(String::from)).collect();
+            if names.is_empty() {
+                return Ok(Vec::new());
+            }
+            let pairs: Vec<String> =
+                names.iter().map(|k| format!("'{}', \"{}\"", k.replace('\'', "''"), k.replace('"', "\"\""))).collect();
+            let typed = self.query(&format!("select json_object({}) as j from {t}", pairs.join(", ")))?;
+            typed
+                .into_iter()
+                .map(|r| match r.get("j") {
+                    Some(Value::String(j)) => serde_json::from_str(j).map_err(|e| HostError::Source(format!("osquery json_object: {e}"))),
+                    _ => Err(HostError::Source("osquery: no json_object column".into())),
+                })
+                .collect()
+        })();
+        let _ = self.query(&format!("drop table if exists {t}"));
+        rows
     }
+}
+
+static NEXT_TABLE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// A running `osqueryi --json`: each statement is followed by a marker query, `select '<nonce>' as beat_end`, so the
+/// end of its result is the marker's row. The nonce is random per session, so no value in a table can be taken for
+/// it; values are JSON strings, escaped, so neither can a name. Errors are read from osqueryi's stderr, a file.
+struct Session {
+    child: std::process::Child,
+    stdin: std::process::ChildStdin,
+    out: std::sync::mpsc::Receiver<Vec<u8>>,
+    buf: Vec<u8>,
+    err: PathBuf,
+    err_seen: usize,
+    marker: Vec<u8>,
+    nonce: String,
+    dead: bool,
+    _dir: TempDir,
+}
+
+impl Session {
+    fn start(osqueryi: &Path) -> HostResult<Session> {
+        let dir = tempdir()?;
+        let err = dir.0.join("stderr");
+        let errf = std::fs::File::create(&err).map_err(|e| HostError::Source(format!("osquery: {e}")))?;
+        let mut child = Command::new(osqueryi)
+            .args(["--json", &format!("--database_path={}/db", dir.0.display()),
+                   &format!("--extensions_socket={}/sock", dir.0.display()), "--disable_extensions", "--disable_database",
+                   "--logger_min_status=3"])
+            .current_dir(&dir.0)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(errf)
+            .spawn()
+            .map_err(|e| HostError::Source(format!("osquery: cannot start {}: {e}", osqueryi.display())))?;
+        let mut stdout = child.stdout.take().unwrap();
+        let stdin = child.stdin.take().unwrap();
+        let (tx, out) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut chunk = vec![0u8; 64 << 10];
+            while let Ok(n) = stdout.read(&mut chunk) {
+                if n == 0 || tx.send(chunk[..n].to_vec()).is_err() {
+                    break;
+                }
+            }
+        });
+        let nonce = nonce()?;
+        let marker = format!("\"beat_end\":\"{nonce}\"").into_bytes();
+        Ok(Session { child, stdin, out, buf: Vec::new(), err, err_seen: 0, marker, nonce, dead: false, _dir: dir })
+    }
+
+    fn query(&mut self, sql: &str) -> HostResult<Vec<Map<String, Value>>> {
+        use std::io::Write;
+        let request = format!("{sql};\nselect '{}' as beat_end;\n", self.nonce);
+        if self.stdin.write_all(request.as_bytes()).and_then(|_| self.stdin.flush()).is_err() {
+            self.dead = true;
+            return Err(HostError::Source(format!("osquery exited: {}", self.stderr())));
+        }
+        let deadline = Instant::now() + TIMEOUT;
+        let at = loop {
+            if let Some(at) = find(&self.buf, &self.marker) {
+                break at;
+            }
+            if self.buf.len() > OUTPUT_LIMIT {
+                return Err(HostError::Limit(format!("osquery: output over {OUTPUT_LIMIT} bytes")));
+            }
+            match self.out.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                Ok(c) => self.buf.extend_from_slice(&c),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    return Err(HostError::Limit(format!("osquery: no answer after {} s", TIMEOUT.as_secs())));
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    self.dead = true;
+                    return Err(HostError::Source(format!("osquery exited: {}", self.stderr())));
+                }
+            }
+        };
+        // The marker's own array, `[\n  {"beat_end":"<nonce>"}\n]\n`: the statement's output is what comes before it.
+        let open = self.buf[..at].iter().rposition(|&b| b == b'[').unwrap_or(0);
+        let close = at + self.buf[at..].iter().position(|&b| b == b']').map(|p| p + 1).unwrap_or(self.buf.len() - at);
+        let end = (close + self.buf[close..].iter().take_while(|b| b.is_ascii_whitespace()).count()).min(self.buf.len());
+        let text = String::from_utf8_lossy(&self.buf[..open]).trim().to_string();
+        self.buf.drain(..end);
+        // A failed statement still prints an empty result; its error is on stderr, before the marker's row.
+        let err = self.stderr();
+        if !err.is_empty() {
+            return Err(HostError::Source(format!("osquery failed: {}", err.replace("near line 1: ", ""))));
+        }
+        if text.is_empty() {
+            return Ok(Vec::new());
+        }
+        serde_json::from_str(&text).map_err(|e| {
+            HostError::Source(format!("osquery did not return JSON ({e}): {}", &text[..text.len().min(300)]))
+        })
+    }
+
+    /// What osqueryi wrote to stderr since the last look.
+    fn stderr(&mut self) -> String {
+        let all = std::fs::read(&self.err).unwrap_or_default();
+        let new = String::from_utf8_lossy(&all[self.err_seen.min(all.len())..]).trim().to_string();
+        self.err_seen = all.len();
+        new.chars().take(4096).collect()
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        let _ = self.child.kill(); // read-only, its state thrown away: no need to wait out its exit
+        let _ = self.child.wait();
+    }
+}
+
+fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    hay.windows(needle.len()).position(|w| w == needle)
+}
+
+fn nonce() -> HostResult<String> {
+    let mut b = [0u8; 16];
+    std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| f.read_exact(&mut b))
+        .map_err(|e| HostError::Source(format!("osquery: /dev/urandom: {e}")))?;
+    Ok(b.iter().map(|x| format!("{x:02x}")).collect())
 }
 
 /// Tables that hand out processes' and containers' environments, with their values.
@@ -124,6 +260,13 @@ pub fn refused(sql: &str) -> Option<String> {
         return Some("osq() takes SQL, not osqueryi's dot commands".into());
     }
     let (words, star) = tokens(sql);
+    // One read per call: the statements share a session (Osquery), so none may change it or follow another.
+    if words.iter().any(|w| w == ";") {
+        return Some("osq() takes one statement: no `;` inside it".into());
+    }
+    if !matches!(words.first().map(String::as_str), Some("select" | "with" | "values")) {
+        return Some("osq() only reads: a select (or with ... select)".into());
+    }
     if let Some(t) = words.iter().find(|w| ENV_TABLES.contains(&w.as_str())) {
         return Some(format!("osq(): {t} is refused: {instead}"));
     }
@@ -252,6 +395,7 @@ fn tokens(sql: &str) -> (Vec<String>, bool) {
                 continue;
             }
             '|' if b.get(i + 1) == Some(&'|') => words.push("||".to_string()),
+            ';' => words.push(";".to_string()),
             _ => {}
         }
         if !c.is_whitespace() {
@@ -403,6 +547,8 @@ fn tempdir() -> HostResult<TempDir> {
 #[cfg(test)]
 mod tests {
     use super::{refused, Osquery};
+    use crate::host::HostError;
+    use serde_json::Value;
     use super::bind;
     use serde_json::json;
 
@@ -476,13 +622,30 @@ mod tests {
     #[test]
     fn the_dodges_are_real_against_osquery() {
         let Some(o) = std::env::var_os("BEAT_OSQUERYI") else { return };
-        let os = Osquery { osqueryi: o.into() };
+        let os = Osquery::new(o.into());
         for q in ["select 1 as x from 'process_envs' limit 1", r#"select 1 as x from "PROCESS_ENVS" limit 1"#,
                   "select 1 as x from [Process_Envs] limit 1", "select 1 as x from main.process_envs limit 1",
                   "select 1 as x from/**/process_envs limit 1"] {
             assert!(refused(q).is_some(), "{q}");
             assert!(os.query(q).is_ok(), "SQLite accepts {q}");
             assert!(os.osq(q, &[]).is_err(), "osq refuses {q}");
+        }
+    }
+
+    #[test]
+    fn a_session_answers_like_a_process_per_call() {
+        // One osqueryi session for every call of a run (docs/hosted.md H25): typed rows, an empty result, and an
+        // error that is an error, after which the session still answers.
+        let Some(o) = std::env::var_os("BEAT_OSQUERYI") else { return };
+        let os = Osquery::new(o.into());
+        let rows = os.osq("select 1 as x, 'a' as y, null as z, 2.5 as w", &[]).unwrap();
+        assert_eq!(rows, vec![serde_json::json!({"x": 1, "y": "a", "z": null, "w": 2.5})]);
+        assert_eq!(os.osq("select 1 as x where 1 = 0", &[]).unwrap(), Vec::<Value>::new());
+        let e = os.osq("select nosuchcol from osquery_info", &[]).unwrap_err().to_string();
+        assert!(e.contains("no such column: nosuchcol"), "{e}");
+        assert_eq!(os.osq("select ? as v", &[Value::from("o'k")]).unwrap(), vec![serde_json::json!({"v": "o'k"})]);
+        for q in ["select 1; select 2", "create temp table t as select 1", "drop table x"] {
+            assert!(matches!(os.osq(q, &[]), Err(HostError::Denied(_))), "{q}");
         }
     }
 
