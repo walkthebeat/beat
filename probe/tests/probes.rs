@@ -392,3 +392,37 @@ fn timings_and_profile() {
     let own = p["records"].as_array().unwrap().len() - profiled.len();
     assert_eq!(own, plain.len());
 }
+
+/// `beat-probe tools` writes the cache's index; a run then loads from it without reading the `.wasm` files, and maps
+/// a tool's code only when a stage runs it. A changed file makes a run load as before (and write the index again).
+#[test]
+fn tools_load_from_the_cache_index() {
+    let Ok(src) = std::env::var("BEAT_WASM_TOOLS") else { return };
+    let base = std::env::temp_dir().join(format!("beat-index-{}", std::process::id()));
+    let (dir, cache) = (base.join("tools"), base.join("cache"));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(Path::new(&src).join("strings.wasm"), dir.join("strings.wasm")).unwrap(); // small: compiles fast
+    let index = || std::fs::read_to_string(cache.join("index.json")).unwrap();
+    let hello = |t: &Tools| {
+        let r = t.pipe(&[vec!["strings".to_string()]], b"hello there\n", &[], &ToolLimits::default()).unwrap();
+        assert!(r.stdout.contains("hello there"), "{r:?}");
+    };
+
+    let verified = Tools::verify(&dir, Some(&cache)).unwrap();
+    let written = index();
+    assert!(written.contains("strings"), "{written}");
+    let indexed = Tools::load(&dir, Some(&cache)).unwrap();
+    assert_eq!(indexed.manifest(), verified.manifest());
+    hello(&indexed);
+    assert_eq!(index(), written, "a run from a current index leaves it alone");
+
+    let f = std::fs::File::open(dir.join("strings.wasm")).unwrap(); // read-only, as copied from the store
+    f.set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(5)).unwrap();
+    drop(f);
+    let reloaded = Tools::load(&dir, Some(&cache)).unwrap();
+    assert_ne!(index(), written, "a changed file is read and hashed again");
+    assert_eq!(reloaded.manifest(), verified.manifest());
+    hello(&reloaded);
+    let _ = std::fs::set_permissions(dir.join("strings.wasm"), std::os::unix::fs::PermissionsExt::from_mode(0o644));
+    std::fs::remove_dir_all(&base).unwrap();
+}

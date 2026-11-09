@@ -103,7 +103,9 @@ fn real_main(argv: &[String]) -> anyhow::Result<ExitCode> {
     let (cmd, rest) = argv.split_first().ok_or_else(|| anyhow::anyhow!("usage: beat-probe check|run|tools ..."))?;
     let a = parse(rest)?;
     let loading = std::time::Instant::now();
-    let tools = a.tools.as_ref().map(|d| Tools::load(d, a.cache.as_deref())).transpose()?.map(std::sync::Arc::new);
+    // `tools` checks every file and writes the cache's index; the other commands use the index when it is current
+    let load = if cmd == "tools" { Tools::verify } else { Tools::load };
+    let tools = a.tools.as_ref().map(|d| load(d, a.cache.as_deref())).transpose()?.map(std::sync::Arc::new);
     let tools_ms = loading.elapsed().as_millis() as u64;
     match cmd.as_str() {
         "check" => {
