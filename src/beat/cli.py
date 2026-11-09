@@ -40,6 +40,8 @@ def _main() -> None:
     er.add_argument("hosts", nargs="+")
     er.add_argument("--no-commit", action="store_true")
     er.add_argument("--stdout", action="store_true", help="also print the probe's text output (print())")
+    er.add_argument("--profile", action="store_true", help="also time each host call (osq, journal, read, ...) and "
+                    "print the slowest: where a slow run's time went. Not written to the facts")
     pr = sub.add_parser("probes", help="the probes this estate runs: its own (probes/) and beat's default pack; "
                         "`fork NAME`: copy the pack's into probes/ to change it; `run [HOSTS]`: every probe at once on "
                         "the hosts (default: every trusted live sensor), facts committed as `beat run` does")
@@ -52,6 +54,8 @@ def _main() -> None:
     ak.add_argument("--host", action="append", default=[], help="only this sensor (repeatable)")
     ak.add_argument("--timeout", type=int, default=120, help="the question's time limit on each sensor, seconds")
     ak.add_argument("--show", action="store_true", help="print each distinct answer")
+    ak.add_argument("--profile", action="store_true", help="also time each host call on each host, and print where "
+                    "each host's time went with its slowest calls")
     ak.add_argument("--json", action="store_true", help="print the whole survey as JSON")
     ak.add_argument("--analyze", action="store_true", help="answer with the comparison across the hosts (as MCP "
                     "`survey`): categories, then `beat analyze` of the survey, and its logs if the probe emits them")
@@ -238,7 +242,7 @@ def _main() -> None:
         from . import estate
         failed = False
         try:
-            survey, answers = estate.ask_star(a.probe, a.hosts)  # one survey: comparable across the hosts
+            survey, answers = estate.ask_star(a.probe, a.hosts, profile=a.profile)  # one survey: comparable
         except estate.EstateError as e:
             raise SystemExit(f"error: {e}")
         for host in a.hosts:
@@ -257,6 +261,8 @@ def _main() -> None:
                 print(f"{host}:   note: {n}")
             if a.stdout and r["stdout"]:
                 print(r["stdout"])
+            if a.profile:
+                _print_profile(host, answers.get(host) or {})
         if len(a.hosts) > 1:
             print(f"survey {survey}: compare the hosts with `beat analyze {survey}` (MCP analyze), logs with "
                   f"`beat logs show {survey}` (MCP logs)")
@@ -352,7 +358,7 @@ def _service(a) -> None:
     if a.analyze:
         return _ask_analyze(a, src)
     try:
-        s = asyncio.run(ask.ask(Path(a.question).name, src, a.host or None, a.timeout))
+        s = asyncio.run(ask.ask(Path(a.question).name, src, a.host or None, a.timeout, profile=a.profile))
     except RuntimeError as e:
         raise SystemExit(f"error: {e}")
     if a.json:
@@ -375,8 +381,24 @@ def _service(a) -> None:
                 print(f"        {json.dumps(r, ensure_ascii=False)}")
     for line in s["standing"]:
         print(f"  {line}")
+    if a.profile:
+        for host in sorted(s["answers"]):
+            _print_profile(host, s["answers"][host])
     missing = s["down"] or s["no_answer"] or s["running"]
     raise SystemExit(0 if not missing and all(x["outcome"] == "ok" for x in s["answers"].values()) else 1)
+
+
+def _print_profile(host: str, answer: dict, top: int = 10) -> None:
+    """Where one host's time went (Beat-Phases) and its slowest host calls (a --profile run)."""
+    from . import ask
+    line = ask.phases_line(answer.get("phases"))
+    print(f"{host}: {line or 'no timings (an older sensor or service)'}")
+    calls = answer.get("profile")
+    if calls is None:
+        print(f"{host}:   no profile (the sensor is older than --profile)")
+        return
+    for c in calls[:top]:
+        print(f"{host}:   {c['ms']:7} ms  {c['builtin']:8} {c['call']}" + ("  (failed)" if c["failed"] else ""))
 
 
 def _dataset(a) -> None:

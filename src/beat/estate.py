@@ -224,21 +224,24 @@ def run_every(hosts: list[str], commit: bool = True, workers: int = 8) -> list[t
     return out
 
 
-def ask_star(probe: str, hosts: list[str]) -> tuple[str, dict]:
+def ask_star(probe: str, hosts: list[str], profile: bool = False) -> tuple[str, dict]:
     """A .star probe asked of all `hosts` in one survey (ask.py), so the collector has them side by side for
-    analysis.get / logs.get. (survey id, {host: answer with "seconds", or an EstateError for that host})."""
+    analysis.get / logs.get. (survey id, {host: answer with "seconds" and "phases", or an EstateError for that host}).
+    `profile`: each answer also has "profile", its host calls (ask.split_profile), which never reach the facts."""
     import asyncio
     from . import ask
     path = probe_path(root(), probe)
     t0 = time.monotonic()
-    s = asyncio.run(ask.ask(path.name, path.read_text(), hosts, via="beat run"))
+    s = asyncio.run(ask.ask(path.name, path.read_text(), hosts, via="beat run", profile=profile))
     secs = round(time.monotonic() - t0, 2)
     out: dict = {}
     for host in hosts:
         if host not in s["answers"]:
             out[host] = EstateError(ask.why_not(s, host))
         else:
-            out[host] = s["answers"][host]["answer"] | {"seconds": secs}
+            a = s["answers"][host]
+            out[host] = a["answer"] | {"seconds": secs, "phases": a.get("phases")} | (
+                {"profile": a["profile"]} if "profile" in a else {})
     return s["survey"], out
 
 

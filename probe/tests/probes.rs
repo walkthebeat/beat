@@ -7,7 +7,7 @@ use std::sync::{Arc, OnceLock};
 
 use beat_probe::check::check;
 use beat_probe::local::{LocalConfig, LocalHost};
-use beat_probe::run::run;
+use beat_probe::run::{run, run_timed};
 use beat_probe::tools::{default_tools, ToolLimits, Tools};
 use serde_json::Value;
 
@@ -31,7 +31,11 @@ fn source(name: &str) -> String {
 }
 
 fn run_probe(name: &str) -> Value {
-    let host = LocalHost::new(LocalConfig {
+    run(name, &source(name), Box::new(fixture()))
+}
+
+fn fixture() -> LocalHost {
+    LocalHost::new(LocalConfig {
         root: dir().join("root"),
         maps: vec!["/etc".to_string(), "/var/log".to_string(), "/proc".to_string()],
         tools: tools(),
@@ -40,8 +44,7 @@ fn run_probe(name: &str) -> Value {
         journalctl: Some(dir().join("fake-journalctl")),
         bpf_tools: None,
     })
-    .unwrap();
-    run(name, &source(name), Box::new(host))
+    .unwrap()
 }
 
 fn messages_with(name: &str, tools: &[String]) -> String {
@@ -362,4 +365,64 @@ fn environ_gives_names_safe_values_and_tokens() {
     assert!(text.contains("beat-env-value:") && text.contains("beat-env-option:masked"), "{r:#}");
     assert_eq!(r["failures"].as_array().unwrap().len(), 1, "a process gone is a failure: {r:#}");
     assert!(r["secrets"]["flagged"].as_array().unwrap().iter().any(|f| f["rule"] == "beat-env-value" && f["action"] == "hash"), "{r:#}");
+}
+
+/// Where a run's time went (docs/hosted.md H25): every run counts its host calls by builtin in `timings`, outside the
+/// records; --profile adds each call, the slowest as `beat:profile:*` records, which pass gate 1 like the rest.
+#[test]
+fn timings_and_profile() {
+    let r = run("journal.star", &source("journal.star"), Box::new(fixture()));
+    let t = &r["timings"];
+    assert_eq!(t["builtins"]["journal"]["calls"], 2, "{t:#}");
+    for k in ["compile", "eval", "mask", "probe"] {
+        assert!(t[k].is_u64(), "{k}: {t:#}");
+    }
+    let plain: Vec<_> = records(&r);
+    assert!(plain.iter().all(|x| !x.0.starts_with("beat:profile")));
+
+    let p = run_timed("journal.star", &source("journal.star"), Box::new(fixture()), true, &[("tools", 7)]);
+    assert_eq!(p["timings"]["tools"], 7);
+    let profiled: Vec<&Value> = p["records"].as_array().unwrap().iter()
+        .filter(|x| x["subject"].as_str().unwrap().starts_with("beat:profile")).collect();
+    let calls: Vec<&str> = profiled.iter().filter(|x| x["key"] == "call").map(|x| x["value"].as_str().unwrap()).collect();
+    assert_eq!(calls.len(), 2, "{profiled:#?}");
+    assert!(calls.iter().any(|c| c.contains("unit=nginx.service") && c.contains("grep=Reload")), "{calls:?}");
+    assert!(profiled.iter().any(|x| x["subject"] == "beat:profile" && x["key"] == "calls" && x["value"] == "2"));
+    // the probe's own records are unchanged by profiling
+    let own = p["records"].as_array().unwrap().len() - profiled.len();
+    assert_eq!(own, plain.len());
+}
+
+/// `beat-probe tools` writes the cache's index; a run then loads from it without reading the `.wasm` files, and maps
+/// a tool's code only when a stage runs it. A changed file makes a run load as before (and write the index again).
+#[test]
+fn tools_load_from_the_cache_index() {
+    let Ok(src) = std::env::var("BEAT_WASM_TOOLS") else { return };
+    let base = std::env::temp_dir().join(format!("beat-index-{}", std::process::id()));
+    let (dir, cache) = (base.join("tools"), base.join("cache"));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(Path::new(&src).join("strings.wasm"), dir.join("strings.wasm")).unwrap(); // small: compiles fast
+    let index = || std::fs::read_to_string(cache.join("index.json")).unwrap();
+    let hello = |t: &Tools| {
+        let r = t.pipe(&[vec!["strings".to_string()]], b"hello there\n", &[], &ToolLimits::default()).unwrap();
+        assert!(r.stdout.contains("hello there"), "{r:?}");
+    };
+
+    let verified = Tools::verify(&dir, Some(&cache)).unwrap();
+    let written = index();
+    assert!(written.contains("strings"), "{written}");
+    let indexed = Tools::load(&dir, Some(&cache)).unwrap();
+    assert_eq!(indexed.manifest(), verified.manifest());
+    hello(&indexed);
+    assert_eq!(index(), written, "a run from a current index leaves it alone");
+
+    let f = std::fs::File::open(dir.join("strings.wasm")).unwrap(); // read-only, as copied from the store
+    f.set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(5)).unwrap();
+    drop(f);
+    let reloaded = Tools::load(&dir, Some(&cache)).unwrap();
+    assert_ne!(index(), written, "a changed file is read and hashed again");
+    assert_eq!(reloaded.manifest(), verified.manifest());
+    hello(&reloaded);
+    let _ = std::fs::set_permissions(dir.join("strings.wasm"), std::os::unix::fs::PermissionsExt::from_mode(0o644));
+    std::fs::remove_dir_all(&base).unwrap();
 }

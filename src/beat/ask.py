@@ -58,22 +58,23 @@ def not_live_reason(host: str, live: list[str]) -> str:
 
 
 async def ask(name: str, source: str, hosts: list[str] | None = None, timeout: int = 120,
-              via: str = "beat ask", wait: float | None = None) -> dict:
+              via: str = "beat ask", wait: float | None = None, profile: bool = False) -> dict:
     """Asks every live sensor, or only `hosts`, through the collector, and waits until the survey is sealed (or
     `wait` seconds; without `wait`, past the deadline for as long as the collector is catching up, up to LATE_S).
     Returns the survey: id, question hash, expected, answers {target: {answer_hash, outcome, started, finished,
     sensor, answer}}, down, no_answer, running (not decided when the wait ended), not_live (expected hosts with no
     directory entry when asked: down from the start), live, sealed, behind (the collector's backlog, messages) and
-    standing (what it all says, ask.standing)."""
+    standing (what it all says, ask.standing). `profile`: each host times every host call (Beat-Profile, signed
+    with the question); an answer's profiled calls are taken out of its records into its `profile` (split_profile)."""
     estate.pin_on_first_use()
     try:
         key, cred = seal.member()
     except seal.Refused as e:  # no credential here, or expired (no root on this machine): `beat creds init`
         raise RuntimeError(str(e)) from None
     r = await api("survey.prepare", {"name": name, "source": source, "targets": hosts or None,
-                                     "timeout": timeout, **asker(via)}, 30)
+                                     "timeout": timeout, **({"profile": True} if profile else {}), **asker(via)}, 30)
     survey = r["survey"]
-    signature = sign_envelope(key, r["headers"], wire.question(name, source), survey, timeout, hosts, cred)
+    signature = sign_envelope(key, r["headers"], wire.question(name, source), survey, timeout, hosts, cred, profile)
     await api("survey.start", {"survey": survey, "signature": signature, "credential": cred}, 30)
     until = time.time() + (wait if wait is not None else
                            max(0.0, wire_time(r["deadline"]) - time.time()) + 5)
@@ -110,6 +111,8 @@ async def ask(name: str, source: str, hosts: list[str] | None = None, timeout: i
                                 "finished": t["finished"], "sensor": t["sensor_version"], "answer": blobs[h]}
         if t.get("phases"):  # where its time went (Beat-Phases): an older service or sensor has none
             answers[t["target"]]["phases"] = t["phases"]
+        if profile and blobs[h]:
+            answers[t["target"]]["answer"], answers[t["target"]]["profile"] = split_profile(blobs[h])
     by = lambda *states: [t["target"] for t in g["targets"] if t["outcome"] in states]  # noqa: E731
     out = {"survey": survey, "question": r["question"], "expected": r["expected"], "answers": answers,
            "down": by("down"), "no_answer": by("no_answer"), "running": by("pending", "running"),
@@ -126,12 +129,12 @@ async def ask(name: str, source: str, hosts: list[str] | None = None, timeout: i
 
 
 def sign_envelope(key, headers: dict, q: bytes, survey: str, timeout: int, hosts: list[str] | None,
-                  cred: str) -> str:
+                  cred: str, profile: bool = False) -> str:
     """The member's signature over a prepared envelope with its credential added (Beat-Cred, H16), once it says what
     was asked: this question (by its hash), these targets (none: every sensor), this time limit. The collector picks
-    the rest (id, key, times)."""
+    the rest (id, key, times). Beat-Profile only when the member asked for it."""
     want = {"Beat-Survey": survey, "Beat-Question": wire.sha256_hex(q), "Beat-Timeout": str(timeout),
-            "Beat-Targets": ",".join(sorted(set(hosts))) if hosts else None}
+            "Beat-Targets": ",".join(sorted(set(hosts))) if hosts else None, "Beat-Profile": "1" if profile else None}
     for k, v in want.items():
         if headers.get(k) != v:
             raise RuntimeError(f"the collector prepared {k} {headers.get(k)!r}, not {v!r}: not signed")
@@ -198,6 +201,56 @@ def secret_walk_note(walk: dict | None) -> str:
         if walk.get(key):  # skipped: [path, why] pairs; uncovered: paths
             parts.append(f"{name}: " + ", ".join(f"{i[0]} ({i[1]})" if isinstance(i, list) else str(i) for i in walk[key]))
     return "; ".join(parts)
+
+
+def phases(text: str | None) -> dict[str, int]:
+    """Beat-Phases as {step: value}: milliseconds, but `*_calls` (counts) and `*_bytes` (docs/protocol.md)."""
+    out = {}
+    for part in (text or "").split(","):
+        k, _, v = part.partition("=")
+        if k and v.lstrip("-").isdigit():
+            out[k] = int(v)
+    return out
+
+
+def phases_line(text: str | None) -> str:
+    """Where a host's time went, in one line: the sensor's steps, then beat-probe's, then its builtins by time."""
+    p = phases(text)
+    if not p:
+        return ""
+    sensor = [k for k in ("queue", "secrets", "needs", "prepare", "unit", "seal") if k in p]
+    probe = [k for k in ("tools", "compile", "eval", "mask", "probe") if k in p]
+    builtins = sorted((k for k in p if f"{k}_calls" in p), key=lambda k: -p[k])
+    out = f"run {p.get('run', 0)} ms: " + ", ".join(f"{k} {p[k]}" for k in sensor)
+    if probe:
+        out += "; beat-probe: " + ", ".join(f"{k} {p[k]}" for k in probe)
+    if builtins:
+        out += "; " + ", ".join(f"{k} {p[k]} ({p[k + '_calls']} calls)" for k in builtins)
+    if "cpu" in p:
+        out += f"; cpu {p['cpu']} + children {p.get('cpu_children', 0)}"
+    return out + (" (retried without placeholders)" if p.get("retry") else "")
+
+
+def split_profile(answer: dict) -> tuple[dict, list[dict]]:
+    """A profiled answer's own records, and its profiled calls (beat-probe --profile: `beat:profile:<builtin>#<rank>`
+    records) as [{builtin, ms, call, failed}], slowest first. The calls are about beat, not the host: they stay out of
+    the facts an estate keeps."""
+    own, calls = [], {}
+    for r in answer.get("records") or []:
+        subject = str(r.get("subject", ""))
+        if not subject.startswith("beat:profile"):
+            own.append(r)
+            continue
+        builtin, _, rank = subject.removeprefix("beat:profile:").partition("#")
+        if rank:
+            c = calls.setdefault(rank, {"builtin": builtin, "ms": 0, "call": "", "failed": False})
+            if r.get("key") == "ms":
+                c["ms"] = int(r.get("value") or 0)
+            elif r.get("key") == "call":
+                c["call"] = r.get("value", "")
+            elif r.get("key") == "failed":
+                c["failed"] = True
+    return {**answer, "records": own}, [calls[k] for k in sorted(calls)]
 
 
 def why_not(survey: dict, host: str) -> str:

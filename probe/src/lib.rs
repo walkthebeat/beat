@@ -20,5 +20,6 @@ pub mod run;
 pub mod scan;
 pub mod secrets;
 pub mod sources;
+pub mod timed;
 pub mod tools;
 pub mod transform;

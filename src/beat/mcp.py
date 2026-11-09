@@ -141,6 +141,9 @@ def tool_defs(guide: str | None, hosts: list[str]) -> list[types.Tool]:
                 "source": {"type": "string", "description": "A Starlark probe: constants, functions and main()."},
                 "name": {"type": "string", "description": "File name for spans and errors, e.g. nginx.star."},
                 "timeout": {"type": "integer", "description": "Seconds (default 120, max 300)."},
+                "profile": {"type": "boolean", "description": "Also time each host call (osq, journal, read, ...) "
+                            "and return the slowest as `profile`, beside `phases` (where the run's time went). For a "
+                            "run that was slow: is it beat, or the host? Default false."},
             }}),
         types.Tool(name="query", description=QUERY, inputSchema={
             "type": "object", "required": ["sql"],
@@ -191,14 +194,15 @@ def tool_defs(guide: str | None, hosts: list[str]) -> list[types.Tool]:
 RUN_MAX_BYTES = 40_000
 
 
-async def _ask_one(host: str, name: str, source: str, timeout: int = 120) -> dict:
-    s = await ask.ask(name, source, [host], timeout, via="beat-mcp")
+async def _ask_one(host: str, name: str, source: str, timeout: int = 120, profile: bool = False) -> dict:
+    s = await ask.ask(name, source, [host], timeout, via="beat-mcp", profile=profile)
     a = s["answers"].get(host)
     if a is None:
         why = ask.why_not(s, host)
         return {"ok": False, "survey": s["survey"], "error": f"{host}: {why}"}
     return {"ok": True, "survey": s["survey"], "answer_hash": a["answer_hash"], **a["answer"],
-            **({"phases": a["phases"]} if a.get("phases") else {})}
+            **({"phases": a["phases"]} if a.get("phases") else {}),
+            **({"profile": a["profile"]} if "profile" in a else {})}
 
 
 def _cap_log_summaries(out: dict, budget: int | None = None) -> dict:
@@ -322,7 +326,7 @@ async def _call(name: str, args: dict) -> dict:
                                                via="beat-mcp")}
     if name == "run":
         return _cap_log_summaries(await _ask_one(host, args.get("name") or "probe.star", args.get("source", ""),
-                                                 int(args.get("timeout") or 120)))
+                                                 int(args.get("timeout") or 120), bool(args.get("profile"))))
     if name == "analyze":
         params = {k: args[k] for k in ("survey", "history") if args.get(k) is not None}
         try:

@@ -180,7 +180,7 @@ impl LocalHost {
         secrets.extend(hidden.lines().filter_map(|p| Pattern::new(&Pattern::escape(p)).ok()));
         let mut h = LocalHost {
             maps, tools, limits, secrets,
-            osquery: osqueryi.map(|osqueryi| Osquery { osqueryi }),
+            osquery: osqueryi.map(Osquery::new),
             journal: journalctl.map(|journalctl| Journal { journalctl }),
             bpf_tools,
             users: HashMap::new(), groups: HashMap::new(), notes: RefCell::new(Vec::new()), prepared: OnceCell::new(),

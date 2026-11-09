@@ -160,6 +160,9 @@ sample(patterns: list[str], seconds: float = 1.0) -> Sample   # .seconds .before
 - **[B10]** `osq` is osquery's SQL (its SQLite dialect, joins included), straight to osquery: no other engine
   in between. `?` take the extra arguments, bound on the sensor's side ([P4]). Rows come back as dicts keyed by
   column name, with typed values (int, float, str, None), so `iso_utc(row["start_time"])` needs no conversion.
+  One read per call: a `select` (or `with ... select`, `values`), with no `;` inside. Every call of a run goes to
+  one `osqueryi` session (since 2026-11-08; one process per call cost about 0.36 s before any work, and made
+  discovery's seven calls take 6 s on the lab's hosts, 0.5-0.8 s since), so no call may change what the next sees.
 - **[B11]** `journal` reads the systemd journal: the newest `limit` entries matching `unit`, `since` (as journalctl
   takes it: `-30d`, `2026-10-01`) and `grep` (a regex on the message), oldest first.
 - **[B11a]** `journal(kernel=True)` is the kernel's messages of this boot (`journalctl --dmesg`): what dmesg shows.
@@ -326,8 +329,22 @@ service normalizes its records into semantics, metrics, identity and text.
   failures: [{kind, message, span, stack}],
   error:    {kind, message, span, stack}?,
   diag: <text from print>, notes: ["unmapped path /srv/app treated as missing", ...],
-  usage: {wall_ms, cpu_ms, peak_mem, tool_instances, fuel, bytes_read} }
+  usage: {wall_ms, cpu_ms, peak_mem, tool_instances, fuel, bytes_read},
+  timings: {tools, compile, eval, mask, probe, cpu, cpu_children, read_bytes,   -- not part of the answer
+            builtins: {osq: {ms, calls}, journal: {ms, calls}, ...}} }
 ```
+
+`timings` says where the run's time went (docs/hosted.md H25 in the private repo): `tools` loading the WASM tools,
+`compile` the checks and parsing, `eval` running `main()`, `mask` gate 1, `probe` what `eval` spent outside host
+calls (the probe's own Starlark), CPU ms of beat-probe and of the children it waited for (osqueryi's session is not
+one: it is killed, never waited for), bytes read from storage, and each builtin's time and calls. The sensor sends it
+in the answer's Beat-Phases header, never in the answer, so equal answers stay equal.
+
+`beat-probe run --profile` (a question asked with Beat-Profile: `beat run --profile`, `beat ask --profile`, MCP
+`run` with `profile`) also times each host call, and adds the slowest 50 as records: subject
+`beat:profile:<builtin>#<rank>`, keys `ms` (a metric), `call` (its arguments, shortened to 160 characters) and
+`failed`; then `beat:profile` `calls` and `reported`. They pass gate 1 like any record. The client takes them out of
+the answer's records, so they never reach an estate's facts.
 
 ## 10. Decisions and open questions
 
@@ -411,10 +428,14 @@ Where the first version (2026-10-03) fell short of this spec, and may still:
   Under beat-sensor the sandbox covers them with placeholders (`sensor/src/runner.rs`), with the limits
   `docs/security.md` states (new files under recursive patterns wait for the next walk; container storage and network
   mounts are not walked); `beat-probe run` on its own does not.
-- **`osq` runs `osqueryi` twice per call**: `--json` gives every value as a string (NULL as ""), so the first call
-  gets the column names and the second wraps the query in SQLite's `json_object()` for typed values. ~0.6 s per
-  `osq`; a live run with 2 queries and a journal read took 2.5 s.
+- **`osq` shares one `osqueryi` session per run** (§9): a process costs ~0.36 s before any work (RocksDB, a 200 ms
+  wait), so a run starts one on its first `osq`, and each call reads its query once, into a temporary table that
+  gives the column names and the typed rows. Discovery, 7 queries: 6 s per host before, 0.5-0.8 s after.
 - **Argument types of tool functions are checked at run time only**: starlark-rust 0.14.2 checks `*args: str` per
   element statically but against the whole tuple at run time, so the generated functions leave `*args` untyped.
-- **Compiled tools are cached** on disk (`--cache`): compiling coreutils.wasm takes ~17 s, loading it ~0.1 s. The
-  cache is trusted like the binary, so it must be writable by the sensor only.
+- **Compiled tools are cached** on disk (`--cache`): compiling coreutils.wasm takes ~17 s. The cache is trusted like
+  the binary, so it must be writable by the sensor only. `beat-probe tools`, which the sensor runs on each start,
+  checks every file and writes `index.json` there (each file's size, mtime, SHA-256 and programs); a run then reads
+  only the index and maps a tool's compiled code when a stage first uses it, a few ms. Without it a run read and
+  hashed all 18 MB of tools on every question, ~110 ms; a stale index (another directory, engine, size or mtime)
+  falls back to that.
