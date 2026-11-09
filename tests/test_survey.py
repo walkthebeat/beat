@@ -17,7 +17,7 @@ def _survey(hosts):
 def test_report_returns_the_comparison_not_the_records(monkeypatch):
     calls = []
 
-    async def fake_ask(name, source, hosts=None, timeout=120, via=""):
+    async def fake_ask(name, source, hosts=None, timeout=120, via="", profile=False):
         return _survey(hosts or ["a", "b"])
 
     async def fake_api(method, params=None, timeout=10):
@@ -43,7 +43,7 @@ def test_beat_run_asks_all_hosts_in_one_survey(tmp_path, monkeypatch):
     monkeypatch.setattr(estate, "root", lambda: repo)
     asked = []
 
-    async def fake_ask(name, source, hosts=None, timeout=120, via=""):
+    async def fake_ask(name, source, hosts=None, timeout=120, via="", profile=False):
         asked.append(list(hosts))
         s = _survey([h for h in hosts if h != "gone"])
         s["expected"], s["not_live"] = hosts, [h for h in hosts if h == "gone"]
@@ -133,7 +133,7 @@ def test_mcp_run_caps_but_catalog_does_not(monkeypatch):
     from beat import mcp
     big = _summary_records("app", 400, 30)
 
-    async def ask_one(host, name, source, timeout=120):
+    async def ask_one(host, name, source, timeout=120, profile=False):
         return {"ok": True, "survey": "s1", "records": big}
     monkeypatch.setattr(mcp, "_ask_one", ask_one)
     r = asyncio.run(mcp._call("run", {"host": "a", "source": "x"}))
@@ -158,3 +158,44 @@ def test_a_secret_walk_is_mentioned_only_when_something_was_not_looked_at():
     note = ask.secret_walk_note({"at": "t", "skipped": [["/var/lib/docker", "container storage"]], "uncovered": ["/a b"]})
     assert "/var/lib/docker (container storage)" in note and "/a b" in note
     assert "not finished" in ask.secret_walk_note({"at": None})
+
+
+def test_phases_and_a_profiled_answer_split():
+    """Where a host's time went (docs/hosted.md H25): Beat-Phases read, and a --profile answer's host calls taken out
+    of its records, so they never reach an estate's facts."""
+    text = "queue=0,secrets=3,run=6700,unit=6690,tools=220,eval=6400,osq=6380,osq_calls=7,read_bytes=17000000"
+    p = ask.phases(text)
+    assert p["osq_calls"] == 7 and p["run"] == 6700
+    line = ask.phases_line(text)
+    assert line.startswith("run 6700 ms") and "osq 6380 (7 calls)" in line
+    answer = {"outcome": "ok", "records": [
+        {"subject": "host", "key": "os", "value": "Ubuntu"},
+        {"subject": "beat:profile:osq#02", "key": "ms", "value": "80"},
+        {"subject": "beat:profile:osq#02", "key": "call", "value": "select 2"},
+        {"subject": "beat:profile:osq#01", "key": "ms", "value": "900"},
+        {"subject": "beat:profile:osq#01", "key": "call", "value": "select 1"},
+        {"subject": "beat:profile:osq#01", "key": "failed", "value": "true"},
+        {"subject": "beat:profile", "key": "calls", "value": "2"}]}
+    own, calls = ask.split_profile(answer)
+    assert own["records"] == [{"subject": "host", "key": "os", "value": "Ubuntu"}]
+    assert calls == [{"builtin": "osq", "ms": 900, "call": "select 1", "failed": True},
+                     {"builtin": "osq", "ms": 80, "call": "select 2", "failed": False}]
+
+
+def test_the_client_signs_beat_profile_only_when_it_asked():
+    """A collector cannot turn profiling on for a question the member did not ask to profile, nor drop it."""
+    from beat import seal, wire
+    key = seal.ed25519.Ed25519PrivateKey.generate()
+    q = wire.question("p.star", "def main():\n    pass\n")
+    base = {"Beat-Survey": "S1", "Beat-Question": wire.sha256_hex(q), "Beat-Timeout": "60", "Beat-Key": "k",
+            "Beat-Issued": "2026-11-08T00:00:00Z", "Beat-Deadline": "2026-11-08T00:02:00Z"}
+    with_profile = {**base, "Beat-Profile": "1"}
+    assert ask.sign_envelope(key, with_profile, q, "S1", 60, None, "cred", profile=True)
+    assert ask.sign_envelope(key, base, q, "S1", 60, None, "cred")
+    for headers, profile in ((with_profile, False), (base, True)):
+        try:
+            ask.sign_envelope(key, headers, q, "S1", 60, None, "cred", profile=profile)
+        except RuntimeError as e:
+            assert "Beat-Profile" in str(e)
+        else:
+            raise AssertionError("signed what was not asked")

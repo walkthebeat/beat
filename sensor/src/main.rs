@@ -193,6 +193,14 @@ fn iso_now() -> String {
     iso_at(unix_now())
 }
 
+/// Now to the millisecond, for Beat-Started and Beat-Finished: subtracted from the bus's own stamp (docs/hosted.md
+/// H25), whole seconds would be a second of rounding.
+fn iso_now_ms() -> String {
+    let d = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let s = iso_at(d.as_secs() as i64);
+    format!("{}.{:03}Z", s.trim_end_matches('Z'), d.subsec_millis())
+}
+
 fn iso_at(secs: i64) -> String {
     let (days, rem) = (secs.div_euclid(86400), secs.rem_euclid(86400));
     // Civil date from days since the epoch (Howard Hinnant's algorithm).
@@ -238,6 +246,8 @@ struct Ask {
     question_hash: String,
     key: String,
     timeout: u64,
+    /// Beat-Profile: 1, signed with the rest: each host call timed, the slowest reported as records (beat-probe --profile)
+    profile: bool,
 }
 
 /// Checks a question before anything runs: signed by a member of the org (Beat-Cred, H16) and countersigned by a collector key, for this payload, for this sensor, issued since
@@ -294,7 +304,8 @@ fn admit(cfg: &Config, seen: &Seen, msg: &async_nats::Message) -> Result<Ask, Op
     if seen.insert(survey.clone(), deadline).is_some() {
         return Err(Some(format!("survey {survey}: asked again (a replay)")));
     }
-    Ok(Ask { survey, question_hash, key, timeout })
+    let profile = seal::get(&h, "Beat-Profile") == Some("1");
+    Ok(Ask { survey, question_hash, key, timeout, profile })
 }
 
 /// Handles one message on an ask subject: answer it, or drop it (admit). `slots` bounds how many questions run at
@@ -302,7 +313,7 @@ fn admit(cfg: &Config, seen: &Seen, msg: &async_nats::Message) -> Result<Ask, Op
 async fn handle(cfg: Arc<Config>, client: async_nats::Client, js: jetstream::Context, slots: Arc<tokio::sync::Semaphore>,
                 seen: Seen, msg: async_nats::Message) {
     let arrived = std::time::Instant::now();
-    let Ask { survey, question_hash, key, timeout } = match admit(&cfg, &seen, &msg) {
+    let Ask { survey, question_hash, key, timeout, profile } = match admit(&cfg, &seen, &msg) {
         Ok(a) => a,
         Err(None) => return,
         Err(Some(why)) => {
@@ -312,7 +323,7 @@ async fn handle(cfg: Arc<Config>, client: async_nats::Client, js: jetstream::Con
     };
     // The runner's own bound is the limit plus 15 s (runner.rs: waiting for systemd-run): the promise includes it.
     let answer_by = iso_at(unix_now() + timeout as i64 + 15);
-    let started = iso_now();
+    let started = iso_now_ms();
     let phases = runner::Phases::default();
     let work = async {
         let q = match wire::parse_question(&msg.payload) {
@@ -327,7 +338,7 @@ async fn handle(cfg: Arc<Config>, client: async_nats::Client, js: jetstream::Con
             return wire::answer_error("busy", &format!("waited {waited} s for a free slot: the {timeout} s time limit \
                                                          was used up before the question could start"));
         }
-        match cfg.runner.run(&q.name, &q.source, left.as_secs(), &phases).await {
+        match cfg.runner.run(&q.name, &q.source, left.as_secs(), &phases, profile).await {
             Ok(result) => wire::answer_from_result(&result),
             // The runner had what was left of the limit; the caller knows the limit they set.
             Err(e) if e.kind == "timeout" => wire::answer_error("timeout", &format!(
@@ -343,9 +354,8 @@ async fn handle(cfg: Arc<Config>, client: async_nats::Client, js: jetstream::Con
             work.await
         }
     };
-    let finished = iso_now();
-    // In a header, like the times above: in the answer they would make equal answers differ (their hash names them).
-    let phase_text = phases.text();
+    let finished = iso_now_ms();
+    let sealing = std::time::Instant::now();
     let mut body = wire::canonical(&answer);
     // Over the server's message limit the publish fails and the sensor would be silent: say so instead.
     let limit = (client.server_info().max_payload).saturating_sub(wire::HEADROOM + seal::OVERHEAD);
@@ -369,6 +379,9 @@ async fn handle(cfg: Arc<Config>, client: async_nats::Client, js: jetstream::Con
             return;
         }
     };
+    phases.seal_ms.store(sealing.elapsed().as_millis() as u64, std::sync::atomic::Ordering::Relaxed);
+    // In a header, like the times above: in the answer they would make equal answers differ (their hash names them).
+    let phase_text = phases.text();
     let fields: seal::Headers = [("Beat-Survey", survey.as_str()), ("Beat-Question", &question_hash),
                                  ("Beat-Target", &cfg.name), ("Beat-Outcome", &outcome), ("Beat-Started", &started),
                                  ("Beat-Finished", &finished), ("Beat-Phases", &phase_text), ("Beat-Sensor", &cfg.version)]

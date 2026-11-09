@@ -28,10 +28,21 @@ fn now() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
+/// One run, its host calls timed in `timings` (crate::timed).
 pub fn run(name: &str, source: &str, host: Box<dyn Host>) -> Json {
+    run_timed(name, source, host, false, &[])
+}
+
+/// One run. `profile`: time each host call on its own too, and report the slowest as records (crate::timed).
+/// `before`: what the caller spent before this run, in ms by step (beat-probe: loading the tools), for `timings`.
+pub fn run_timed(name: &str, source: &str, host: Box<dyn Host>, profile: bool, before: &[(&str, u64)]) -> Json {
     let started = now();
     let t0 = Instant::now();
     let id = probe_id(source);
+    let (host, stats) = crate::timed::Timed::new(host, profile);
+    let host: Box<dyn Host> = Box::new(host);
+    let steps: RefCell<Vec<(&str, u64)>> = RefCell::new(before.to_vec());
+    let step = |name: &'static str, since: Instant| steps.borrow_mut().push((name, crate::timed::ms(since.elapsed())));
     let result = |outcome: &str, st: &RunState, error: Json, notes: Vec<String>, secrets: Option<Json>| {
         let mut r = json!({
             "probe": id, "name": name, "started": iso_utc(started), "finished": iso_utc(now()),
@@ -39,6 +50,7 @@ pub fn run(name: &str, source: &str, host: Box<dyn Host>) -> Json {
             "records": st.records, "failures": st.failures, "error": error,
             "diag": st.diag, "notes": notes,
             "usage": {"wall_ms": t0.elapsed().as_millis() as u64},
+            "timings": timings(&steps.borrow(), &stats.borrow()),
         });
         // Only when gate 1 found something, so that clean answers hash as before (docs/security.md).
         if let Some(s) = secrets {
@@ -47,6 +59,7 @@ pub fn run(name: &str, source: &str, host: Box<dyn Host>) -> Json {
         r
     };
 
+    let compiling = Instant::now();
     let tools = host.tools();
     let diags = check(name, source, &tools);
     if !diags.is_empty() {
@@ -63,6 +76,8 @@ pub fn run(name: &str, source: &str, host: Box<dyn Host>) -> Json {
     };
 
     let globals = globals(&tools);
+    step("compile", compiling);
+    let evaluating = Instant::now();
     let ctx = Ctx { host, state: RefCell::new(RunState::default()) };
     let print = DiagPrint(&ctx.state);
     let outcome: Result<(), starlark::Error> = Module::with_temp_heap(|module| {
@@ -76,9 +91,14 @@ pub fn run(name: &str, source: &str, host: Box<dyn Host>) -> Json {
         Ok(())
     });
 
+    step("eval", evaluating);
     let notes = ctx.host.notes();
     let mut st = ctx.state.borrow_mut();
+    // A profiled run's calls are records, before gate 1: their arguments are paths and queries, masked like the rest.
+    st.records.extend(crate::timed::profile_records(&stats.borrow()));
+    let masking = Instant::now();
     let secrets = crate::secrets::gate(&mut st);
+    step("mask", masking);
     match outcome {
         Ok(()) if st.failures.is_empty() => result("ok", &st, Json::Null, notes, secrets),
         Ok(()) => result("partial", &st, Json::Null, notes, secrets),
@@ -97,4 +117,25 @@ pub fn run(name: &str, source: &str, host: Box<dyn Host>) -> Json {
             result("error", &st, error, notes, secrets)
         }
     }
+}
+
+/// The run result's `timings`: the steps in ms (tools, compile, eval, mask), `probe` (eval less the host calls: the
+/// probe's own Starlark), CPU ms of this process and of the children it waited for, bytes read from storage, and each
+/// builtin's {ms, calls}. Not part of the answer (the sensor sends it as a header).
+fn timings(steps: &[(&str, u64)], stats: &crate::timed::Stats) -> Json {
+    let mut t = serde_json::Map::new();
+    for (k, v) in steps {
+        t.insert(k.to_string(), json!(v));
+    }
+    if let Some(eval) = t.get("eval").and_then(|v| v.as_u64()) {
+        t.insert("probe".into(), json!(eval.saturating_sub(crate::timed::ms(stats.busy()))));
+    }
+    let (cpu, children, read) = crate::timed::usage();
+    for (k, v) in [("cpu", cpu), ("cpu_children", children), ("read_bytes", read)] {
+        if let Some(v) = v {
+            t.insert(k.into(), json!(v));
+        }
+    }
+    t.insert("builtins".into(), crate::timed::totals_json(stats));
+    Json::Object(t)
 }

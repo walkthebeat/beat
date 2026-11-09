@@ -70,18 +70,53 @@ pub struct Walked {
     pub scan: Value,
 }
 
-/// Where a question's time went, for the answer's Beat-Phases header and the log.
+/// Where a question's time went, for the answer's Beat-Phases header and the log (docs/protocol.md): the sensor's own
+/// steps in ms, then beat-probe's `timings` (inside `unit`), flattened. Keys ending in `_calls` are counts, in
+/// `_bytes` bytes; every other value is milliseconds.
 #[derive(Default)]
 pub struct Phases {
     pub queue_ms: AtomicU64,
     pub secrets_ms: AtomicU64,
     pub run_ms: AtomicU64,
+    /// `beat-probe needs`: the trace capabilities the probe asks for, a process of its own
+    pub needs_ms: AtomicU64,
+    /// the secrets map file and the placeholders' bind list
+    pub prepare_ms: AtomicU64,
+    /// systemd-run, from its start to its end: the sandbox's set-up and beat-probe's whole run
+    pub unit_ms: AtomicU64,
+    /// the unit run again without placeholders (226/NAMESPACE: mounts refused)
+    pub retried: AtomicU64,
+    pub seal_ms: AtomicU64,
+    /// beat-probe's run result `timings`
+    pub probe: std::sync::Mutex<Option<Value>>,
 }
 
 impl Phases {
     pub fn text(&self) -> String {
-        format!("queue={},secrets={},run={}", self.queue_ms.load(Ordering::Relaxed), self.secrets_ms.load(Ordering::Relaxed),
-                self.run_ms.load(Ordering::Relaxed))
+        let l = |a: &AtomicU64| a.load(Ordering::Relaxed);
+        let mut out = format!("queue={},secrets={},run={},needs={},prepare={},unit={},seal={}", l(&self.queue_ms),
+                              l(&self.secrets_ms), l(&self.run_ms), l(&self.needs_ms), l(&self.prepare_ms),
+                              l(&self.unit_ms), l(&self.seal_ms));
+        if l(&self.retried) > 0 {
+            out.push_str(",retry=1");
+        }
+        if let Some(Value::Object(t)) = self.probe.lock().unwrap().as_ref() {
+            for (k, v) in t {
+                match (k.as_str(), v) {
+                    ("builtins", Value::Object(b)) => {
+                        for (name, x) in b {
+                            out.push_str(&format!(",{name}={},{name}_calls={}", x["ms"].as_u64().unwrap_or(0),
+                                                  x["calls"].as_u64().unwrap_or(0)));
+                        }
+                    }
+                    (k, Value::Number(n)) if k.chars().all(|c| c.is_ascii_lowercase() || c == '_') => {
+                        out.push_str(&format!(",{k}={n}"));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        out
     }
 }
 
@@ -144,10 +179,14 @@ struct Exit {
 
 impl Runner {
     /// Runs the question; Ok is beat-probe's run result (docs/probes.md §9), Err why there is none.
-    pub async fn run(&self, name: &str, source: &str, timeout_s: u64, phases: &Phases) -> Result<Value, Failed> {
+    /// `profile`: the person asked for each host call's time (Beat-Profile): beat-probe --profile.
+    pub async fn run(&self, name: &str, source: &str, timeout_s: u64, phases: &Phases, profile: bool) -> Result<Value, Failed> {
         let mut probe = vec![self.probe.display().to_string(), "run".into(), "-".into(), "--name".into(), name.into(),
                              "--map".into(), "/".into(), "--tools".into(), self.tools.display().to_string(),
                              "--cache".into(), self.cache.display().to_string()];
+        if profile {
+            probe.push("--profile".into());
+        }
         for (flag, path) in [("--osqueryi", &self.osqueryi), ("--journalctl", &self.journalctl), ("--bpf-tools", &self.bpf_tools)] {
             if let Some(p) = path {
                 probe.extend([flag.to_string(), p.display().to_string()]);
@@ -161,13 +200,14 @@ impl Runner {
                 let (secrets, report) = found?;
                 let left = timeout_s.saturating_sub(begun.elapsed().as_secs()).max(1);
                 let ran = Instant::now();
-                let x = self.run_sandboxed(probe, source, left, placeholders, name, &secrets, &report).await;
+                let x = self.run_sandboxed(probe, source, left, placeholders, name, &secrets, &report, phases).await;
                 phases.run_ms.store(ran.elapsed().as_millis() as u64, Ordering::Relaxed);
                 x?
             }
             None => run_piped(probe, source, timeout_s).await?,
         };
-        if let Ok(v) = serde_json::from_slice(&x.stdout) {
+        if let Ok(v) = serde_json::from_slice::<Value>(&x.stdout) {
+            *phases.probe.lock().unwrap() = v.get("timings").cloned();
             return Ok(v);
         }
         Err(match x.result.as_str() {
@@ -206,25 +246,31 @@ impl Runner {
 
     /// The probe in a transient unit, with the secret placeholders mounted unless the host refused them before.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     async fn run_sandboxed(&self, probe: Vec<String>, source: &str, timeout_s: u64, placeholders: &PathBuf, name: &str,
-                           secrets: &[SecretFile], report: &Scan) -> Result<Exit, Failed> {
+                           secrets: &[SecretFile], report: &Scan, phases: &Phases) -> Result<Exit, Failed> {
         let mounts = !self.secret_mounts_denied.load(Ordering::Relaxed);
+        let t = Instant::now();
         let caps = self.trace_caps(source).await?;
+        phases.needs_ms.store(t.elapsed().as_millis() as u64, Ordering::Relaxed);
         let q = Question { source, timeout_s, placeholders, name, caps: &caps, secrets, report };
-        let (x, code) = self.unit(probe.clone(), &q, mounts).await?;
+        let (x, code) = self.unit(probe.clone(), &q, mounts, phases).await?;
         if mounts && code == Some(226) {
             eprintln!("secret placeholders cannot be mounted on this host (226/NAMESPACE, e.g. SELinux): questions run \
                        without them from now on; secret files stay unreadable to beat-probe, not to osqueryi");
             self.secret_mounts_denied.store(true, Ordering::Relaxed);
-            return Ok(self.unit(probe, &q, false).await?.0);
+            phases.retried.store(1, Ordering::Relaxed);
+            return Ok(self.unit(probe, &q, false, phases).await?.0);
         }
         Ok(x)
     }
 
     /// One transient unit; its stdin, stdout and stderr are files in RUN_DIR. The exit code is the unit's, and so is
     /// how it ended (Result: oom-kill when MemoryMax was reached, timeout at RuntimeMaxSec).
-    async fn unit(&self, probe: Vec<String>, q: &Question<'_>, mounts: bool) -> Result<(Exit, Option<i32>), Failed> {
+    async fn unit(&self, probe: Vec<String>, q: &Question<'_>, mounts: bool, phases: &Phases)
+                  -> Result<(Exit, Option<i32>), Failed> {
         let Question { source, timeout_s, name, .. } = *q;
+        let preparing = Instant::now();
         let id = format!("{}-{}", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed));
         let file = |ext: &str| Path::new(RUN_DIR).join(format!("{id}.{ext}"));
         let (input, output, error, meta) = (file("star"), file("out"), file("err"), file("secrets"));
@@ -251,6 +297,8 @@ impl Runner {
                 "too many secret files to cover: {} placeholders make {size} bytes of arguments to systemd-run, over \
                  {ARGV_MAX}: the question was not run", q.secrets.len()) });
         }
+        phases.prepare_ms.store(preparing.elapsed().as_millis() as u64, Ordering::Relaxed);
+        let unit_started = Instant::now();
         let child = Command::new(&argv[0])
             .args(&argv[1..]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true)
             .spawn().map_err(|e| format!("cannot start {}: {e}", argv[0]))?;
@@ -259,6 +307,7 @@ impl Runner {
             .await
             .map_err(|_| format!("time limit ({timeout_s}s) reached"))?
             .map_err(|e| format!("waiting for beat-probe: {e}"))?;
+        phases.unit_ms.store(unit_started.elapsed().as_millis() as u64, Ordering::Relaxed);
         let stdout = tokio::fs::read(&output).await.unwrap_or_default();
         let mut stderr = tokio::fs::read(&error).await.unwrap_or_default();
         stderr.extend_from_slice(&run.stderr); // systemd-run's own complaints, e.g. a unit that could not start
@@ -742,7 +791,7 @@ mod tests {
         let n: usize = std::env::var("BEAT_TEST_N").ok().and_then(|n| n.parse().ok()).unwrap_or(3);
         for _ in 0..n {
             let (begun, phases) = (Instant::now(), Phases::default());
-            let r = runner.run("trivial.star", trivial, 120, &phases).await;
+            let r = runner.run("trivial.star", trivial, 120, &phases, false).await;
             match r {
                 Ok(v) => println!("trivial: {} in {:?}; {}", v["outcome"], begun.elapsed(), phases.text()),
                 Err(e) => panic!("{}: {}", e.kind, e.message),
@@ -751,13 +800,13 @@ mod tests {
         // A file gone since the walk: a bind over it would make systemd create it on the host.
         if let Ok(gone) = std::env::var("BEAT_TEST_GONE") {
             std::fs::remove_file(&gone).unwrap();
-            let v = runner.run("trivial.star", trivial, 120, &Phases::default()).await.map_err(|e| e.message).unwrap();
+            let v = runner.run("trivial.star", trivial, 120, &Phases::default(), false).await.map_err(|e| e.message).unwrap();
             assert_eq!(v["outcome"], "ok");
             assert!(!Path::new(&gone).exists(), "the question created {gone}");
             println!("{gone} stayed gone");
         }
         let list = "def main() -> None:\n    for s in secrets():\n        emit(\"secret:\" + s.path, \"mode\", s.mode, \"secrets\")\n";
-        let v = runner.run("list.star", list, 120, &Phases::default()).await.map_err(|e| e.message).unwrap();
+        let v = runner.run("list.star", list, 120, &Phases::default(), false).await.map_err(|e| e.message).unwrap();
         println!("secrets(): {} records; notes {}", v["records"].as_array().map_or(0, Vec::len), v["notes"]);
         for r in v["records"].as_array().into_iter().flatten() {
             println!("  {}", r["subject"]);
@@ -856,7 +905,7 @@ mod tests {
     emit("tool", "hint", r.stderr, "pipe")
     emit("checklist", "keys", str(len(checklist())), "checklist")
 "#, sock_fd = sock.as_raw_fd());
-        let v = runner.run("debugging.star", &q, 120, &Phases::default()).await.map_err(|e| e.message).unwrap();
+        let v = runner.run("debugging.star", &q, 120, &Phases::default(), false).await.map_err(|e| e.message).unwrap();
         let rec = |s: &str, k: &str| v["records"].as_array().unwrap().iter().find(|r| r["subject"] == s && r["key"] == k).map(|r| r["value"].as_str().unwrap().to_string());
         let mut bad = Vec::new();
         for (p, want) in &ok_reads {
@@ -896,7 +945,7 @@ mod tests {
             if !name.ends_with(".star") { continue; }
             names += 1;
             let src = std::fs::read_to_string(&p).unwrap();
-            match runner.run(&name, &src, 120, &Phases::default()).await {
+            match runner.run(&name, &src, 120, &Phases::default(), false).await {
                 Ok(a) => {
                     let n = a["records"].as_array().map_or(0, Vec::len);
                     println!("pack {name}: {} {n} records, {} failures", a["outcome"], a["failures"].as_array().map_or(0, Vec::len));

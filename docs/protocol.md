@@ -18,15 +18,25 @@ the relations (survey, target, times).
 | Subject | Transport | Payload | From | Headers |
 | --- | --- | --- | --- | --- |
 | `beat.survey.<survey>` | JetStream | question | collector | Beat-Survey, Beat-Question, Beat-Selector, Beat-Expected, Beat-Asked-By, Beat-Asked-At, Beat-Deadline, Beat-Ack-Until |
-| `beat.ask.all`, `beat.ask.host.<name>` | core NATS | question | member, countersigned by the collector | Beat-Survey, Beat-Question, Beat-Key, Beat-Timeout, Beat-Issued, Beat-Deadline, Beat-Cred, Beat-Targets (optional) |
+| `beat.ask.all`, `beat.ask.host.<name>` | core NATS | question | member, countersigned by the collector | Beat-Survey, Beat-Question, Beat-Key, Beat-Timeout, Beat-Issued, Beat-Deadline, Beat-Cred, Beat-Targets (optional), Beat-Profile (optional) |
 | `beat.ack.<survey>` | JetStream | none | sensor | Beat-Survey, Beat-Question, Beat-Target, Beat-Answer-By, Beat-Sensor |
 | `beat.answer.<survey>` | JetStream | sealed answer | sensor | Beat-Survey, Beat-Question, Beat-Target, Beat-Outcome, Beat-Started, Beat-Finished, Beat-Phases, Beat-Sensor |
 | KV `beat-directory`, key `<name>` | KV | heartbeat | sensor | (the entry is signed JSON) |
 | KV `beat-deny`, key `list` | KV | the org root's deny list | root, relayed by the service | (signed JSON) |
 
-`Beat-Phases` says where an answer's time went, in milliseconds: `queue=N,secrets=N,run=N` (waiting for a slot, finding
-secret files, the question's unit). It is a header like the times beside it, not part of the answer: the answer's hash
-names it, and equal answers must stay equal. A heartbeat's `secret_walk` says when secret files were last walked for
+`Beat-Phases` says where an answer's time went: `key=N,...`, in milliseconds except keys ending in `_calls` (counts)
+and `_bytes`. The sensor's steps: `queue` (waiting for a slot), `secrets` (finding secret files), `run` (all of what
+follows), `needs` (`beat-probe needs`), `prepare` (the secrets map file, the bind list), `unit` (systemd-run, start to
+end), `retry=1` (the unit again without placeholders: mounts refused), `seal`. Then beat-probe's run result `timings`
+(docs/probes.md §9), flattened: `tools`, `compile`, `eval`, `mask`, `probe`, `cpu`, `cpu_children`, `read_bytes`, and
+per builtin `<builtin>=N,<builtin>_calls=N`. Sensors before 0.2.2 send `queue`, `secrets` and `run` only; readers keep
+keys they do not know. It is a header like the times beside it, not part of the answer: the answer's hash
+names it, and equal answers must stay equal. `Beat-Started` and `Beat-Finished` are to the millisecond
+(`2026-11-09T00:01:35.123Z`; before 0.2.2, to the second).
+
+`Beat-Profile: 1` on a question (prepared by the collector when the member asks, signed by the member with the rest:
+a client refuses to sign it unasked, or to sign without it when it asked): beat-probe `--profile`, each host call
+timed, the slowest as records of the answer (docs/probes.md §9). An older sensor ignores it. A heartbeat's `secret_walk` says when secret files were last walked for
 and what was left out (`docs/security.md`).
 
 - A sensor acks only when its answer is not out within a second, with the time it will answer by.

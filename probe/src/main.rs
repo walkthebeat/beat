@@ -11,6 +11,7 @@
 //!       Without them, those builtins fail with an error of kind "source". --bpf-tools: the catalog's directory
 //!       behind trace() (libbpf-tools and timeout); it needs CAP_BPF and CAP_PERFMON.
 //!       FILE may be `-`: the probe is read from stdin (--name sets the name used in spans and errors).
+//!       The result's `timings` say where the run's time went; --profile adds each host call, the slowest as records.
 //!   beat-probe needs FILE
 //!       The capabilities the probe's trace() entries need, as JSON ({"entries": [...], "capabilities": [...]}): what
 //!       a sensor adds to the question's unit. FILE may be `-` (stdin). A probe that does not parse needs nothing.
@@ -39,6 +40,7 @@ struct Args {
     journalctl: Option<PathBuf>,
     bpf_tools: Option<PathBuf>,
     name: Option<String>,
+    profile: bool,
     scope: Option<Scope>,
     budget: Budget,
 }
@@ -52,7 +54,7 @@ enum Scope {
 
 fn parse(argv: &[String]) -> anyhow::Result<Args> {
     let mut a = Args { files: Vec::new(), root: PathBuf::from("/"), maps: Vec::new(), tools: None, cache: None,
-                        osqueryi: None, journalctl: None, bpf_tools: None, name: None, scope: None, budget: Budget::default() };
+                        osqueryi: None, journalctl: None, bpf_tools: None, name: None, profile: false, scope: None, budget: Budget::default() };
     let mut it = argv.iter();
     while let Some(x) = it.next() {
         let mut val = || it.next().cloned().ok_or_else(|| anyhow::anyhow!("{x} needs a value"));
@@ -65,6 +67,7 @@ fn parse(argv: &[String]) -> anyhow::Result<Args> {
             "--journalctl" => a.journalctl = Some(PathBuf::from(val()?)),
             "--bpf-tools" => a.bpf_tools = Some(PathBuf::from(val()?)),
             "--name" => a.name = Some(val()?),
+            "--profile" => a.profile = true,
             "--live" => a.scope = Some(Scope::Live),
             "--walk" => a.scope = Some(Scope::Walk),
             "--budget-s" => a.budget.seconds = val()?.parse()?,
@@ -99,7 +102,9 @@ fn main() -> ExitCode {
 fn real_main(argv: &[String]) -> anyhow::Result<ExitCode> {
     let (cmd, rest) = argv.split_first().ok_or_else(|| anyhow::anyhow!("usage: beat-probe check|run|tools ..."))?;
     let a = parse(rest)?;
+    let loading = std::time::Instant::now();
     let tools = a.tools.as_ref().map(|d| Tools::load(d, a.cache.as_deref())).transpose()?.map(std::sync::Arc::new);
+    let tools_ms = loading.elapsed().as_millis() as u64;
     match cmd.as_str() {
         "check" => {
             let names: Vec<String> = tools.as_ref().map(|t| t.manifest().into_keys().collect()).unwrap_or_else(default_tools);
@@ -136,7 +141,7 @@ fn real_main(argv: &[String]) -> anyhow::Result<ExitCode> {
                 journalctl: a.journalctl.clone(),
                 bpf_tools: a.bpf_tools.clone(),
             })?;
-            let r = run::run(f, &src, Box::new(host));
+            let r = run::run_timed(f, &src, Box::new(host), a.profile, &[("tools", tools_ms)]);
             println!("{}", serde_json::to_string_pretty(&r)?);
             Ok(match r["outcome"].as_str() {
                 Some("ok") => ExitCode::SUCCESS,

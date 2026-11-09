@@ -32,7 +32,7 @@ def test_run_starlark_probe(repo, monkeypatch):
     (repo / "probes" / "web.star").write_text('def main() -> None:\n    emit("a", "b", "c", "d")\n')
     seen = {}
 
-    async def fake_ask(name, source, hosts=None, timeout=120, via=""):
+    async def fake_ask(name, source, hosts=None, timeout=120, via="", profile=False):
         seen.update(host=hosts[0], name=name, source=source)
         return {"survey": "s", "question": "q", "expected": hosts, "down": [], "answers": {hosts[0]: {
             "answer_hash": "h", "outcome": "partial", "answer": {
@@ -64,7 +64,7 @@ def test_run_on_a_host_with_no_live_sensor_says_so(repo, monkeypatch):
     """A mistyped or absent host fails at once with a reason and close live names, not after the deadline."""
     (repo / "probes" / "web.star").write_text('def main() -> None:\n    emit("a", "b", "c", "d")\n')
 
-    async def fake_ask(name, source, hosts=None, timeout=120, via=""):
+    async def fake_ask(name, source, hosts=None, timeout=120, via="", profile=False):
         return {"survey": "s", "question": "q", "expected": hosts, "answers": {}, "down": hosts,
                 "not_live": hosts, "live": ["beat-dev", "legacy-web-1"]}
     from beat import ask
@@ -111,7 +111,7 @@ def test_fork_makes_the_packs_probe_the_estates(repo):
 def test_run_every_asks_every_probe_and_writes_each_hosts_facts(repo, monkeypatch):
     asked = []
 
-    async def fake_ask(name, source, hosts=None, timeout=120, via=""):
+    async def fake_ask(name, source, hosts=None, timeout=120, via="", profile=False):
         asked.append(name)
         return {"survey": f"s-{name}", "question": "q", "expected": hosts, "down": [], "answers": {h: {
             "answer_hash": "h", "outcome": "ok", "answer": {"v": 1, "outcome": "ok", "diag": "", "notes": [],
