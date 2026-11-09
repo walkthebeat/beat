@@ -7,7 +7,7 @@ description = "beat's sensor: answers questions published on NATS by running the
 
 [dependencies]
 anyhow = "1"
-async-nats = "0.42"
+async-nats = "0.52"
 base64 = "0.22"
 bytes = "1"
 ed25519-dalek = "2"
