@@ -24,6 +24,11 @@
 //!       sensor reads outside its sandbox, to hide those files and pass their metadata in (BEAT_SECRETS_FILE). --live: the
 //!       fixed paths and single-level globs, cheap, for every question. --walk: the recursive patterns, in the background
 //!       (scan.rs). A last line {"scan": ...} says what was left out.
+//!   beat-probe pcap FILE [--view packets|flows|dns] [--key F]... [--filter F=V]... [--sum F]... [--hist F]
+//!                   [--top N] [--examples N] [--seconds S]
+//!       Reduces a recorded capture (classic pcap, as tcpdump -w writes it; FILE may be `-`) as capture() will on the
+//!       host, and prints the answer as JSON: groups by the key fields, counts, sums, a histogram, examples, and what
+//!       was seen (frames, not IP, fragments, malformed, truncated). Defaults: --view flows, --top 20, --examples 1.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -101,6 +106,9 @@ fn main() -> ExitCode {
 
 fn real_main(argv: &[String]) -> anyhow::Result<ExitCode> {
     let (cmd, rest) = argv.split_first().ok_or_else(|| anyhow::anyhow!("usage: beat-probe check|run|tools ..."))?;
+    if cmd == "pcap" {
+        return pcap(rest);
+    }
     let a = parse(rest)?;
     let loading = std::time::Instant::now();
     // `tools` checks every file and writes the cache's index; the other commands use the index when it is current
@@ -218,4 +226,41 @@ fn real_main(argv: &[String]) -> anyhow::Result<ExitCode> {
         }
         other => anyhow::bail!("unknown command {other}"),
     }
+}
+
+/// `beat-probe pcap`: the capture reducer over a recorded pcap.
+fn pcap(argv: &[String]) -> anyhow::Result<ExitCode> {
+    use beat_probe::{capture, catalog::TraceOptions};
+    let mut o = TraceOptions { top: 20, examples: 1, ..Default::default() };
+    let (mut file, mut view, mut seconds) = (None, capture::View::Flows, None);
+    let mut it = argv.iter();
+    while let Some(x) = it.next() {
+        let mut val = || it.next().cloned().ok_or_else(|| anyhow::anyhow!("{x} needs a value"));
+        match x.as_str() {
+            "--view" => view = capture::View::parse(&val()?).map_err(|e| anyhow::anyhow!("{e:?}"))?,
+            "--key" => o.key.push(val()?),
+            "--filter" => {
+                let v = val()?;
+                let (k, v) = v.split_once('=').ok_or_else(|| anyhow::anyhow!("--filter takes FIELD=VALUE"))?;
+                o.filter.insert(k.to_string(), serde_json::json!(v));
+            }
+            "--sum" => o.sum.push(val()?),
+            "--hist" => o.hist = Some(val()?),
+            "--top" => o.top = val()?.parse()?,
+            "--examples" => o.examples = val()?.parse()?,
+            "--seconds" => seconds = Some(val()?.parse::<f64>()?),
+            s if s.starts_with("--") => anyhow::bail!("unknown option {s}"),
+            _ if file.is_none() => file = Some(x.clone()),
+            _ => anyhow::bail!("pcap takes one file"),
+        }
+    }
+    let file = file.ok_or_else(|| anyhow::anyhow!("usage: beat-probe pcap FILE [--view ...]"))?;
+    let input: Box<dyn std::io::Read> = if file == "-" {
+        Box::new(std::io::stdin().lock())
+    } else {
+        Box::new(std::io::BufReader::new(std::fs::File::open(&file)?))
+    };
+    let v = capture::reduce(input, view, &o, seconds).map_err(|e| anyhow::anyhow!("{e:?}"))?;
+    println!("{}", serde_json::to_string_pretty(&v)?);
+    Ok(ExitCode::SUCCESS)
 }
