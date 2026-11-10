@@ -13,6 +13,11 @@
 //! - `flows`: one event per flow at the end (per 5-tuple, both directions: packets, bytes, SYNs, resets, retransmits,
 //!   zero windows, handshake time, the largest segment, ICMP errors about it).
 //! - `dns`: one event per query, matched to its response by (client, port, server, id): name, type, rcode, latency.
+//!
+//! Offloads (seen on veth, tests/pcap/README.md): a sender's capture holds TSO's segments (up to 64 KB, before the
+//! NIC cuts them), a receiver's GRO's merged ones. Sizes are then the kernel's, not the wire's (`over_1514` counts
+//! them), and a receiver's retransmit count is a lower bound: a retransmitted segment merged with new data is not
+//! seen as one.
 
 use std::collections::HashMap;
 use std::io::Read;
@@ -1137,6 +1142,47 @@ mod tests {
                 .map(|x| format!("{}/{}", x["key"]["qtype"].as_str().unwrap(), x["key"]["rcode"].as_str().unwrap())).collect();
             assert!(rc.contains(&"AAAA/NOERROR".into()) && rc.contains(&"A/NXDOMAIN".into()), "{rc:?}");
         }
+    }
+
+    fn recorded(name: &str) -> Vec<u8> {
+        std::fs::read(format!("{}/tests/pcap/{name}.pcap", env!("CARGO_MANIFEST_DIR"))).unwrap()
+    }
+
+    fn tcp_flows(v: &Value) -> Vec<Value> {
+        v["groups"].as_array().unwrap().iter().filter(|g| g["key"]["proto"] == "tcp")
+            .flat_map(|g| g["examples"].as_array().unwrap().clone()).collect()
+    }
+
+    /// The scenarios' faults as the kernel made them (tests/pcap/record/record.sh).
+    #[test]
+    fn recorded_faults() {
+        let all = |n: usize| TraceOptions { examples: n, ..opts(&["proto", "port", "state"]) };
+        // MTU blackhole: the big response's flow stays open, retransmits, and no ICMP ever names it
+        let v = reduce(&recorded("mtu-blackhole")[..], View::Flows, &all(10), None).unwrap();
+        let f = tcp_flows(&v);
+        let stuck = f.iter().find(|e| e["state"] == "open").expect("the big response's flow");
+        assert!(stuck["retrans_s2c"].as_u64().unwrap() >= 3, "{stuck}");
+        assert_eq!(stuck["icmp_errors"], 0);
+        assert!(f.iter().any(|e| e["state"] == "closed" && e["retrans_s2c"] == 0), "the small one completes");
+        // with ICMP allowed: frag-needed attributed to the flow, and it completes
+        let v = reduce(&recorded("mtu-control")[..], View::Flows, &all(10), None).unwrap();
+        assert!(tcp_flows(&v).iter().any(|e| e["state"] == "closed" && e["icmp_errors"].as_u64().unwrap() >= 1));
+        // loss: retransmits seen from the client; GRO's merged segments flagged
+        let v = reduce(&recorded("loss")[..], View::Flows, &TraceOptions { sum: vec!["retrans_s2c".into()], ..all(0) }, None).unwrap();
+        assert!(v["groups"][0]["sum"]["retrans_s2c"].as_f64().unwrap() >= 1.0);
+        assert!(v["capture"]["over_1514"].as_u64().unwrap() > 0);
+        // listen queue: connects beyond the backlog get no SYN-ACK, their SYNs retried
+        let v = reduce(&recorded("listen-queue")[..], View::Flows, &all(10), None).unwrap();
+        let f = tcp_flows(&v);
+        let unanswered: Vec<_> = f.iter().filter(|e| e["state"] == "syn_unanswered").collect();
+        assert!(!unanswered.is_empty() && unanswered.iter().all(|e| e["syn_retrans"].as_u64().unwrap() >= 2));
+        assert!(f.iter().any(|e| e["synack"] == 1), "the backlog's own connects are answered");
+        // AAAA blackhole: A answered, AAAA never, asked again
+        let v = reduce(&recorded("aaaa-blackhole")[..], View::Dns, &opts(&["qtype", "rcode"]), None).unwrap();
+        let g = v["groups"].as_array().unwrap();
+        assert!(g.iter().any(|x| x["key"] == json!({"qtype": "A", "rcode": "NOERROR"})));
+        let aaaa = g.iter().find(|x| x["key"] == json!({"qtype": "AAAA", "rcode": "no_answer"})).unwrap();
+        assert!(aaaa["examples"][0]["sends"].as_u64().unwrap() >= 2);
     }
 
     #[test]
