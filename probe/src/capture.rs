@@ -13,6 +13,14 @@
 //! - `flows`: one event per flow at the end (per 5-tuple, both directions: packets, bytes, SYNs, resets, retransmits,
 //!   zero windows, handshake time, the largest segment, ICMP errors about it).
 //! - `dns`: one event per query, matched to its response by (client, port, server, id): name, type, rcode, latency.
+//! - `tls`: one event per TCP flow that starts with TLS: from the plaintext handshake only, SNI, ALPN and versions
+//!   offered, the version and cipher chosen, a plaintext alert and who sent it, the time from ClientHello to
+//!   ServerHello. Nothing inside the session. In TLS 1.3 the server's certificate and alerts are encrypted; a client
+//!   that rejects the certificate before its own Finished alerts in plaintext (OpenSSL's s_client), but a client may
+//!   also finish the handshake and only then close (curl 8.22 did, tests/pcap/README.md): an alert's absence proves
+//!   nothing. Each side's
+//!   first 16 KB are put back in order from its SYN on; the capture needs a snaplen that keeps them (a ClientHello
+//!   with a post-quantum key share is 1.2-1.8 KB, and TSO may hand it down as one segment).
 //!
 //! Offloads (seen on veth, tests/pcap/README.md): a sender's capture holds TSO's segments (up to 64 KB, before the
 //! NIC cuts them), a receiver's GRO's merged ones. Sizes are then the kernel's, not the wire's (`over_1514` counts
@@ -42,12 +50,14 @@ pub const FLOW_NUMERIC: &[&str] = &[
     "icmp_errors", "t",
 ];
 pub const DNS_NUMERIC: &[&str] = &["latency_ms", "sends", "answers", "t"];
+pub const TLS_NUMERIC: &[&str] = &["hello_ms", "tcp_handshake_ms", "t"];
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum View {
     Packets,
     Flows,
     Dns,
+    Tls,
 }
 
 impl View {
@@ -56,7 +66,8 @@ impl View {
             "packets" => Ok(View::Packets),
             "flows" => Ok(View::Flows),
             "dns" => Ok(View::Dns),
-            _ => Err(HostError::Source(format!("capture(): view {s:?}: views are packets, flows, dns"))),
+            "tls" => Ok(View::Tls),
+            _ => Err(HostError::Source(format!("capture(): view {s:?}: views are packets, flows, dns, tls"))),
         }
     }
     pub fn numeric(self) -> &'static [&'static str] {
@@ -64,6 +75,15 @@ impl View {
             View::Packets => PACKET_NUMERIC,
             View::Flows => FLOW_NUMERIC,
             View::Dns => DNS_NUMERIC,
+            View::Tls => TLS_NUMERIC,
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            View::Packets => "packets",
+            View::Flows => "flows",
+            View::Dns => "dns",
+            View::Tls => "tls",
         }
     }
 }
@@ -670,6 +690,317 @@ fn dns_event(q: &Query, client: IpAddr, server: IpAddr, t0: f64) -> Map<String, 
     m
 }
 
+// --- tls ------------------------------------------------------------------------------------------------------------
+
+/// Bytes of each side kept for the handshake.
+const TLS_BUF: usize = 16_384;
+
+/// One side's first bytes, in order from its SYN on. Stops at a gap (a segment lost or out of order), at the
+/// snaplen (the payload not captured whole) or when full.
+#[derive(Default)]
+struct Stream {
+    start: Option<u32>,
+    buf: Vec<u8>,
+    first_ts: Option<f64>,
+    stop: Option<&'static str>,
+}
+
+impl Stream {
+    fn syn(&mut self, seq: u32) {
+        self.start.get_or_insert(seq.wrapping_add(1));
+    }
+
+    fn push(&mut self, p: &Packet, seq: u32) {
+        if self.stop.is_some() || p.payload_len == 0 {
+            return;
+        }
+        let Some(start) = self.start else { return };
+        let have = start.wrapping_add(self.buf.len() as u32);
+        let off = have.wrapping_sub(seq) as i32;
+        if off < 0 {
+            self.stop = Some("gap");
+            return;
+        }
+        let off = off as usize;
+        if off >= p.payload_len as usize {
+            return; // all of it already kept: a retransmission
+        }
+        if off > p.payload.len() {
+            self.stop = Some("snaplen");
+            return;
+        }
+        self.first_ts.get_or_insert(p.ts);
+        let new = &p.payload[off..];
+        let take = new.len().min(TLS_BUF - self.buf.len());
+        self.buf.extend_from_slice(&new[..take]);
+        if (p.payload.len() as u32) < p.payload_len {
+            self.stop = Some("snaplen");
+        } else if self.buf.len() >= TLS_BUF {
+            self.stop = Some("full");
+        }
+    }
+}
+
+/// A bounds-checked reader over a handshake message.
+struct Cur<'a> {
+    b: &'a [u8],
+    i: usize,
+}
+
+impl<'a> Cur<'a> {
+    fn u8(&mut self) -> Option<u8> {
+        let v = u8_at(self.b, self.i)?;
+        self.i += 1;
+        Some(v)
+    }
+    fn u16(&mut self) -> Option<u16> {
+        let v = u16_at(self.b, self.i)?;
+        self.i += 2;
+        Some(v)
+    }
+    fn take(&mut self, n: usize) -> Option<&'a [u8]> {
+        let v = self.b.get(self.i..self.i.checked_add(n)?)?;
+        self.i += n;
+        Some(v)
+    }
+}
+
+/// What a ClientHello or ServerHello says.
+#[derive(Debug, Default)]
+pub struct Hello {
+    pub legacy_version: u16,
+    /// supported_versions: offered (ClientHello) or the one chosen (ServerHello).
+    pub versions: Vec<u16>,
+    pub sni: Option<String>,
+    pub alpn: Vec<String>,
+    /// The cipher chosen (ServerHello).
+    pub cipher: Option<u16>,
+    pub ciphers_offered: usize,
+}
+
+/// GREASE values (RFC 8701) are noise a client adds: 0x0a0a, 0x1a1a, ... 0xfafa.
+fn grease(v: u16) -> bool {
+    v & 0x0f0f == 0x0a0a && v >> 8 == v & 0xff
+}
+
+fn printable(b: &[u8], max: usize) -> String {
+    b.iter().take(max).map(|&c| if (0x21..=0x7e).contains(&c) { (c as char).to_string() } else { format!("\\x{c:02x}") })
+        .collect()
+}
+
+/// A ClientHello (type 1) or ServerHello (type 2): the handshake message's body.
+fn parse_hello(kind: u8, body: &[u8]) -> Option<Hello> {
+    let mut c = Cur { b: body, i: 0 };
+    let mut h = Hello { legacy_version: c.u16()?, ..Default::default() };
+    c.take(32)?; // random
+    let sid = c.u8()? as usize;
+    c.take(sid)?;
+    if kind == 1 {
+        let n = c.u16()? as usize;
+        h.ciphers_offered = c.take(n)?.chunks(2).filter(|x| x.len() == 2 && !grease(u16::from_be_bytes([x[0], x[1]]))).count();
+        let n = c.u8()? as usize;
+        c.take(n)?;
+    } else {
+        h.cipher = Some(c.u16()?);
+        c.u8()?;
+    }
+    let Some(n) = c.u16() else { return Some(h) }; // no extensions
+    let ext = c.take(n as usize)?;
+    let mut e = Cur { b: ext, i: 0 };
+    while e.i < ext.len() {
+        let t = e.u16()?;
+        let l = e.u16()? as usize;
+        let d = e.take(l)?;
+        let mut x = Cur { b: d, i: 0 };
+        match t {
+            0 if kind == 1 => {
+                x.u16()?;
+                if x.u8()? == 0 {
+                    let l = x.u16()? as usize;
+                    h.sni = Some(printable(x.take(l)?, 255).to_ascii_lowercase());
+                }
+            }
+            16 => {
+                let l = x.u16()? as usize;
+                let list = x.take(l)?;
+                let mut y = Cur { b: list, i: 0 };
+                while y.i < list.len() && h.alpn.len() < 8 {
+                    let l = y.u8()? as usize;
+                    h.alpn.push(printable(y.take(l)?, 32));
+                }
+            }
+            43 if kind == 1 => {
+                let l = x.u8()? as usize;
+                h.versions = x.take(l)?.chunks(2).filter(|v| v.len() == 2).map(|v| u16::from_be_bytes([v[0], v[1]]))
+                    .filter(|v| !grease(*v)).collect();
+            }
+            43 => h.versions = vec![x.u16()?],
+            _ => {}
+        }
+    }
+    Some(h)
+}
+
+/// What one side's first bytes show: whether they are TLS, its hello, its first plaintext alert.
+#[derive(Debug, Default)]
+pub struct TlsSide {
+    pub tls: bool,
+    pub hello: Option<Hello>,
+    pub alert: Option<(u8, u8)>,
+}
+
+/// Reads TLS records from a side's first bytes. A handshake message may span records; an alert in plaintext is a
+/// record of exactly 2 bytes (once keys are in use, records are longer, and TLS 1.3 hides their type).
+pub fn parse_tls(buf: &[u8]) -> TlsSide {
+    let mut out = TlsSide::default();
+    let mut hs: Vec<u8> = Vec::new();
+    let mut i = 0;
+    while let (Some(ct), Some(ver), Some(rl)) = (u8_at(buf, i), u16_at(buf, i + 1), u16_at(buf, i + 3)) {
+        if i == 0 {
+            if !(20..=23).contains(&ct) || ver >> 8 != 3 {
+                return out;
+            }
+            out.tls = true;
+        }
+        let Some(body) = buf.get(i + 5..i + 5 + rl as usize) else { break };
+        match ct {
+            22 if out.hello.is_none() => {
+                hs.extend_from_slice(body);
+                if let (Some(t), Some(l)) = (u8_at(&hs, 0), u32_at(&hs, 0).map(|w| (w & 0x00ff_ffff) as usize)) {
+                    if let Some(m) = hs.get(4..4 + l) {
+                        if matches!(t, 1 | 2) {
+                            out.hello = parse_hello(t, m);
+                        }
+                    }
+                }
+            }
+            21 if rl == 2 && out.alert.is_none() => out.alert = Some((body[0], body[1])),
+            _ => {}
+        }
+        i += 5 + rl as usize;
+    }
+    out
+}
+
+pub fn tls_version_name(v: u16) -> String {
+    match v {
+        0x0300 => "SSL3".into(),
+        0x0301 => "TLS1.0".into(),
+        0x0302 => "TLS1.1".into(),
+        0x0303 => "TLS1.2".into(),
+        0x0304 => "TLS1.3".into(),
+        v => format!("{v:#06x}"),
+    }
+}
+
+pub fn cipher_name(c: u16) -> String {
+    match c {
+        0x1301 => "TLS_AES_128_GCM_SHA256".into(),
+        0x1302 => "TLS_AES_256_GCM_SHA384".into(),
+        0x1303 => "TLS_CHACHA20_POLY1305_SHA256".into(),
+        0xc02b => "ECDHE-ECDSA-AES128-GCM-SHA256".into(),
+        0xc02c => "ECDHE-ECDSA-AES256-GCM-SHA384".into(),
+        0xc02f => "ECDHE-RSA-AES128-GCM-SHA256".into(),
+        0xc030 => "ECDHE-RSA-AES256-GCM-SHA384".into(),
+        0xcca8 => "ECDHE-RSA-CHACHA20-POLY1305".into(),
+        0xcca9 => "ECDHE-ECDSA-CHACHA20-POLY1305".into(),
+        0x009c => "RSA-AES128-GCM-SHA256".into(),
+        0x009d => "RSA-AES256-GCM-SHA384".into(),
+        0x002f => "RSA-AES128-SHA".into(),
+        0x0035 => "RSA-AES256-SHA".into(),
+        c => format!("{c:#06x}"),
+    }
+}
+
+pub fn alert_name(d: u8) -> String {
+    match d {
+        0 => "close_notify".into(), 10 => "unexpected_message".into(), 20 => "bad_record_mac".into(),
+        40 => "handshake_failure".into(), 42 => "bad_certificate".into(), 43 => "unsupported_certificate".into(),
+        44 => "certificate_revoked".into(), 45 => "certificate_expired".into(), 46 => "certificate_unknown".into(),
+        47 => "illegal_parameter".into(), 48 => "unknown_ca".into(), 49 => "access_denied".into(),
+        50 => "decode_error".into(), 51 => "decrypt_error".into(), 70 => "protocol_version".into(),
+        71 => "insufficient_security".into(), 80 => "internal_error".into(), 86 => "inappropriate_fallback".into(),
+        90 => "user_canceled".into(), 109 => "missing_extension".into(), 110 => "unsupported_extension".into(),
+        112 => "unrecognized_name".into(), 116 => "certificate_required".into(), 120 => "no_application_protocol".into(),
+        d => format!("alert{d}"),
+    }
+}
+
+#[derive(Default)]
+struct TlsFlow {
+    c2s: Stream,
+    s2c: Stream,
+}
+
+/// The tls view's event for a flow, or None when it does not start with TLS (or began before the capture).
+fn tls_event(f: &Flow, t: &TlsFlow, t0: f64) -> Option<Map<String, Value>> {
+    if t.c2s.start.is_none() || t.c2s.buf.is_empty() {
+        return None;
+    }
+    let c = parse_tls(&t.c2s.buf);
+    if !c.tls {
+        return None;
+    }
+    let s = parse_tls(&t.s2c.buf);
+    let mut m = Map::new();
+    m.insert("t".into(), json!(secs(f.first - t0)));
+    m.insert("client".into(), json!(f.client.0.to_string()));
+    m.insert("server".into(), json!(f.server.0.to_string()));
+    m.insert("port".into(), json!(f.server.1));
+    if let Some(h) = &c.hello {
+        m.insert("sni".into(), json!(h.sni.clone().unwrap_or_default()));
+        m.insert("alpn_offered".into(), json!(h.alpn.join(",")));
+        let offered = if h.versions.is_empty() { vec![h.legacy_version] } else { h.versions.clone() };
+        m.insert("versions_offered".into(), json!(offered.iter().map(|v| tls_version_name(*v)).collect::<Vec<_>>().join(",")));
+    }
+    if let Some(h) = &s.hello {
+        let v = h.versions.first().copied().unwrap_or(h.legacy_version);
+        m.insert("version".into(), json!(tls_version_name(v)));
+        m.insert("cipher".into(), json!(h.cipher.map(cipher_name).unwrap_or_default()));
+        if !h.alpn.is_empty() {
+            m.insert("alpn".into(), json!(h.alpn.join(",")));
+        }
+    }
+    let alert = match (c.alert, s.alert) {
+        (_, Some(a)) => Some(("server", a)),
+        (Some(a), None) => Some(("client", a)),
+        _ => None,
+    };
+    if let Some((by, (level, d))) = alert {
+        m.insert("alert".into(), json!(alert_name(d)));
+        m.insert("alert_by".into(), json!(by));
+        m.insert("alert_level".into(), json!(if level == 2 { "fatal" } else { "warning" }));
+    }
+    if let (Some(a), Some(b)) = (t.c2s.first_ts, t.s2c.first_ts) {
+        if s.hello.is_some() {
+            m.insert("hello_ms".into(), json!(ms(b - a)));
+        }
+    }
+    let state = if alert.is_some_and(|(_, (l, d))| l == 2 || d != 0) {
+        "alert"
+    } else if s.hello.is_some() {
+        "server_hello"
+    } else if c.hello.is_none() {
+        "incomplete"
+    } else if t.s2c.buf.is_empty() {
+        "no_server_hello"
+    } else {
+        "incomplete"
+    };
+    m.insert("state".into(), json!(state));
+    if state == "incomplete" {
+        let why = if c.hello.is_none() { t.c2s.stop } else { t.s2c.stop };
+        m.insert("stopped".into(), json!(why.unwrap_or("short")));
+    }
+    let fe = flow_event(f, t0);
+    for k in ["state", "rst_by", "handshake_ms"] {
+        if let Some(v) = fe.get(k) {
+            m.insert(format!("tcp_{k}"), v.clone());
+        }
+    }
+    Some(m)
+}
+
 // --- the reduction --------------------------------------------------------------------------------------------------
 
 #[derive(Default)]
@@ -685,6 +1016,8 @@ struct Counts {
     untracked: u64,
     dns_unparsed: u64,
     dns_unmatched: u64,
+    tls_not_tls: u64,
+    tls_mid: u64,
 }
 
 pub struct Capture {
@@ -695,12 +1028,14 @@ pub struct Capture {
     t_last: f64,
     flows: HashMap<FlowKey, Flow>,
     queries: HashMap<QueryKey, Query>,
+    tls: HashMap<FlowKey, TlsFlow>,
 }
 
 impl Capture {
     pub fn new(view: View, o: &TraceOptions) -> HostResult<Capture> {
         Ok(Capture { view, reducer: Reducer::new(o, view.numeric())?, counts: Counts::default(), t0: None,
-                     t_last: 0.0, flows: HashMap::new(), queries: HashMap::new() })
+                     t_last: 0.0, flows: HashMap::new(), queries: HashMap::new(),
+                     tls: HashMap::new() })
     }
 
     pub fn frame(&mut self, linktype: u32, f: &Frame) {
@@ -732,12 +1067,16 @@ impl Capture {
         }
         match self.view {
             View::Packets => self.reducer.event(packet_event(&p, t0)),
-            View::Flows => self.flow(&p),
+            View::Flows => {
+                self.flow(&p);
+            }
             View::Dns => self.dns(&p, t0),
+            View::Tls => self.tls(&p),
         }
     }
 
-    fn flow(&mut self, p: &Packet) {
+    /// The flow's key and whether the packet is the client's; None when the flow is not tracked.
+    fn flow(&mut self, p: &Packet) -> Option<(FlowKey, bool)> {
         if let Some(q) = p.quoted {
             let k = flow_key(q.proto, (q.src, q.sport), (q.dst, q.dport));
             if let Some(f) = self.flows.get_mut(&k) {
@@ -750,7 +1089,7 @@ impl Capture {
         if !self.flows.contains_key(&k) {
             if self.flows.len() >= MAX_FLOWS {
                 self.counts.untracked += 1;
-                return;
+                return None;
             }
             let syn = p.tcp.is_some_and(|t| t.flags & SYN != 0 && t.flags & ACK == 0);
             let synack = p.tcp.is_some_and(|t| t.flags & (SYN | ACK) == SYN | ACK);
@@ -781,6 +1120,18 @@ impl Capture {
             }
         }
         update_side(if from_client { &mut f.c2s } else { &mut f.s2c }, p);
+        Some((k, from_client))
+    }
+
+    fn tls(&mut self, p: &Packet) {
+        let Some(t) = p.tcp else { return };
+        let Some((k, from_client)) = self.flow(p) else { return };
+        let tf = self.tls.entry(k).or_default();
+        let side = if from_client { &mut tf.c2s } else { &mut tf.s2c };
+        if t.flags & SYN != 0 {
+            side.syn(t.seq);
+        }
+        side.push(p, t.seq);
     }
 
     fn dns(&mut self, p: &Packet, t0: f64) {
@@ -824,8 +1175,20 @@ impl Capture {
         let end = seconds.map_or(self.t_last, |s| t0 + s);
         let flows = self.flows.len();
         let mut pending: Vec<(f64, Map<String, Value>)> = Vec::new();
-        for f in std::mem::take(&mut self.flows).into_values() {
-            pending.push((f.first, flow_event(&f, t0)));
+        let tls = std::mem::take(&mut self.tls);
+        for (k, f) in std::mem::take(&mut self.flows) {
+            if self.view != View::Tls {
+                pending.push((f.first, flow_event(&f, t0)));
+                continue;
+            }
+            let Some(t) = tls.get(&k) else { continue };
+            if t.c2s.start.is_none() {
+                self.counts.tls_mid += 1;
+            } else if let Some(ev) = tls_event(&f, t, t0) {
+                pending.push((f.first, ev));
+            } else {
+                self.counts.tls_not_tls += 1;
+            }
         }
         for ((client, _, server, _), q) in std::mem::take(&mut self.queries) {
             let mut ev = dns_event(&q, client, server, t0);
@@ -847,7 +1210,7 @@ impl Capture {
         not_ip.sort();
         let not_ip: Map<String, Value> = not_ip.into_iter().map(|(k, n)| (k, json!(n))).collect();
         let mut cap = json!({
-            "view": match self.view { View::Packets => "packets", View::Flows => "flows", View::Dns => "dns" },
+            "view": self.view.name(),
             "seconds": (seconds * 1000.0).round() / 1000.0,
             "frames": c.frames,
             "packets": c.packets,
@@ -868,6 +1231,12 @@ impl Capture {
                 m.insert("unparsed".into(), json!(c.dns_unparsed));
                 m.insert("responses_unmatched".into(), json!(c.dns_unmatched));
                 m.insert("untracked_queries".into(), json!(c.untracked));
+            }
+            View::Tls => {
+                m.insert("flows".into(), json!(flows));
+                m.insert("not_tls".into(), json!(c.tls_not_tls));
+                m.insert("began_before".into(), json!(c.tls_mid));
+                m.insert("untracked_packets".into(), json!(c.untracked));
             }
             View::Packets => {}
         }
@@ -1183,6 +1552,105 @@ mod tests {
         assert!(g.iter().any(|x| x["key"] == json!({"qtype": "A", "rcode": "NOERROR"})));
         let aaaa = g.iter().find(|x| x["key"] == json!({"qtype": "AAAA", "rcode": "no_answer"})).unwrap();
         assert!(aaaa["examples"][0]["sends"].as_u64().unwrap() >= 2);
+    }
+
+    /// A ClientHello record with SNI, ALPN and supported_versions, padded to `size` bytes (a post-quantum key share's).
+    fn client_hello(sni: &str, size: usize) -> Vec<u8> {
+        let mut ext = Vec::new();
+        let mut sn = vec![0u8];
+        sn.extend((sni.len() as u16).to_be_bytes());
+        sn.extend(sni.as_bytes());
+        let mut sni_ext = (sn.len() as u16).to_be_bytes().to_vec();
+        sni_ext.extend(sn);
+        for (t, d) in [(0u16, sni_ext), (16, vec![0, 3, 2, b'h', b'2']), (43, vec![4, 0x3a, 0x3a, 0x03, 0x04])] {
+            ext.extend(t.to_be_bytes());
+            ext.extend((d.len() as u16).to_be_bytes());
+            ext.extend(d);
+        }
+        let mut body = vec![0x03, 0x03];
+        body.extend([7u8; 32]);
+        body.push(0);
+        body.extend([0, 4, 0x13, 0x01, 0x13, 0x02, 1, 0]);
+        let pad = size.saturating_sub(body.len() + ext.len() + 2 + 4 + 5 + 4);
+        ext.extend(21u16.to_be_bytes()); // padding
+        ext.extend((pad as u16).to_be_bytes());
+        ext.extend(vec![0u8; pad]);
+        body.extend((ext.len() as u16).to_be_bytes());
+        body.extend(ext);
+        let mut hs = vec![1];
+        hs.extend(&(body.len() as u32).to_be_bytes()[1..]);
+        hs.extend(body);
+        let mut rec = vec![22, 3, 1];
+        rec.extend((hs.len() as u16).to_be_bytes());
+        rec.extend(hs);
+        rec
+    }
+
+    fn data_seg(p: &mut Pcap, ts: f64, seq: u32, flags: u8, data: &[u8]) {
+        let (mut t, _) = tcp(40000, 443, seq, 1, flags, 65000, 0);
+        t.extend(data);
+        let frame = eth(&ip4(C, S, 6, &t, t.len()));
+        p.record(ts, &frame, frame.len());
+    }
+
+    #[test]
+    fn tls_hello_across_segments_with_a_retransmit() {
+        let hello = client_hello("DB.lab", 1800);
+        assert!(hello.len() >= 1800);
+        let mut p = Pcap::new(1);
+        data_seg(&mut p, 1.0, 999, SYN, &[]);
+        data_seg(&mut p, 1.1, 1000, PSH | ACK, &hello[..1000]);
+        data_seg(&mut p, 1.2, 1500, PSH | ACK, &hello[500..1200]); // overlaps what was kept: only the new part
+        data_seg(&mut p, 1.3, 2200, PSH | ACK, &hello[1200..]);
+        let v = reduce(&p.0[..], View::Tls, &opts(&["state"]), None).unwrap();
+        let e = &v["groups"][0]["examples"][0];
+        assert_eq!(e["sni"], "db.lab");
+        assert_eq!(e["alpn_offered"], "h2");
+        assert_eq!(e["versions_offered"], "TLS1.3", "GREASE left out");
+        assert_eq!(e["state"], "no_server_hello");
+        // a gap (the middle segment lost): the hello is not complete, and the answer says why
+        let mut p = Pcap::new(1);
+        data_seg(&mut p, 1.0, 999, SYN, &[]);
+        data_seg(&mut p, 1.1, 1000, PSH | ACK, &hello[..1000]);
+        data_seg(&mut p, 1.3, 2200, PSH | ACK, &hello[1200..]);
+        let v = reduce(&p.0[..], View::Tls, &opts(&["state", "stopped"]), None).unwrap();
+        assert_eq!(v["groups"][0]["key"], json!({"state": "incomplete", "stopped": "gap"}));
+    }
+
+    #[test]
+    fn tls_hostile_bytes() {
+        let hello = client_hello("a.b", 600);
+        for n in 0..hello.len() {
+            let _ = parse_tls(&hello[..n]);
+            let mut bad = hello.clone();
+            bad[n] ^= 0xff;
+            let _ = parse_tls(&bad);
+        }
+        assert!(parse_tls(&hello).hello.is_some());
+        assert!(!parse_tls(b"GET / HTTP/1.1\r\n").tls);
+    }
+
+    /// Recorded on loopback (tests/pcap/record/tls.sh).
+    #[test]
+    fn recorded_tls() {
+        let o = || opts(&["version", "state", "alert", "alert_by"]);
+        let keys = |v: &Value| -> Vec<String> { v["groups"].as_array().unwrap().iter().map(|g| {
+            let k = &g["key"];
+            format!("{}/{}/{}/{}", k["version"].as_str().unwrap(), k["state"].as_str().unwrap(),
+                    k["alert"].as_str().unwrap(), k["alert_by"].as_str().unwrap())
+        }).collect() };
+        let v = reduce(&recorded("tls-curl")[..], View::Tls, &o(), None).unwrap();
+        let k = keys(&v);
+        assert!(k.contains(&"TLS1.3/server_hello//".into()), "{k:?}");
+        assert!(k.contains(&"/alert/protocol_version/server".into()), "{k:?}");
+        assert!(k.contains(&"TLS1.2/server_hello//".into()), "curl: untrusted, no alert: {k:?}");
+        assert_eq!(v["capture"]["not_tls"], 1);
+        let ok = v["groups"].as_array().unwrap().iter().find(|g| g["key"]["version"] == "TLS1.3").unwrap();
+        assert_eq!(ok["examples"][0]["sni"], "db.lab");
+        assert_eq!(ok["examples"][0]["alpn_offered"], "h2,http/1.1");
+        let v = reduce(&recorded("tls-s_client")[..], View::Tls, &o(), None).unwrap();
+        let k = keys(&v);
+        assert!(k.contains(&"TLS1.2/alert/unknown_ca/client".into()) && k.contains(&"TLS1.3/alert/unknown_ca/client".into()), "{k:?}");
     }
 
     #[test]

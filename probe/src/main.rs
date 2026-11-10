@@ -24,7 +24,7 @@
 //!       sensor reads outside its sandbox, to hide those files and pass their metadata in (BEAT_SECRETS_FILE). --live: the
 //!       fixed paths and single-level globs, cheap, for every question. --walk: the recursive patterns, in the background
 //!       (scan.rs). A last line {"scan": ...} says what was left out.
-//!   beat-probe pcap FILE [--view packets|flows|dns] [--key F]... [--filter F=V]... [--sum F]... [--hist F]
+//!   beat-probe pcap FILE [--view packets|flows|dns|tls] [--key F]... [--filter F=V]... [--sum F]... [--hist F]
 //!                   [--top N] [--examples N] [--seconds S]
 //!       Reduces a recorded capture (classic pcap, as tcpdump -w writes it; FILE may be `-`) as capture() will on the
 //!       host, and prints the answer as JSON: groups by the key fields, counts, sums, a histogram, examples, and what
