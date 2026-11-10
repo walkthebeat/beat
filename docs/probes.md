@@ -205,6 +205,15 @@ emit_log_summary(name, summary, source="drain")        # records: log:<name>#<te
   only (`beat-probe needs`). The answer is a reduction made as the tool's output streams: histograms with
   percentiles, or events filtered, keyed (with coarsenings), counted, summed and bounded, with what it saw (seen,
   matched, unparsed, lost, its own left out).
+- **[B11d] `capture(view, interface=, host=, port=, proto=, seconds=, ...)`**, traffic on the host
+  (`probe/src/capture.rs`; the broker `sensor/src/capture.rs`). A question has no network of its own, so the sensor
+  runs tcpdump for it, in a unit of its own in the host's namespace, and passes the pcap stream back over a socket it
+  gives only to questions that call `capture()` (`beat-probe needs`). The question asks with typed fields; the sensor
+  checks them and writes the capture filter itself, so no expression of the question's reaches tcpdump; the snaplen
+  follows the view. One capture at a time per host, at most 60 s, within the question's time. The stream is reduced
+  as it arrives into a view: `packets`, `flows`, `dns` (header and question), `tls` (the plaintext handshake: SNI,
+  ALPN, versions, cipher, alerts), grouped like `trace()`'s events. Application payload is never parsed or returned,
+  and nothing is kept.
 - No SQL engine beyond osquery's is part of the sensor. Starlark covers what probes need (time formatting, regex,
   scanning files, "last one wins"); if log analytics need more, it comes as a tool or a builtin.
 

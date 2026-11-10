@@ -17,7 +17,7 @@ rand_core = { version = "0.6", features = ["getrandom"] }
 serde_json = "1"         # without preserve_order: objects serialize with sorted keys (canonical answers, wire.rs)
 sha2 = "0.10"
 ureq = { version = "2", default-features = false, features = ["tls", "json"] }  # enroll.rs: the service's HTTP API
-tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
 
 [profile.release]
 opt-level = 2

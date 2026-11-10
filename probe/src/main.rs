@@ -13,8 +13,10 @@
 //!       FILE may be `-`: the probe is read from stdin (--name sets the name used in spans and errors).
 //!       The result's `timings` say where the run's time went; --profile adds each host call, the slowest as records.
 //!   beat-probe needs FILE
-//!       The capabilities the probe's trace() entries need, as JSON ({"entries": [...], "capabilities": [...]}): what
-//!       a sensor adds to the question's unit. FILE may be `-` (stdin). A probe that does not parse needs nothing.
+//!       What the probe needs beyond every question's sandbox, as JSON ({"entries": [...], "capabilities": [...],
+//!       "capture": bool}): its trace() entries' capabilities, and whether it calls capture() (the sensor then gives
+//!       its unit the capture broker's socket; a call not written as `capture(...)` gets none, and fails). FILE may be
+//!       `-` (stdin). A probe that does not parse needs nothing.
 //!   beat-probe guide [--tools DIR]
 //!       The builtins reference for agents (what the sensor's `run` tool describes), with the tool list.
 //!   beat-probe tools --tools DIR
@@ -170,7 +172,8 @@ fn real_main(argv: &[String]) -> anyhow::Result<ExitCode> {
             };
             let entries = check::trace_entries(&src);
             let caps = beat_probe::catalog::capabilities(entries.iter().map(String::as_str));
-            println!("{}", serde_json::json!({"entries": entries, "capabilities": caps}));
+            println!("{}", serde_json::json!({"entries": entries, "capabilities": caps,
+                                              "capture": check::calls_capture(&src)}));
             Ok(ExitCode::SUCCESS)
         }
         "guide" => {

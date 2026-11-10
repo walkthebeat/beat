@@ -438,6 +438,46 @@ fn beat_builtins(builder: &mut GlobalsBuilder) {
         Ok(eval.heap().alloc(v))
     }
 
+    /// Traffic on the host's interface for `seconds`, reduced to a view (packets, flows, dns, tls) and grouped like
+    /// trace()'s events: never the packets, never application payload. The sensor captures (tcpdump, in a unit of
+    /// its own) with a filter it writes from the typed fields; .capture says what it saw and how it ended.
+    #[allow(clippy::too_many_arguments)]
+    fn capture<'v>(
+        #[starlark(require = pos)] view: &str,
+        #[starlark(require = named)] interface: Option<&str>,
+        #[starlark(require = named)] host: Option<&str>,
+        #[starlark(require = named)] port: Option<i32>,
+        #[starlark(require = named)] proto: Option<&str>,
+        #[starlark(require = named, default = 5)] seconds: i32,
+        #[starlark(require = named)] filter: Option<Value<'v>>,
+        #[starlark(require = named)] key: Option<UnpackList<String>>,
+        #[starlark(require = named)] sum: Option<UnpackList<String>>,
+        #[starlark(require = named)] hist: Option<&str>,
+        #[starlark(require = named, default = 20)] top: i32,
+        #[starlark(require = named, default = 3)] examples: i32,
+        eval: &mut Evaluator<'v, '_, '_>,
+    ) -> starlark::Result<Value<'v>> {
+        let filter = match filter.map(|v| v.to_json_value()).transpose()? {
+            None => Default::default(),
+            Some(serde_json::Value::Object(m)) => m.into_iter().collect(),
+            Some(_) => return Err(starlark::Error::new_other(anyhow::anyhow!("capture(): filter is a dict"))),
+        };
+        let o = crate::catalog::TraceOptions {
+            seconds: f64::from(seconds),
+            options: Default::default(),
+            filter,
+            key: key.map(|k| k.items).unwrap_or_default(),
+            sum: sum.map(|k| k.items).unwrap_or_default(),
+            hist: hist.map(String::from),
+            top: top.clamp(1, 1000) as usize,
+            examples: examples.clamp(0, 20) as usize,
+        };
+        let request = serde_json::json!({"view": view, "interface": interface, "host": host, "port": port,
+                                         "proto": proto, "seconds": seconds});
+        let v = ctx(eval).host.capture(&request, &o).map_err(|e| host_error(eval, e))?;
+        Ok(eval.heap().alloc(v))
+    }
+
     /// A keytab as `klist -k -t -e` shows it: {format, entries: [{principal, kvno, enctype, timestamp, name_type,
     /// key_bytes}]}. Never the keys. A file that is not a keytab is a failure "format".
     fn keytab<'v>(path: &str, eval: &mut Evaluator<'v, '_, '_>) -> starlark::Result<Value<'v>> {

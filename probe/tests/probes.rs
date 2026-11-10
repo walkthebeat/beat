@@ -349,6 +349,22 @@ fn needs_reads_the_entries_from_the_text() {
 }
 
 #[test]
+fn needs_says_whether_the_probe_captures() {
+    let flows = "def main() -> None:\n    c = capture(\"flows\", port=443)\n    emit(\"a\", \"b\", str(c[\"keys\"]), \"t\")\n";
+    assert!(beat_probe::check::calls_capture(flows));
+    assert!(!beat_probe::check::calls_capture(&source("trace.star")));
+    assert!(!beat_probe::check::calls_capture("def main(:"), "does not parse: needs nothing");
+}
+
+#[test]
+fn capture_outside_the_sensor_is_an_error() {
+    let src = "def main() -> None:\n    capture(\"flows\")\n";
+    let r = run("capture.star", src, Box::new(fixture()));
+    assert_eq!(r["outcome"], "error", "{r:#}");
+    assert!(r.to_string().contains("does not capture"), "{r:#}");
+}
+
+#[test]
 fn trace_without_a_catalog_is_an_error() {
     let r = run_probe("trace.star");
     assert_eq!(r["outcome"], "error", "{r:#}");

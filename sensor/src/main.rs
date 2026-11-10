@@ -2,7 +2,8 @@
 //!
 //!   beat-sensor --nats URL --probe PATH --tools DIR --cache DIR --key FILE --roots DIR --collector-keys DIR
 //!               [--name NAME] [--deny FILE]
-//!               [--label k=v]... [--osqueryi PATH] [--journalctl PATH] [--bpf-tools DIR] [--placeholders DIR | --no-sandbox]
+//!               [--label k=v]... [--osqueryi PATH] [--journalctl PATH] [--bpf-tools DIR] [--tcpdump PATH]
+//!               [--placeholders DIR | --no-sandbox]
 //!               [--concurrency N] [--unit-property P]... [--systemd DIR]
 //!   beat-sensor keygen FILE     creates the sensor's signing key when missing; prints its public key (to enroll)
 //!   beat-sensor enroll --api URL [--name NAME] [--key FILE]
@@ -26,11 +27,14 @@
 //! --name defaults to the host name. --no-sandbox runs beat-probe directly (development, no root).
 //! --unit-property: a systemd property for every question's unit, as `systemd-run -p` takes it; installed from an
 //! image, MountImages= gives the questions the image's /nix/store (docs/security.md M16).
+//! --tcpdump: capture() for questions (capture.rs): the sensor runs it in a unit of its own and passes the pcap back;
+//! without it, or with --no-sandbox, questions have no capture().
 //! --systemd: the directory of the host's systemd-run and systemctl, /usr/bin by default (NixOS: the systemd
 //! package's bin; the NixOS module passes it).
 
 mod aws;
 mod bus;
+mod capture;
 mod configure;
 mod enroll;
 mod runner;
@@ -87,6 +91,7 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
     let (mut nats, mut api, mut name, mut probe, mut tools, mut cache) = (None, None, None, None, None, None);
     let (mut osqueryi, mut journalctl, mut placeholders, mut no_sandbox) = (None, None, None, false);
     let (mut bpf_tools, mut unit_props, mut systemd) = (None, vec![], PathBuf::from("/usr/bin"));
+    let mut tcpdump: Option<PathBuf> = None;
     let (mut key, mut roots, mut collector, mut deny_file) = (None, None, None, None);
     let mut labels = serde_json::Map::new();
     let mut concurrency = 2;
@@ -104,6 +109,7 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
             "--osqueryi" => osqueryi = Some(PathBuf::from(val()?)),
             "--journalctl" => journalctl = Some(PathBuf::from(val()?)),
             "--bpf-tools" => bpf_tools = Some(PathBuf::from(val()?)),
+            "--tcpdump" => tcpdump = Some(PathBuf::from(val()?)),
             "--placeholders" => placeholders = Some(PathBuf::from(val()?)),
             "--no-sandbox" => no_sandbox = true,
             "--key" => key = Some(PathBuf::from(val()?)),
@@ -163,6 +169,9 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
             osqueryi,
             journalctl,
             bpf_tools,
+            // capture() needs the sandbox's units: without them (--no-sandbox) there is no broker.
+            capture: tcpdump.filter(|_| sandbox.is_some()).map(|t| std::sync::Arc::new(capture::Broker::new(
+                t, systemd.clone(), unit_props.clone(), vec![key.clone()], PathBuf::from(runner::RUN_DIR)))),
             sandbox,
             secret_mounts_denied: Default::default(),
             hide: vec![key.clone()],

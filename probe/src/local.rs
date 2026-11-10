@@ -723,6 +723,15 @@ impl Host for LocalHost {
         crate::catalog::run(dir, e, o, &own)
     }
 
+    fn capture(&self, request: &serde_json::Value, o: &crate::catalog::TraceOptions) -> HostResult<serde_json::Value> {
+        let view = crate::capture::View::parse(request["view"].as_str().unwrap_or_default())?;
+        // The question's unit has a network namespace of its own: the sensor captures for it (BEAT_CAPTURE: the
+        // socket of its broker, given to questions that call capture()).
+        let socket = std::env::var_os("BEAT_CAPTURE").ok_or_else(|| HostError::Source(
+            "capture(): this host's sensor does not capture (no tcpdump, or not sandboxed)".into()))?;
+        crate::capture::remote(std::path::Path::new(&socket), request, view, o)
+    }
+
     fn tools(&self) -> Vec<String> {
         self.tools.as_ref().map(|t| t.manifest().into_keys().collect()).unwrap_or_default()
     }

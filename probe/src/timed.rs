@@ -116,6 +116,9 @@ impl Host for Timed {
     fn trace(&self, entry: &str, o: &TraceOptions) -> HostResult<Value> {
         self.time("trace", || entry.to_string(), || self.inner.trace(entry, o))
     }
+    fn capture(&self, request: &Value, o: &TraceOptions) -> HostResult<Value> {
+        self.time("capture", || request.to_string(), || self.inner.capture(request, o))
+    }
     fn secrets(&self) -> HostResult<Vec<Secret>> {
         self.time("secrets", String::new, || self.inner.secrets())
     }

@@ -1268,6 +1268,75 @@ pub fn reduce(r: impl Read, view: View, o: &TraceOptions, seconds: Option<f64>) 
     Ok(out)
 }
 
+/// The pcap stream as the sensor's broker frames it: (u32 big-endian length, bytes)..., then a frame of length 0.
+struct Frames<R> {
+    r: R,
+    left: usize,
+    done: bool,
+}
+
+impl<R: Read> Read for Frames<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.done || buf.is_empty() {
+            return Ok(0);
+        }
+        if self.left == 0 {
+            let mut n = [0u8; 4];
+            self.r.read_exact(&mut n)?;
+            self.left = u32::from_be_bytes(n) as usize;
+            if self.left == 0 {
+                self.done = true;
+                return Ok(0);
+            }
+            if self.left > 1 << 20 {
+                return Err(std::io::Error::other(format!("a frame of {} bytes from the broker", self.left)));
+            }
+        }
+        let n = buf.len().min(self.left);
+        let n = self.r.read(&mut buf[..n])?;
+        if n == 0 {
+            return Err(std::io::ErrorKind::UnexpectedEof.into());
+        }
+        self.left -= n;
+        Ok(n)
+    }
+}
+
+/// `capture()` under the sensor: the request to its broker (beat-sensor's capture.rs: the protocol, and the checks the
+/// sensor makes of each field), the stream reduced as it arrives, and what the broker and tcpdump said about it in
+/// `.capture` (interface, filter, snaplen; `.tcpdump`: how it ended, its counts, kernel drops).
+pub fn remote(socket: &std::path::Path, request: &Value, view: View, o: &TraceOptions) -> HostResult<Value> {
+    use std::io::{BufRead, BufReader, Write};
+    let fail = |e: String| HostError::Source(format!("capture(): {e}"));
+    let mut conn = std::os::unix::net::UnixStream::connect(socket).map_err(|e| fail(format!("the sensor's broker: {e}")))?;
+    let seconds = request["seconds"].as_f64().unwrap_or(5.0);
+    conn.set_read_timeout(Some(std::time::Duration::from_secs_f64(seconds + 30.0))).map_err(|e| fail(e.to_string()))?;
+    conn.write_all(format!("{request}\n").as_bytes()).map_err(|e| fail(format!("the sensor's broker: {e}")))?;
+    let mut r = BufReader::new(conn);
+    let mut line = String::new();
+    r.read_line(&mut line).map_err(|e| fail(format!("the sensor's broker: {e}")))?;
+    let header: Value = serde_json::from_str(&line).map_err(|_| fail(format!("the sensor's broker answered {line:?}")))?;
+    if let Some(e) = header["error"].as_str() {
+        return Err(fail(e.strip_prefix("capture: ").unwrap_or(e).to_string()));
+    }
+    let ok = &header["ok"];
+    let mut frames = Frames { r, left: 0, done: false };
+    let mut out = reduce(&mut frames, view, o, Some(seconds))?;
+    // What the reducer left unread (it stopped on a malformed stream), then the broker's last line.
+    while !frames.done && std::io::copy(&mut (&mut frames).take(1 << 20), &mut std::io::sink()).is_ok_and(|n| n > 0) {}
+    let mut line = String::new();
+    let _ = frames.r.read_line(&mut line);
+    let mut tcpdump = serde_json::from_str::<Value>(&line).unwrap_or_else(|_| json!({"end": "lost"}));
+    if !frames.done {
+        tcpdump["end"] = json!("lost");
+    }
+    for k in ["interface", "filter", "snaplen"] {
+        out["capture"][k] = ok[k].clone();
+    }
+    out["capture"]["tcpdump"] = tcpdump;
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1651,6 +1720,51 @@ mod tests {
         let v = reduce(&recorded("tls-s_client")[..], View::Tls, &o(), None).unwrap();
         let k = keys(&v);
         assert!(k.contains(&"TLS1.2/alert/unknown_ca/client".into()) && k.contains(&"TLS1.3/alert/unknown_ca/client".into()), "{k:?}");
+    }
+
+    /// The question's side of the broker's protocol, against a broker played by a thread: the header, the stream in
+    /// frames of odd sizes, the trailer; and a refusal.
+    #[test]
+    fn through_the_broker() {
+        use std::io::{BufRead, BufReader, Write};
+        let dir = std::env::temp_dir().join(format!("beat-broker-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let sock = dir.join("capture");
+        let listener = std::os::unix::net::UnixListener::bind(&sock).unwrap();
+        let pcap = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/pcap/listen-queue.pcap")).unwrap();
+        let broker = std::thread::spawn(move || {
+            let mut asked = Vec::new();
+            for (i, c) in listener.incoming().take(2).enumerate() {
+                let mut c = c.unwrap();
+                let mut line = String::new();
+                BufReader::new(&c).read_line(&mut line).unwrap();
+                asked.push(line);
+                if i == 1 {
+                    c.write_all(b"{\"error\":\"capture: another capture is running on this host; one at a time\"}\n").unwrap();
+                    continue;
+                }
+                c.write_all(b"{\"ok\":{\"view\":\"flows\",\"interface\":\"bc-c\",\"filter\":\"port 9000\",\"snaplen\":128,\"seconds\":10}}\n").unwrap();
+                for chunk in pcap.chunks(997) {
+                    c.write_all(&(chunk.len() as u32).to_be_bytes()).unwrap();
+                    c.write_all(chunk).unwrap();
+                }
+                c.write_all(&0u32.to_be_bytes()).unwrap();
+                c.write_all(b"{\"end\":\"time\",\"captured\":40,\"dropped\":0}\n").unwrap();
+            }
+            asked
+        });
+        let o = TraceOptions { seconds: 10.0, key: vec!["state".into()], top: 20, examples: 0, ..Default::default() };
+        let req = json!({"view": "flows", "port": 9000, "seconds": 10});
+        let out = remote(&sock, &req, View::Flows, &o).unwrap();
+        assert_eq!(out["capture"]["interface"], "bc-c");
+        assert_eq!(out["capture"]["tcpdump"], json!({"end": "time", "captured": 40, "dropped": 0}));
+        let unanswered = out["groups"].as_array().unwrap().iter().find(|g| g["key"]["state"] == "syn_unanswered").unwrap_or_else(|| panic!("{out:#}"));
+        assert_eq!(unanswered["count"], 4, "{out}");
+        let e = remote(&sock, &req, View::Flows, &o).unwrap_err().to_string();
+        assert!(e.contains("capture(): another capture is running"), "{e}");
+        let asked = broker.join().unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&asked[0]).unwrap(), req);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

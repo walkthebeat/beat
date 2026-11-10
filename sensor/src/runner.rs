@@ -33,6 +33,8 @@ pub struct Runner {
     pub journalctl: Option<PathBuf>,
     /// The eBPF catalog behind trace() (libbpf-tools): a question that names an entry gets that entry's capabilities.
     pub bpf_tools: Option<PathBuf>,
+    /// The capture broker (capture.rs): a question that calls capture() gets a socket to it. None: no tcpdump.
+    pub capture: Option<Arc<crate::capture::Broker>>,
     /// Placeholders bound over secret files: `<dir>/file` and `<dir>/dir`. None: no sandbox (development only).
     pub sandbox: Option<PathBuf>,
     /// Set once systemd could not mount the placeholders over secret files (226/NAMESPACE; e.g. SELinux forbids PID 1
@@ -127,7 +129,7 @@ const BASE_CAPS: &str = "CAP_DAC_READ_SEARCH CAP_SYS_PTRACE";
 /// What a question's trace() entries may add (`beat-probe needs`), and nothing else whatever it says.
 const TRACE_CAPS: [&str; 2] = ["CAP_BPF", "CAP_PERFMON"];
 /// The sensor unit's RuntimeDirectory (beat-sensor.service): one question's input, output and error files at a time.
-const RUN_DIR: &str = "/run/beat-sensor";
+pub const RUN_DIR: &str = "/run/beat-sensor";
 /// Between the end of one walk and the start of the next: how long a new file under a recursive pattern can go without
 /// a placeholder, plus the walk's own time. A judgement, to review with the cost measured on real hosts.
 const WALK_EVERY: Duration = Duration::from_secs(300);
@@ -143,6 +145,15 @@ const LIVE_TIMEOUT: Duration = Duration::from_secs(10);
 /// least); a list longer than this is refused rather than left to fail at exec.
 const ARGV_MAX: usize = 1 << 20;
 static SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// A task stopped when this goes out of scope.
+struct Aborted(tokio::task::JoinHandle<()>);
+
+impl Drop for Aborted {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
 
 /// Files that are removed when this goes out of scope.
 struct TempFiles(Vec<PathBuf>);
@@ -226,11 +237,12 @@ impl Runner {
         })
     }
 
-    /// The capabilities beyond the base two that this question's trace() entries need, from its text
-    /// (`beat-probe needs`); only those in TRACE_CAPS, and none on a host without the catalog.
-    async fn trace_caps(&self, source: &str) -> Result<Vec<String>, String> {
-        if self.bpf_tools.is_none() {
-            return Ok(Vec::new());
+    /// What this question needs beyond what every question gets, from its text (`beat-probe needs`): the
+    /// capabilities its trace() entries need (only those in TRACE_CAPS, none on a host without the catalog), and
+    /// whether it calls capture() (never on a host without the broker).
+    async fn needs(&self, source: &str) -> Result<(Vec<String>, bool), String> {
+        if self.bpf_tools.is_none() && self.capture.is_none() {
+            return Ok((Vec::new(), false));
         }
         let mut child = Command::new(&self.probe).args(["needs", "-"]).stdin(Stdio::piped()).stdout(Stdio::piped())
             .stderr(Stdio::null()).kill_on_drop(true).spawn().map_err(|e| format!("beat-probe needs: {e}"))?;
@@ -240,20 +252,23 @@ impl Runner {
         let out = tokio::time::timeout(Duration::from_secs(10), child.wait_with_output()).await
             .map_err(|_| "beat-probe needs: timed out".to_string())?.map_err(|e| format!("beat-probe needs: {e}"))?;
         let v: Value = serde_json::from_slice(&out.stdout).map_err(|e| format!("beat-probe needs: {e}"))?;
-        Ok(v["capabilities"].as_array().into_iter().flatten().filter_map(Value::as_str)
-            .filter(|c| TRACE_CAPS.contains(c)).map(String::from).collect())
+        let caps = match &self.bpf_tools {
+            Some(_) => v["capabilities"].as_array().into_iter().flatten().filter_map(Value::as_str)
+                .filter(|c| TRACE_CAPS.contains(c)).map(String::from).collect(),
+            None => Vec::new(),
+        };
+        Ok((caps, self.capture.is_some() && v["capture"] == true))
     }
 
     /// The probe in a transient unit, with the secret placeholders mounted unless the host refused them before.
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     async fn run_sandboxed(&self, probe: Vec<String>, source: &str, timeout_s: u64, placeholders: &PathBuf, name: &str,
                            secrets: &[SecretFile], report: &Scan, phases: &Phases) -> Result<Exit, Failed> {
         let mounts = !self.secret_mounts_denied.load(Ordering::Relaxed);
         let t = Instant::now();
-        let caps = self.trace_caps(source).await?;
+        let (caps, capture) = self.needs(source).await?;
         phases.needs_ms.store(t.elapsed().as_millis() as u64, Ordering::Relaxed);
-        let q = Question { source, timeout_s, placeholders, name, caps: &caps, secrets, report };
+        let q = Question { source, timeout_s, placeholders, name, caps: &caps, capture, secrets, report };
         let (x, code) = self.unit(probe.clone(), &q, mounts, phases).await?;
         if mounts && code == Some(226) {
             eprintln!("secret placeholders cannot be mounted on this host (226/NAMESPACE, e.g. SELinux): questions run \
@@ -273,8 +288,8 @@ impl Runner {
         let preparing = Instant::now();
         let id = format!("{}-{}", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed));
         let file = |ext: &str| Path::new(RUN_DIR).join(format!("{id}.{ext}"));
-        let (input, output, error, meta) = (file("star"), file("out"), file("err"), file("secrets"));
-        let _cleanup = TempFiles(vec![input.clone(), output.clone(), error.clone(), meta.clone()]);
+        let (input, output, error, meta, socket) = (file("star"), file("out"), file("err"), file("secrets"), file("capture"));
+        let _cleanup = TempFiles(vec![input.clone(), output.clone(), error.clone(), meta.clone(), socket.clone()]);
         tokio::fs::write(&input, source).await.map_err(|e| format!("cannot write {}: {e}", input.display()))?;
         let unit = format!("beat-question-{id}");
         let (binds, uncovered) = bind_props(q.secrets, q.placeholders);
@@ -289,8 +304,18 @@ impl Runner {
         }
         write_private(&meta, &secrets_text(q.secrets, q.report, &uncovered)).await
             .map_err(|e| format!("cannot write {}: {e}", meta.display()))?;
+        // The capture broker's socket, for this question alone and while it runs (the task ends with this scope).
+        let _broker = match (&self.capture, q.capture) {
+            (Some(b), true) => {
+                let _ = std::fs::remove_file(&socket);
+                let listener = tokio::net::UnixListener::bind(&socket).map_err(|e| format!("{}: {e}", socket.display()))?;
+                let (b, deadline) = (b.clone(), Instant::now() + Duration::from_secs(timeout_s));
+                Some(Aborted(tokio::spawn(async move { b.serve(listener, deadline).await })))
+            }
+            _ => None,
+        };
         let argv = self.sandboxed(probe, timeout_s, name, [&input, &output, &error, &meta], if mounts { binds } else { Vec::new() },
-                                  &unit, q.caps);
+                                  &unit, q.caps, _broker.as_ref().map(|_| socket.as_path()));
         let size: usize = argv.iter().map(|a| a.len() + 1).sum();
         if size > ARGV_MAX {
             return Err(Failed { kind: "secrets", message: format!(
@@ -328,7 +353,7 @@ impl Runner {
 
     #[allow(clippy::too_many_arguments)]
     fn sandboxed(&self, probe: Vec<String>, timeout_s: u64, name: &str, [input, output, error, meta]: [&PathBuf; 4],
-                 binds: Vec<String>, unit: &str, caps: &[String]) -> Vec<String> {
+                 binds: Vec<String>, unit: &str, caps: &[String], capture: Option<&Path>) -> Vec<String> {
         let mut props: Vec<String> = HARDENING.iter().map(|s| s.to_string()).collect();
         props.extend(["TasksMax=64", "CPUQuota=100%"].map(String::from));
         props.push(format!("CapabilityBoundingSet={BASE_CAPS}{}", caps.iter().map(|c| format!(" {c}")).collect::<String>()));
@@ -353,6 +378,9 @@ impl Runner {
         for (k, v) in [("HOME", "/tmp".to_string()), ("LANG", "C.UTF-8".to_string()), ("BEAT_SECRETS_FILE", meta.display().to_string()),
                        ("BEAT_HIDDEN", hidden)] {
             argv.extend(["-E".into(), format!("{k}={v}")]);
+        }
+        if let Some(c) = capture {
+            argv.extend(["-E".into(), format!("BEAT_CAPTURE={}", c.display())]);
         }
         argv.extend(probe);
         argv
@@ -519,6 +547,8 @@ struct Question<'a> {
     placeholders: &'a PathBuf,
     name: &'a str,
     caps: &'a [String],
+    /// It calls capture(), and this sensor has the broker.
+    capture: bool,
     secrets: &'a [SecretFile],
     report: &'a Scan,
 }
@@ -702,7 +732,7 @@ mod tests {
 
     fn runner_with(probe: PathBuf) -> Runner {
         Runner {
-            probe, tools: "/nonexistent".into(), cache: "/nonexistent".into(), osqueryi: None, journalctl: None, bpf_tools: None,
+            probe, tools: "/nonexistent".into(), cache: "/nonexistent".into(), osqueryi: None, journalctl: None, bpf_tools: None, capture: None,
             sandbox: Some("/nonexistent".into()), secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
             systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(),
         }
@@ -780,7 +810,7 @@ mod tests {
         let cache: PathBuf = var("BEAT_TEST_CACHE").into();  // made beforehand, as ExecStartPre does: `beat-probe tools`
         let runner = Arc::new(Runner {
             probe: var("BEAT_TEST_PROBE").into(), tools: var("BEAT_TEST_TOOLS").into(), cache,
-            osqueryi: None, journalctl: None, bpf_tools: None, sandbox: Some(ph),
+            osqueryi: None, journalctl: None, bpf_tools: None, capture: None, sandbox: Some(ph),
             secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
             systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(),
             uncovered: Default::default(),
@@ -814,6 +844,91 @@ mod tests {
         println!("heartbeat: {}", runner.walk_state());
     }
 
+    /// capture() through the broker, in real units: flows on lo while connections are made, a field the broker
+    /// refuses, a capture longer than the question allows, and two at once. Needs root, systemd and tcpdump:
+    /// sudo env BEAT_TEST_PROBE=... BEAT_TEST_TOOLS=... BEAT_TEST_CACHE=... [BEAT_TEST_TCPDUMP=/usr/bin/tcpdump]
+    ///   <the test binary> capture_in_real_units --ignored --nocapture
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore]
+    async fn capture_in_real_units() {
+        let var = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("{k}"));
+        std::fs::create_dir_all(RUN_DIR).unwrap();
+        let ph = std::env::temp_dir().join("beat-ph");
+        std::fs::create_dir_all(ph.join("dir")).unwrap();
+        std::fs::write(ph.join("file"), "placeholder\n").unwrap();
+        let tcpdump = std::env::var("BEAT_TEST_TCPDUMP").unwrap_or_else(|_| "/usr/bin/tcpdump".into());
+        let broker = crate::capture::Broker::new(tcpdump.into(), "/usr/bin".into(), Vec::new(), Vec::new(), RUN_DIR.into());
+        let runner = Arc::new(Runner {
+            probe: var("BEAT_TEST_PROBE").into(), tools: var("BEAT_TEST_TOOLS").into(), cache: var("BEAT_TEST_CACHE").into(),
+            osqueryi: None, journalctl: None, bpf_tools: None, capture: Some(Arc::new(broker)), sandbox: Some(ph),
+            secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
+            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(),
+            uncovered: Default::default(),
+        });
+        let walking = runner.clone();
+        tokio::spawn(async move { walking.walk_forever().await });
+
+        // A server that answers, and a port nobody listens on (reset); connections start once the capture runs.
+        let srv = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = srv.local_addr().unwrap().port();
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for c in srv.incoming().flatten() {
+                let _ = std::io::Write::write_all(&mut &c, b"hello\n");
+            }
+        });
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(4));
+            for _ in 0..3 {
+                let c = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+                let _ = std::io::Read::read(&mut &c, &mut [0u8; 16]);
+                let _ = std::net::TcpStream::connect(("127.0.0.1", closed));
+            }
+        });
+        let probe = |extra: &str| format!(
+            "def main() -> None:\n    c = capture(\"flows\", host=\"127.0.0.1\"{extra}, key=[\"state\"])\n    \
+             emit(\"capture\", \"groups\", json.encode(c[\"groups\"]), \"test\")\n    \
+             emit(\"capture\", \"capture\", json.encode(c[\"capture\"]), \"test\")\n");
+        let field = |v: &Value, k: &str| -> Value {
+            v["records"].as_array().into_iter().flatten().find(|r| r["key"] == k)
+                .and_then(|r| serde_json::from_str(r["value"].as_str()?).ok()).unwrap_or(Value::Null)
+        };
+        let v = runner.run("flows.star", &probe(", seconds=8"), 60, &Phases::default(), false).await
+            .map_err(|e| e.message).unwrap();
+        let (groups, cap) = (field(&v, "groups"), field(&v, "capture"));
+        println!("groups {groups}\ncapture {cap}\nnotes {}", v["notes"]);
+        assert_eq!(cap["interface"], "lo");
+        assert_eq!(cap["tcpdump"]["end"], "time", "{cap}");
+        let count = |state: &str| groups.as_array().into_iter().flatten().find(|g| g["key"]["state"] == state)
+            .map_or(0, |g| g["count"].as_u64().unwrap_or(0));
+        assert_eq!(count("closed"), 3, "{groups}");
+        assert_eq!(count("reset"), 3, "{groups}");
+
+        // Refused by the broker: a free-form host, and more seconds than the question has.
+        for (extra, why) in [(", host=\"127.0.0.1 or port 22\"", "not an IP address"), (", seconds=55", "left")] {
+            let src = probe(extra).replace("host=\"127.0.0.1\", host=", "host=");
+            let v = runner.run("refused.star", &src, 30, &Phases::default(), false).await.map_err(|e| e.message).unwrap();
+            let text = v.to_string();
+            assert!(text.contains(why), "{extra}: {text}");
+            println!("refused ({why}): {}", v["error"]);
+        }
+
+        // Two at once on one host: the second is refused.
+        let (a, b) = (runner.clone(), runner.clone());
+        let (src_a, src_b) = (probe(", seconds=6"), probe(", seconds=6"));
+        let one = tokio::spawn(async move { a.run("a.star", &src_a, 60, &Phases::default(), false).await.map_err(|e| e.message) });
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let two = b.run("b.star", &src_b, 60, &Phases::default(), false).await.map_err(|e| e.message).unwrap();
+        let one = one.await.unwrap().unwrap();
+        assert!(two.to_string().contains("one at a time"), "{two}");
+        assert_eq!(field(&one, "capture")["tcpdump"]["end"], "time");
+        let left = std::fs::read_dir(RUN_DIR).unwrap().flatten().filter(|e| {
+            let n = e.file_name().to_string_lossy().to_string();
+            n.ends_with(".pcap") || n.ends_with(".capture") || n.ends_with(".tcpdump-err")
+        }).count();
+        assert_eq!(left, 0, "files left in {RUN_DIR}");
+    }
+
     /// What a question must keep being able to do to debug a host, and what it must not: security work must not take the
     /// first away unnoticed. Real units, real tools, real osquery, the default pack. Needs root and systemd:
     /// sudo env BEAT_TEST_PROBE=... BEAT_TEST_TOOLS=... BEAT_TEST_CACHE=... BEAT_TEST_OSQUERYI=... BEAT_TEST_PACK=src/beat/pack
@@ -834,7 +949,7 @@ mod tests {
         std::fs::write(&key, "SENSORKEY").unwrap();
         let runner = Arc::new(Runner {
             probe: var("BEAT_TEST_PROBE").into(), tools: var("BEAT_TEST_TOOLS").into(), cache: var("BEAT_TEST_CACHE").into(),
-            osqueryi: Some(var("BEAT_TEST_OSQUERYI").into()), journalctl: Some("/usr/bin/journalctl".into()), bpf_tools: None,
+            osqueryi: Some(var("BEAT_TEST_OSQUERYI").into()), journalctl: Some("/usr/bin/journalctl".into()), bpf_tools: None, capture: None,
             sandbox: Some(ph), secret_mounts_denied: Default::default(), hide: vec![key.clone()], unit_props: Vec::new(),
             systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(),
         });

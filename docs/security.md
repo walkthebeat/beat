@@ -83,7 +83,7 @@ A question is a Starlark program (`docs/probes.md`) run by `beat-probe` in a tra
 | Property | Value |
 | --- | --- |
 | File system | `ProtectSystem=strict`, `ProtectHome=read-only`, `PrivateTmp=yes`: everything read-only |
-| Network | `PrivateNetwork=yes`: none |
+| Network | `PrivateNetwork=yes`: none. `capture()` gets a reduction of the host's traffic from the sensor (below) |
 | Devices, kernel | `PrivateDevices`, `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectControlGroups` |
 | Privileges | `NoNewPrivileges`, `RestrictSUIDSGID`, `LockPersonality`; capabilities limited to `CAP_DAC_READ_SEARCH` (read any file) and `CAP_SYS_PTRACE` (read other processes' `/proc`), plus `CAP_BPF` and `CAP_PERFMON` only for a question that uses a `trace()` entry of the built-in eBPF catalog |
 | Limits | `MemoryMax=1G`, `TasksMax=64`, `CPUQuota=100%`, `RuntimeMaxSec` = the question's time limit |
@@ -93,6 +93,13 @@ A question is a Starlark program (`docs/probes.md`) run by `beat-probe` in a tra
 - Starlark has no I/O of its own. Everything a question reads goes through beat's built-ins: files, osquery
   (`osqueryi`), the journal, and WASM tools (coreutils, jq, awk, the log miner) run under wasmtime with only the
   directories they are given. `beat-probe check` refuses a program that is not shaped as a probe before it runs.
+- `capture()`: the sensor runs tcpdump for the question in a unit of its own: a dynamic user with `CAP_NET_RAW`
+  only, packet and unix sockets only, the send system calls refused, read-only, `MemoryMax=256M`, stopped after the
+  capture's seconds. The question names a view, an interface, an address, a port and a protocol, each checked by the
+  sensor, which writes the filter; it never passes tcpdump an expression or option of its own. The stream goes to the
+  question over a socket only that question is given, and is reduced there to counts, groups and a few examples: no
+  packet, payload or file leaves the host or stays on it. Headers, DNS questions and the plaintext TLS handshake
+  (names, versions, ciphers, alerts) are what a question learns. One capture at a time per host.
 - One question per unit; at most two run at once by default. A question past its limits is killed by systemd, not
   by the sensor's goodwill.
 
