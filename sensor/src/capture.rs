@@ -431,10 +431,12 @@ impl Broker {
         Ok(())
     }
 
-    /// SIGINT to tcpdump: it flushes what it buffered, prints its counts and exits.
+    /// SIGINT to tcpdump: it flushes what it buffered, prints its counts and exits. To the whole unit (tcpdump is all
+    /// it runs): `--kill-whom=` is systemd 252's name, 249 knows only `--kill-who=` and refused the call, and the
+    /// capture then ran to RuntimeMaxSec (api-1, Ubuntu 22.04, 2026-11-11).
     async fn stop(&self, unit: &str, already: bool) -> bool {
         if !already {
-            let _ = Command::new(self.systemd.join("systemctl")).args(["kill", "--signal=SIGINT", "--kill-whom=main", unit])
+            let _ = Command::new(self.systemd.join("systemctl")).args(["kill", "--signal=SIGINT", unit])
                 .stdin(Stdio::null()).output().await;
         }
         true
