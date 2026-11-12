@@ -83,8 +83,9 @@ A question is a Starlark program (`docs/probes.md`) run by `beat-probe` in a tra
 | Property | Value |
 | --- | --- |
 | File system | `ProtectSystem=strict`, `ProtectHome=read-only`, `PrivateTmp=yes`: everything read-only |
-| Network | `PrivateNetwork=yes`: none. `capture()` gets a reduction of the host's traffic from the sensor (below) |
+| Network | The host's network namespace, to read, not use: netlink and unix sockets only (`RestrictAddressFamilies`), `IPAddressDeny=any`, no `CAP_NET_ADMIN`. A question that calls `capture()` keeps `PrivateNetwork=yes` and gets a reduction of the host's traffic from the sensor (below) |
 | Devices, kernel | `PrivateDevices`, `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectControlGroups` |
+| User | `beat-question`, a system user (`--question-user`; the sensor makes it with `systemd-sysusers` when missing), not root: its capabilities below are ambient. A sensor that cannot make it runs questions as root and says so in its heartbeat (`question_user`) |
 | Privileges | `NoNewPrivileges`, `RestrictSUIDSGID`, `LockPersonality`; capabilities limited to `CAP_DAC_READ_SEARCH` (read any file) and `CAP_SYS_PTRACE` (read other processes' `/proc`), plus `CAP_BPF` and `CAP_PERFMON` only for a question that uses a `trace()` entry of the built-in eBPF catalog |
 | Limits | `MemoryMax=1G`, `TasksMax=64`, `CPUQuota=100%`, `RuntimeMaxSec` = the question's time limit |
 | The sensor's key | `InaccessiblePaths`: no question sees it in any form |
@@ -102,6 +103,28 @@ A question is a Starlark program (`docs/probes.md`) run by `beat-probe` in a tra
   (names, versions, ciphers, alerts) are what a question learns. One capture at a time per host.
 - One question per unit; at most two run at once by default. A question past its limits is killed by systemd, not
   by the sensor's goodwill.
+- **The host's network, read-only (2026-11-12).** Until sensor 0.2.2 a question had a network namespace of its own,
+  which made every network view answer for an empty sandbox, silently: osquery's `routes`, `interface_*` and
+  `iptables`, `/proc/net`, `/proc/sys/net` (an agent found the host's state only through `/proc/1/net`, docs/spikes.md,
+  scenario 3). A question now runs in the host's namespace and cannot use it: no IP or packet sockets, `IPAddressDeny`
+  on top, and netlink dumps only (every netlink change needs `CAP_NET_ADMIN`, which the unit has not). Unix sockets
+  stay allowed: osquery reads systemd over D-Bus (`systemd_units`), and glibc names interfaces through one; banning
+  them answered both wrong. In the host's namespace they reach abstract sockets too, which a private namespace hid;
+  as `beat-question` (below), what those admit is what any unprivileged user may.
+  The root-test `question_network` (`sensor/src/runner.rs`) tries each kind of socket from a question's real unit.
+  Reading the host's firewall rules needs `CAP_NET_ADMIN`: to come through the sensor, as capture does.
+- **Questions run as `beat-question`, not root (2026-11-12).** As root with its capabilities bounded, a question was
+  still admitted by every unix socket owned by root, which checks the uid, not capabilities: systemd's
+  `/run/systemd/private` and the system bus took its commands (measured on systemd 255: from a question's unit,
+  `StopUnit` stopped a host unit). Starlark opens no sockets; this was about the native code under it (beat-probe,
+  osqueryi). The private network namespace never covered it: path sockets ignore network namespaces. As a system user
+  with `CAP_DAC_READ_SEARCH` and `CAP_SYS_PTRACE` ambient, a question reads what it read before (the debugging
+  regression: every read, osquery, the journal, the tools, the pack), and D-Bus answers it as an unprivileged caller:
+  unit state yes, `StopUnit` "Interactive authentication required"; systemd's private socket refuses it. eBPF tools
+  under `trace()` load with `CAP_BPF` and `CAP_PERFMON` ambient. A fixed user, not `DynamicUser=`: the system bus
+  dropped a dynamic user's connection, and osquery's `systemd_units` came back empty. The capture broker's socket
+  belongs to that user, mode 0600. The root-test `question_network` runs as both: as root it stops a unit, as
+  `beat-question` it cannot.
 
 ## Secrets
 

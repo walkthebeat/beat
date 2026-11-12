@@ -100,7 +100,7 @@
             --version "$(basename $out)" --probe ${probe}/bin/beat-probe --tools ${wasm.tools} \\
             --cache /var/lib/beat-sensor/wasm-cache --osqueryi ${pkgs.osquery}/bin/osqueryi \\
             --journalctl "\''${BEAT_SYSTEMD:-/usr/bin}/journalctl" --systemd "\''${BEAT_SYSTEMD:-/usr/bin}" \\
-            --bpf-tools ${libbpfTools}/bin --tcpdump ${pkgs.tcpdump}/bin/tcpdump \\
+            --bpf-tools ${libbpfTools}/bin --tcpdump ${pkgs.tcpdump}/bin/tcpdump --question-user beat-question \\
             --placeholders $out/share/beat-sensor/placeholders \\
             --key /var/lib/beat-sensor/keys/sensor.key --roots /etc/beat-sensor/roots --deny /var/lib/beat-sensor/state/deny.json \\
             --collector-keys /etc/beat-sensor/collectors \\

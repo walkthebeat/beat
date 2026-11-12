@@ -3,8 +3,9 @@
 Applies to: any Linux host with a beat sensor (first written on Ubuntu 24.04 on EC2); on NixOS, which keeps no
   /boot/vmlinuz-*, the booted, current and next-boot system generations instead (from walkthebeat's own estate,
   NixOS 26.05, 2026-11-02).
-Assumes: osquery tables os_version, system_info, kernel_info, uptime, mounts, users; the sensor runs in its own
-  mount and network namespace, so the host's mounts, interfaces and routes are read from /proc/1/ (PID 1's view).
+Assumes: osquery tables os_version, system_info, kernel_info, uptime, mounts, users; a question runs in its own
+  mount namespace (and, before sensor 0.2.3, network namespace), so the host's mounts, interfaces and routes are read
+  from /proc/1/ (PID 1's view), right on every sensor.
 Cannot see: chrony's live sync state (no chronyc; only config and unit state), IPv6 addresses, authorized_keys
   content (secret: only stat), password state of accounts (shadow is secret).
 beat's default pack (first written by Claude in a discovery, 2026-10-31; reviewed).

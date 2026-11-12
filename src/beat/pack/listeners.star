@@ -2,8 +2,8 @@
 (process, remote port) for outbound ones and (process, local port) for inbound ones.
 
 Applies to: any Linux host with a beat sensor.
-Assumes: osquery listening_ports / process_open_sockets see the host's network namespace (the sensor's own
-  namespace holds only lo; osquery reads per-process sockets, so host sockets do show).
+Assumes: osquery listening_ports / process_open_sockets see the host's sockets (they read per process, so they do
+  even on a sensor whose questions run in a network namespace of their own, before 0.2.3).
 Cannot see: UDP "connections" (connectionless), short-lived connections between runs (use trace("tcpconnect")),
   hostnames of remote IPs (no reverse lookup). Remote IPs of cloud endpoints (SSM) rotate: expect drift there.
 beat's default pack (first written by Claude in a discovery, 2026-10-31; reviewed).

@@ -121,6 +121,10 @@ Tracing, B. Gregg's tools (eBPF), where the sensor has the catalog; the answer i
     4. one number that answers the question; then ask that same question of every host
   Do not ask for every event: a key of pid or full path on a busy host is thousands of groups.
 
+The host's network (sensor 0.2.3 on): `/proc/net`, `/proc/sys/net` and osquery's `routes`, `interface_details`,
+`interface_addresses`, `arp_cache` describe the host. On older sensors they describe an empty sandbox; read
+`/proc/1/net` there. Firewall rules (`iptables`) stay empty: reading them needs a privilege questions do not have.
+
 Traffic (where the sensor has tcpdump): headers, DNS questions and the TLS handshake, reduced on the host:
   capture(view, interface=None, host=None, port=None, proto=None, seconds=5, filter={}, key=[], sum=[], hist=None,
           top=20, examples=3) -> dict          one capture at a time per host; seconds 1..60

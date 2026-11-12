@@ -4,14 +4,15 @@ that are often tuned by hand (a live change with no persisted value is lost on r
 Applies to: any systemd Linux host.
 Assumes: systemd-sysctl semantics: files from /usr/lib, /run, /etc sysctl.d (a name in /etc overrides the same
   name elsewhere), applied in file-name order, then /etc/sysctl.conf; later assignments win.
-Cannot see: net.* live values of the HOST: the probe runs in the sensor's own network namespace, so /proc/sys/net
-  (and osquery system_controls) show that namespace, not the host's; they are skipped and counted, never compared.
-  Also values set by other tools at boot (tuned, cloud-init, kubelet), and glob keys (net.ipv4.conf.*.x).
+Cannot see: on a sensor whose questions run in a network namespace of their own (before 0.2.3), net.* live values of
+  the host: /proc/sys/net (and osquery system_controls) show that namespace; they are then skipped and counted, never
+  compared (net_keys_not_observable_count). Also values set by other tools at boot (tuned, cloud-init, kubelet), and
+  glob keys (net.ipv4.conf.*.x).
 beat's default pack (first written by Claude in a discovery, 2026-10-31; reviewed).
 """
 
 DIRS = ["/usr/lib/sysctl.d", "/run/sysctl.d", "/etc/sysctl.d"]
-NETNS_PREFIX = "net."        # per-network-namespace: not the host's view from inside the sensor
+NETNS_PREFIX = "net."        # per network namespace: the host's only when the question runs in the host's
 WATCH = ["vm.swappiness", "vm.overcommit_memory", "vm.max_map_count", "vm.dirty_ratio",
          "fs.file-max", "fs.inotify.max_user_watches", "kernel.pid_max", "kernel.panic"]
 
@@ -55,8 +56,11 @@ def main():
     emit("sysctl", "persisted_count", str(len(want)), "sysctl.d", kind = "metric")
     differ = 0
     skipped = 0
+    own_ns = readlink("/proc/self/ns/net")
+    host_net = own_ns != None and own_ns == readlink("/proc/1/ns/net")
+    emit("sysctl", "network_namespace", "host" if host_net else "own", "/proc/self/ns/net", kind = "semantic")
     for k in sorted(want.keys()):
-        if k.startswith(NETNS_PREFIX):
+        if k.startswith(NETNS_PREFIX) and not host_net:
             skipped += 1
             continue
         lv = live(k)

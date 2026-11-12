@@ -3,7 +3,7 @@
 //!   beat-sensor --nats URL --probe PATH --tools DIR --cache DIR --key FILE --roots DIR --collector-keys DIR
 //!               [--name NAME] [--deny FILE]
 //!               [--label k=v]... [--osqueryi PATH] [--journalctl PATH] [--bpf-tools DIR] [--tcpdump PATH]
-//!               [--placeholders DIR | --no-sandbox]
+//!               [--placeholders DIR | --no-sandbox] [--question-user NAME]
 //!               [--concurrency N] [--unit-property P]... [--systemd DIR]
 //!   beat-sensor keygen FILE     creates the sensor's signing key when missing; prints its public key (to enroll)
 //!   beat-sensor enroll --api URL [--name NAME] [--key FILE]
@@ -29,6 +29,9 @@
 //! image, MountImages= gives the questions the image's /nix/store (docs/security.md M16).
 //! --tcpdump: capture() for questions (capture.rs): the sensor runs it in a unit of its own and passes the pcap back;
 //! without it, or with --no-sandbox, questions have no capture().
+//! --question-user: the user questions and the secret walk run as, with their capabilities ambient (runner.rs
+//! `question_user`); made when missing. Without it, or when it cannot be made, questions run as root (the heartbeat's
+//! `question_user` says which).
 //! --systemd: the directory of the host's systemd-run and systemctl, /usr/bin by default (NixOS: the systemd
 //! package's bin; the NixOS module passes it).
 
@@ -92,6 +95,7 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
     let (mut osqueryi, mut journalctl, mut placeholders, mut no_sandbox) = (None, None, None, false);
     let (mut bpf_tools, mut unit_props, mut systemd) = (None, vec![], PathBuf::from("/usr/bin"));
     let mut tcpdump: Option<PathBuf> = None;
+    let mut question_user: Option<String> = None;
     let (mut key, mut roots, mut collector, mut deny_file) = (None, None, None, None);
     let mut labels = serde_json::Map::new();
     let mut concurrency = 2;
@@ -110,6 +114,7 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
             "--journalctl" => journalctl = Some(PathBuf::from(val()?)),
             "--bpf-tools" => bpf_tools = Some(PathBuf::from(val()?)),
             "--tcpdump" => tcpdump = Some(PathBuf::from(val()?)),
+            "--question-user" => question_user = Some(val()?),
             "--placeholders" => placeholders = Some(PathBuf::from(val()?)),
             "--no-sandbox" => no_sandbox = true,
             "--key" => key = Some(PathBuf::from(val()?)),
@@ -141,6 +146,8 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
         (None, true) => None,
         _ => bail!("give exactly one of --placeholders DIR and --no-sandbox"),
     };
+    let question_user = question_user.filter(|_| sandbox.is_some()).and_then(|u| runner::question_user(&u, &systemd)
+        .map_err(|e| eprintln!("--question-user {u}: {e}; questions run as root")).ok());
     let key = key.context("--key is required (beat-sensor keygen FILE creates one)")?;
     let roots = roots.context("--roots is required: the directory of the org roots' public keys")?;
     seal::read_keys(&roots).context("--roots")?;
@@ -180,6 +187,7 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
             walk: tokio::sync::watch::Sender::new(None),
             walk_error: Default::default(),
             uncovered: Default::default(),
+            question_user,
         },
     })
 }
@@ -502,7 +510,8 @@ async fn heartbeat(cfg: Arc<Config>, js: jetstream::Context) {
         let root_keys: serde_json::Map<String, serde_json::Value> = seal::read_keys(&cfg.roots).unwrap_or_default().iter()
             .map(|c| (c.name.clone(), STANDARD.encode(c.key.as_bytes()).into())).collect();
         let entry = json!({"name": cfg.name, "sensor": cfg.version, "labels": cfg.labels, "started": started,
-                           "guide": guide, "sandbox": cfg.runner.sandbox_mode(), "secret_walk": cfg.runner.walk_state(),
+                           "guide": guide, "sandbox": cfg.runner.sandbox_mode(),
+                           "question_user": cfg.runner.question_user_name(), "secret_walk": cfg.runner.walk_state(),
                            "at": iso_now(),
                            "roots": roots, "collectors": collectors, "root_keys": root_keys,
                            "deny": deny_seq});

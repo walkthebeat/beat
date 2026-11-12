@@ -198,7 +198,8 @@ emit_log_summary(name, summary, source="drain")        # records: log:<name>#<te
   and per CPU, memory, pressure (PSI), whole disks with I/O (as iostat -xz), interfaces with traffic, TCP and UDP
   counters, the busiest commands (grouped by command, with the busiest and idlest process of each), and cgroup CPU
   throttling. `emit_checklist(c)` turns it into records, all declared metrics. Network counters are PID 1's
-  (`/proc/1/net`): a question runs with `PrivateNetwork=yes`, where `/proc/net` shows only its own loopback.
+  (`/proc/1/net`): the host's on every sensor (a question runs in the host's network namespace from 0.2.3; before,
+  in its own, where `/proc/net` showed only loopback).
 - **[B11c] `trace(entry, seconds, ...)`**, the catalog of B. Gregg's tools (`probe/src/catalog.rs`; libbpf-tools in
   the sensor's closure, `sensor/libbpf-tools.nix`). The entry is a literal (a check), so the entries a probe uses, and
   the capabilities they need, are read from its text: the sensor adds `CAP_BPF CAP_PERFMON` to that question's unit
