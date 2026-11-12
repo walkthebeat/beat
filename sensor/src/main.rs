@@ -30,7 +30,7 @@
 //! --tcpdump: capture() for questions (capture.rs): the sensor runs it in a unit of its own and passes the pcap back;
 //! without it, or with --no-sandbox, questions have no capture().
 //! --question-user: the user questions and the secret walk run as, with their capabilities ambient (runner.rs
-//! `question_user`); made when missing. Without it, or when it cannot be made, questions run as root (the heartbeat's
+//! `question_user`); the sensor's unit makes it. Without it, or when there is no such user, questions run as root (the heartbeat's
 //! `question_user` says which).
 //! --systemd: the directory of the host's systemd-run and systemctl, /usr/bin by default (NixOS: the systemd
 //! package's bin; the NixOS module passes it).
@@ -146,7 +146,7 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
         (None, true) => None,
         _ => bail!("give exactly one of --placeholders DIR and --no-sandbox"),
     };
-    let question_user = question_user.filter(|_| sandbox.is_some()).and_then(|u| runner::question_user(&u, &systemd)
+    let question_user = question_user.filter(|_| sandbox.is_some()).and_then(|u| runner::question_user(&u)
         .map_err(|e| eprintln!("--question-user {u}: {e}; questions run as root")).ok());
     let key = key.context("--key is required (beat-sensor keygen FILE creates one)")?;
     let roots = roots.context("--roots is required: the directory of the org roots' public keys")?;

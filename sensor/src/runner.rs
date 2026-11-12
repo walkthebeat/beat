@@ -61,29 +61,19 @@ pub struct Runner {
     pub question_user: Option<(String, u32)>,
 }
 
-/// The question user, made when missing (`systemd-sysusers --inline`, the host's systemd: one way for every kind of
-/// install) and looked up. Err: questions run as root, and the heartbeat says so.
-pub fn question_user(name: &str, systemd: &Path) -> Result<(String, u32), String> {
-    // getent sees every NSS source; /etc/passwd, where systemd-sysusers writes, when getent is not on PATH (NixOS).
+/// The question user, looked up (getent: every NSS source; /etc/passwd when getent is not on PATH, NixOS). The sensor's
+/// unit makes it (ExecStartPre=+systemd-sysusers; the NixOS module declares it): the sensor's own /etc is read-only.
+/// Err: questions run as root, and the heartbeat says so.
+pub fn question_user(name: &str) -> Result<(String, u32), String> {
     let uid_in = |line: &str| -> Option<u32> {
         let f: Vec<&str> = line.trim().split(':').collect();
         (f.len() > 2 && f[0] == name).then(|| f[2].parse().ok()).flatten()
     };
-    let lookup = || -> Option<u32> {
-        let getent = std::process::Command::new("getent").args(["passwd", name]).output().ok()
-            .and_then(|o| uid_in(&String::from_utf8_lossy(&o.stdout)));
-        getent.or_else(|| std::fs::read_to_string("/etc/passwd").ok()?.lines().find_map(uid_in))
-    };
-    if let Some(uid) = lookup() {
-        return Ok((name.to_string(), uid));
-    }
-    let line = format!("u {name} - \"beat sensor questions\" / -");
-    let out = std::process::Command::new(systemd.join("systemd-sysusers")).args(["--inline", &line]).output()
-        .map_err(|e| format!("systemd-sysusers: {e}"))?;
-    if !out.status.success() {
-        return Err(format!("systemd-sysusers: {}", String::from_utf8_lossy(&out.stderr).trim()));
-    }
-    lookup().map(|uid| (name.to_string(), uid)).ok_or_else(|| format!("{name}: made, but not found"))
+    let getent = std::process::Command::new("getent").args(["passwd", name]).output().ok()
+        .and_then(|o| uid_in(&String::from_utf8_lossy(&o.stdout)));
+    getent.or_else(|| std::fs::read_to_string("/etc/passwd").ok()?.lines().find_map(uid_in))
+        .map(|uid| (name.to_string(), uid))
+        .ok_or_else(|| format!("no user {name} (the sensor's unit makes it: ExecStartPre=+systemd-sysusers)"))
 }
 
 /// A secret file: its path, whether it is a directory, and its metadata line for the question.
@@ -793,11 +783,15 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// Who the root tests' questions run as: BEAT_TEST_USER (made when missing, as the sensor does), default
+    /// Who the root tests' questions run as: BEAT_TEST_USER (made when missing, as the sensor's unit does), default
     /// beat-question; "root" for the old way.
     fn test_user() -> Option<(String, u32)> {
         let name = std::env::var("BEAT_TEST_USER").unwrap_or_else(|_| "beat-question".into());
-        (name != "root").then(|| question_user(&name, Path::new("/usr/bin")).unwrap())
+        (name != "root").then(|| {
+            let line = format!("u {name} - \"beat sensor questions\" / -");
+            assert!(std::process::Command::new("/usr/bin/systemd-sysusers").args(["--inline", &line]).status().unwrap().success());
+            question_user(&name).unwrap()
+        })
     }
 
     fn runner_with(probe: PathBuf) -> Runner {

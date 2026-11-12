@@ -85,7 +85,7 @@ A question is a Starlark program (`docs/probes.md`) run by `beat-probe` in a tra
 | File system | `ProtectSystem=strict`, `ProtectHome=read-only`, `PrivateTmp=yes`: everything read-only |
 | Network | The host's network namespace, to read, not use: netlink and unix sockets only (`RestrictAddressFamilies`), `IPAddressDeny=any`, no `CAP_NET_ADMIN`. A question that calls `capture()` keeps `PrivateNetwork=yes` and gets a reduction of the host's traffic from the sensor (below) |
 | Devices, kernel | `PrivateDevices`, `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectControlGroups` |
-| User | `beat-question`, a system user (`--question-user`; the sensor makes it with `systemd-sysusers` when missing), not root: its capabilities below are ambient. A sensor that cannot make it runs questions as root and says so in its heartbeat (`question_user`) |
+| User | `beat-question`, a system user (`--question-user`; the sensor's unit makes it with `systemd-sysusers` before the sensor starts, the NixOS module declares it), not root: its capabilities below are ambient. A sensor without it runs questions as root and says so in its heartbeat (`question_user`) |
 | Privileges | `NoNewPrivileges`, `RestrictSUIDSGID`, `LockPersonality`; capabilities limited to `CAP_DAC_READ_SEARCH` (read any file) and `CAP_SYS_PTRACE` (read other processes' `/proc`), plus `CAP_BPF` and `CAP_PERFMON` only for a question that uses a `trace()` entry of the built-in eBPF catalog |
 | Limits | `MemoryMax=1G`, `TasksMax=64`, `CPUQuota=100%`, `RuntimeMaxSec` = the question's time limit |
 | The sensor's key | `InaccessiblePaths`: no question sees it in any form |

@@ -22,6 +22,10 @@ in
     # The operator's command (configure, enroll, keygen) alone: not beat-sensor-activate (hosts that are not NixOS).
     environment.systemPackages = [ (pkgs.linkFarm "beat-sensor-cli" [ { name = "bin/beat-sensor"; path = "${sensor}/bin/beat-sensor"; } ]) ];
 
+    # The user questions run as (runner.rs `question_user`; beat-sensor-run passes --question-user beat-question).
+    users.users.beat-question = { isSystemUser = true; group = "beat-question"; description = "beat sensor questions"; };
+    users.groups.beat-question = { };
+
     systemd.services.beat-sensor = {
       description = "beat sensor: answers questions published on NATS";
       after = [ "network-online.target" ];
