@@ -123,6 +123,9 @@ pub trait Host {
     fn sample(&self, patterns: &[String], seconds: f64) -> HostResult<Sample>;
     /// A catalog entry (`catalog::ENTRIES`) run for `o.seconds`, its output reduced: never the events themselves.
     fn trace(&self, entry: &str, o: &crate::catalog::TraceOptions) -> HostResult<serde_json::Value>;
+    /// Traffic captured on the host for `o.seconds` and reduced to a view (`capture::View`): never the packets.
+    /// `request` is what the sensor's broker takes ({view, interface?, host?, port?, proto?, seconds}).
+    fn capture(&self, request: &serde_json::Value, o: &crate::catalog::TraceOptions) -> HostResult<serde_json::Value>;
     fn secrets(&self) -> HostResult<Vec<Secret>>;
     /// A file of known meaning read for what it means (C23, `transform`): kind is one of `transform::KINDS`.
     /// Never its bytes. Secret files are read too: the result is metadata.

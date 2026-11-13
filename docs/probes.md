@@ -198,13 +198,23 @@ emit_log_summary(name, summary, source="drain")        # records: log:<name>#<te
   and per CPU, memory, pressure (PSI), whole disks with I/O (as iostat -xz), interfaces with traffic, TCP and UDP
   counters, the busiest commands (grouped by command, with the busiest and idlest process of each), and cgroup CPU
   throttling. `emit_checklist(c)` turns it into records, all declared metrics. Network counters are PID 1's
-  (`/proc/1/net`): a question runs with `PrivateNetwork=yes`, where `/proc/net` shows only its own loopback.
+  (`/proc/1/net`): the host's on every sensor (a question runs in the host's network namespace from 0.2.3; before,
+  in its own, where `/proc/net` showed only loopback).
 - **[B11c] `trace(entry, seconds, ...)`**, the catalog of B. Gregg's tools (`probe/src/catalog.rs`; libbpf-tools in
   the sensor's closure, `sensor/libbpf-tools.nix`). The entry is a literal (a check), so the entries a probe uses, and
   the capabilities they need, are read from its text: the sensor adds `CAP_BPF CAP_PERFMON` to that question's unit
   only (`beat-probe needs`). The answer is a reduction made as the tool's output streams: histograms with
   percentiles, or events filtered, keyed (with coarsenings), counted, summed and bounded, with what it saw (seen,
   matched, unparsed, lost, its own left out).
+- **[B11d] `capture(view, interface=, host=, port=, proto=, seconds=, ...)`**, traffic on the host
+  (`probe/src/capture.rs`; the broker `sensor/src/capture.rs`). A question has no network of its own, so the sensor
+  runs tcpdump for it, in a unit of its own in the host's namespace, and passes the pcap stream back over a socket it
+  gives only to questions that call `capture()` (`beat-probe needs`). The question asks with typed fields; the sensor
+  checks them and writes the capture filter itself, so no expression of the question's reaches tcpdump; the snaplen
+  follows the view. One capture at a time per host, at most 60 s, within the question's time. The stream is reduced
+  as it arrives into a view: `packets`, `flows`, `dns` (header and question), `tls` (the plaintext handshake: SNI,
+  ALPN, versions, cipher, alerts), grouped like `trace()`'s events. Application payload is never parsed or returned,
+  and nothing is kept.
 - No SQL engine beyond osquery's is part of the sensor. Starlark covers what probes need (time formatting, regex,
   scanning files, "last one wins"); if log analytics need more, it comes as a tool or a builtin.
 

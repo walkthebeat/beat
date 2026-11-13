@@ -11,6 +11,7 @@
 //! - `secrets`: gate 1, what the run result says is scanned and masked before it leaves (docs/security.md).
 
 pub mod builtins;
+pub mod capture;
 pub mod catalog;
 pub mod check;
 pub mod environ;

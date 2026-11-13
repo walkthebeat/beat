@@ -33,6 +33,8 @@ pub struct Runner {
     pub journalctl: Option<PathBuf>,
     /// The eBPF catalog behind trace() (libbpf-tools): a question that names an entry gets that entry's capabilities.
     pub bpf_tools: Option<PathBuf>,
+    /// The capture broker (capture.rs): a question that calls capture() gets a socket to it. None: no tcpdump.
+    pub capture: Option<Arc<crate::capture::Broker>>,
     /// Placeholders bound over secret files: `<dir>/file` and `<dir>/dir`. None: no sandbox (development only).
     pub sandbox: Option<PathBuf>,
     /// Set once systemd could not mount the placeholders over secret files (226/NAMESPACE; e.g. SELinux forbids PID 1
@@ -52,6 +54,26 @@ pub struct Runner {
     pub walk_error: Mutex<Option<String>>,
     /// Paths found since the last heartbeat that no placeholder could cover (`bind_word`).
     pub uncovered: Mutex<Vec<String>>,
+    /// The user questions and the walk run as (`--question-user`): name and uid. None: root, as before 0.2.3. A unix
+    /// socket owned by root admits root by uid whatever its capabilities: systemd's private socket and the system bus
+    /// took a question's commands (docs/security.md). As this user, with its two capabilities ambient, it reads as
+    /// before and D-Bus answers it as an unprivileged caller.
+    pub question_user: Option<(String, u32)>,
+}
+
+/// The question user, looked up (getent: every NSS source; /etc/passwd when getent is not on PATH, NixOS). The sensor's
+/// unit makes it (ExecStartPre=+systemd-sysusers; the NixOS module declares it): the sensor's own /etc is read-only.
+/// Err: questions run as root, and the heartbeat says so.
+pub fn question_user(name: &str) -> Result<(String, u32), String> {
+    let uid_in = |line: &str| -> Option<u32> {
+        let f: Vec<&str> = line.trim().split(':').collect();
+        (f.len() > 2 && f[0] == name).then(|| f[2].parse().ok()).flatten()
+    };
+    let getent = std::process::Command::new("getent").args(["passwd", name]).output().ok()
+        .and_then(|o| uid_in(&String::from_utf8_lossy(&o.stdout)));
+    getent.or_else(|| std::fs::read_to_string("/etc/passwd").ok()?.lines().find_map(uid_in))
+        .map(|uid| (name.to_string(), uid))
+        .ok_or_else(|| format!("no user {name} (the sensor's unit makes it: ExecStartPre=+systemd-sysusers)"))
 }
 
 /// A secret file: its path, whether it is a directory, and its metadata line for the question.
@@ -127,7 +149,7 @@ const BASE_CAPS: &str = "CAP_DAC_READ_SEARCH CAP_SYS_PTRACE";
 /// What a question's trace() entries may add (`beat-probe needs`), and nothing else whatever it says.
 const TRACE_CAPS: [&str; 2] = ["CAP_BPF", "CAP_PERFMON"];
 /// The sensor unit's RuntimeDirectory (beat-sensor.service): one question's input, output and error files at a time.
-const RUN_DIR: &str = "/run/beat-sensor";
+pub const RUN_DIR: &str = "/run/beat-sensor";
 /// Between the end of one walk and the start of the next: how long a new file under a recursive pattern can go without
 /// a placeholder, plus the walk's own time. A judgement, to review with the cost measured on real hosts.
 const WALK_EVERY: Duration = Duration::from_secs(300);
@@ -143,6 +165,15 @@ const LIVE_TIMEOUT: Duration = Duration::from_secs(10);
 /// least); a list longer than this is refused rather than left to fail at exec.
 const ARGV_MAX: usize = 1 << 20;
 static SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// A task stopped when this goes out of scope.
+struct Aborted(tokio::task::JoinHandle<()>);
+
+impl Drop for Aborted {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
 
 /// Files that are removed when this goes out of scope.
 struct TempFiles(Vec<PathBuf>);
@@ -226,11 +257,12 @@ impl Runner {
         })
     }
 
-    /// The capabilities beyond the base two that this question's trace() entries need, from its text
-    /// (`beat-probe needs`); only those in TRACE_CAPS, and none on a host without the catalog.
-    async fn trace_caps(&self, source: &str) -> Result<Vec<String>, String> {
-        if self.bpf_tools.is_none() {
-            return Ok(Vec::new());
+    /// What this question needs beyond what every question gets, from its text (`beat-probe needs`): the
+    /// capabilities its trace() entries need (only those in TRACE_CAPS, none on a host without the catalog), and
+    /// whether it calls capture() (never on a host without the broker).
+    async fn needs(&self, source: &str) -> Result<(Vec<String>, bool), String> {
+        if self.bpf_tools.is_none() && self.capture.is_none() {
+            return Ok((Vec::new(), false));
         }
         let mut child = Command::new(&self.probe).args(["needs", "-"]).stdin(Stdio::piped()).stdout(Stdio::piped())
             .stderr(Stdio::null()).kill_on_drop(true).spawn().map_err(|e| format!("beat-probe needs: {e}"))?;
@@ -240,20 +272,23 @@ impl Runner {
         let out = tokio::time::timeout(Duration::from_secs(10), child.wait_with_output()).await
             .map_err(|_| "beat-probe needs: timed out".to_string())?.map_err(|e| format!("beat-probe needs: {e}"))?;
         let v: Value = serde_json::from_slice(&out.stdout).map_err(|e| format!("beat-probe needs: {e}"))?;
-        Ok(v["capabilities"].as_array().into_iter().flatten().filter_map(Value::as_str)
-            .filter(|c| TRACE_CAPS.contains(c)).map(String::from).collect())
+        let caps = match &self.bpf_tools {
+            Some(_) => v["capabilities"].as_array().into_iter().flatten().filter_map(Value::as_str)
+                .filter(|c| TRACE_CAPS.contains(c)).map(String::from).collect(),
+            None => Vec::new(),
+        };
+        Ok((caps, self.capture.is_some() && v["capture"] == true))
     }
 
     /// The probe in a transient unit, with the secret placeholders mounted unless the host refused them before.
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     async fn run_sandboxed(&self, probe: Vec<String>, source: &str, timeout_s: u64, placeholders: &PathBuf, name: &str,
                            secrets: &[SecretFile], report: &Scan, phases: &Phases) -> Result<Exit, Failed> {
         let mounts = !self.secret_mounts_denied.load(Ordering::Relaxed);
         let t = Instant::now();
-        let caps = self.trace_caps(source).await?;
+        let (caps, capture) = self.needs(source).await?;
         phases.needs_ms.store(t.elapsed().as_millis() as u64, Ordering::Relaxed);
-        let q = Question { source, timeout_s, placeholders, name, caps: &caps, secrets, report };
+        let q = Question { source, timeout_s, placeholders, name, caps: &caps, capture, secrets, report };
         let (x, code) = self.unit(probe.clone(), &q, mounts, phases).await?;
         if mounts && code == Some(226) {
             eprintln!("secret placeholders cannot be mounted on this host (226/NAMESPACE, e.g. SELinux): questions run \
@@ -273,8 +308,8 @@ impl Runner {
         let preparing = Instant::now();
         let id = format!("{}-{}", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed));
         let file = |ext: &str| Path::new(RUN_DIR).join(format!("{id}.{ext}"));
-        let (input, output, error, meta) = (file("star"), file("out"), file("err"), file("secrets"));
-        let _cleanup = TempFiles(vec![input.clone(), output.clone(), error.clone(), meta.clone()]);
+        let (input, output, error, meta, socket) = (file("star"), file("out"), file("err"), file("secrets"), file("capture"));
+        let _cleanup = TempFiles(vec![input.clone(), output.clone(), error.clone(), meta.clone(), socket.clone()]);
         tokio::fs::write(&input, source).await.map_err(|e| format!("cannot write {}: {e}", input.display()))?;
         let unit = format!("beat-question-{id}");
         let (binds, uncovered) = bind_props(q.secrets, q.placeholders);
@@ -289,8 +324,24 @@ impl Runner {
         }
         write_private(&meta, &secrets_text(q.secrets, q.report, &uncovered)).await
             .map_err(|e| format!("cannot write {}: {e}", meta.display()))?;
+        // The capture broker's socket, for this question alone and while it runs (the task ends with this scope).
+        let _broker = match (&self.capture, q.capture) {
+            (Some(b), true) => {
+                let _ = std::fs::remove_file(&socket);
+                let listener = tokio::net::UnixListener::bind(&socket).map_err(|e| format!("{}: {e}", socket.display()))?;
+                // Connecting needs write permission on the socket: the question's user owns it, no one else may.
+                if let Some((_, uid)) = &self.question_user {
+                    std::os::unix::fs::chown(&socket, Some(*uid), None).map_err(|e| format!("{}: {e}", socket.display()))?;
+                    std::fs::set_permissions(&socket, std::os::unix::fs::PermissionsExt::from_mode(0o600))
+                        .map_err(|e| format!("{}: {e}", socket.display()))?;
+                }
+                let (b, deadline) = (b.clone(), Instant::now() + Duration::from_secs(timeout_s));
+                Some(Aborted(tokio::spawn(async move { b.serve(listener, deadline).await })))
+            }
+            _ => None,
+        };
         let argv = self.sandboxed(probe, timeout_s, name, [&input, &output, &error, &meta], if mounts { binds } else { Vec::new() },
-                                  &unit, q.caps);
+                                  &unit, q.caps, _broker.as_ref().map(|_| socket.as_path()));
         let size: usize = argv.iter().map(|a| a.len() + 1).sum();
         if size > ARGV_MAX {
             return Err(Failed { kind: "secrets", message: format!(
@@ -328,10 +379,17 @@ impl Runner {
 
     #[allow(clippy::too_many_arguments)]
     fn sandboxed(&self, probe: Vec<String>, timeout_s: u64, name: &str, [input, output, error, meta]: [&PathBuf; 4],
-                 binds: Vec<String>, unit: &str, caps: &[String]) -> Vec<String> {
+                 binds: Vec<String>, unit: &str, caps: &[String], capture: Option<&Path>) -> Vec<String> {
         let mut props: Vec<String> = HARDENING.iter().map(|s| s.to_string()).collect();
+        props.extend(self.question_user.iter().map(|(u, _)| format!("User={u}")));
+        match capture {
+            Some(_) => props.push(PRIVATE_NETWORK.into()),
+            None => props.extend(HOST_NETWORK.map(String::from)),
+        }
         props.extend(["TasksMax=64", "CPUQuota=100%"].map(String::from));
-        props.push(format!("CapabilityBoundingSet={BASE_CAPS}{}", caps.iter().map(|c| format!(" {c}")).collect::<String>()));
+        let all_caps = format!("{BASE_CAPS}{}", caps.iter().map(|c| format!(" {c}")).collect::<String>());
+        props.push(format!("CapabilityBoundingSet={all_caps}"));
+        props.push(format!("AmbientCapabilities={all_caps}"));
         props.push(format!("MemoryMax={MEMORY_MAX}"));
         props.push(format!("RuntimeMaxSec={timeout_s}"));
         for p in &self.hide {
@@ -353,6 +411,9 @@ impl Runner {
         for (k, v) in [("HOME", "/tmp".to_string()), ("LANG", "C.UTF-8".to_string()), ("BEAT_SECRETS_FILE", meta.display().to_string()),
                        ("BEAT_HIDDEN", hidden)] {
             argv.extend(["-E".into(), format!("{k}={v}")]);
+        }
+        if let Some(c) = capture {
+            argv.extend(["-E".into(), format!("BEAT_CAPTURE={}", c.display())]);
         }
         argv.extend(probe);
         argv
@@ -389,8 +450,11 @@ impl Runner {
         argv.push(format!("--unit={unit}"));
         argv.push("--description=beat secret walk".into());
         let mut props: Vec<String> = HARDENING.iter().map(|s| s.to_string()).collect();
+        props.push(PRIVATE_NETWORK.into());
+        props.extend(self.question_user.iter().map(|(u, _)| format!("User={u}")));
         props.extend(WALK_LIMITS.map(String::from));
         props.push(format!("CapabilityBoundingSet={BASE_CAPS}"));
+        props.push(format!("AmbientCapabilities={BASE_CAPS}"));
         props.push(format!("RuntimeMaxSec={}", WALK_BUDGET_S + 60));
         props.extend(self.hide.iter().map(|p| format!("InaccessiblePaths={}", p.display())));
         props.extend(self.unit_props.iter().cloned());
@@ -481,6 +545,11 @@ impl Runner {
     }
 
     /// The sandbox this sensor's questions get: "full", "no-secret-mounts" (see secret_mounts_denied) or "none".
+    /// Who questions run as, for the heartbeat.
+    pub fn question_user_name(&self) -> &str {
+        self.question_user.as_ref().map_or("root", |(u, _)| u)
+    }
+
     pub fn sandbox_mode(&self) -> &'static str {
         match (&self.sandbox, self.secret_mounts_denied.load(Ordering::Relaxed)) {
             (None, _) => "none",
@@ -503,12 +572,24 @@ impl Runner {
     }
 }
 
-/// What every question's unit and the walk's have in common.
-const HARDENING: [&str; 12] = [
-    "ProtectSystem=strict", "ProtectHome=read-only", "PrivateTmp=yes", "PrivateNetwork=yes",
+/// What every question's unit and the walk's have in common. The network is per unit: see HOST_NETWORK.
+const HARDENING: [&str; 11] = [
+    "ProtectSystem=strict", "ProtectHome=read-only", "PrivateTmp=yes",
     "PrivateDevices=yes", "NoNewPrivileges=yes", "ProtectKernelTunables=yes", "ProtectKernelModules=yes",
     "ProtectControlGroups=yes", "RestrictSUIDSGID=yes", "LockPersonality=yes", "WorkingDirectory=/",
 ];
+/// A question sees the host's network, and cannot use it. It runs in the host's network namespace, so routes,
+/// interfaces, MTUs, neighbours, sockets, qdiscs and /proc/sys/net are the host's, through osquery, netlink or /proc
+/// alike (in a private namespace each of these answered for an empty sandbox, silently: docs/spikes.md, scenario 3).
+/// Its sockets: netlink (dumps need no privilege; every change needs CAP_NET_ADMIN, which the unit has not) and unix
+/// (osquery reads systemd over D-Bus, and glibc names interfaces through one); no AF_INET, AF_INET6 or AF_PACKET, and
+/// IPAddressDeny on top. Unix sockets in the host's namespace reach abstract ones too: within what path sockets
+/// already gave a question running as root (docs/security.md, "questions run as root"). A question that calls
+/// capture() keeps a private namespace (PRIVATE_NETWORK): the capture runs in its own unit on the host's
+/// (capture.rs), so it loses nothing.
+const HOST_NETWORK: [&str; 2] = ["RestrictAddressFamilies=AF_UNIX AF_NETLINK", "IPAddressDeny=any"];
+/// The walk's, and a capture question's: a network namespace of its own, with only loopback.
+const PRIVATE_NETWORK: &str = "PrivateNetwork=yes";
 /// The walk's limits: judgements, chosen to leave a busy host's work alone.
 const WALK_LIMITS: [&str; 5] = ["TasksMax=8", "CPUQuota=25%", "MemoryMax=256M", "IOSchedulingClass=idle", "Nice=19"];
 
@@ -519,6 +600,8 @@ struct Question<'a> {
     placeholders: &'a PathBuf,
     name: &'a str,
     caps: &'a [String],
+    /// It calls capture(), and this sensor has the broker.
+    capture: bool,
     secrets: &'a [SecretFile],
     report: &'a Scan,
 }
@@ -700,11 +783,22 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// Who the root tests' questions run as: BEAT_TEST_USER (made when missing, as the sensor's unit does), default
+    /// beat-question; "root" for the old way.
+    fn test_user() -> Option<(String, u32)> {
+        let name = std::env::var("BEAT_TEST_USER").unwrap_or_else(|_| "beat-question".into());
+        (name != "root").then(|| {
+            let line = format!("u {name} - \"beat sensor questions\" / -");
+            assert!(std::process::Command::new("/usr/bin/systemd-sysusers").args(["--inline", &line]).status().unwrap().success());
+            question_user(&name).unwrap()
+        })
+    }
+
     fn runner_with(probe: PathBuf) -> Runner {
         Runner {
-            probe, tools: "/nonexistent".into(), cache: "/nonexistent".into(), osqueryi: None, journalctl: None, bpf_tools: None,
+            probe, tools: "/nonexistent".into(), cache: "/nonexistent".into(), osqueryi: None, journalctl: None, bpf_tools: None, capture: None,
             sandbox: Some("/nonexistent".into()), secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
-            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(),
+            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: None,
         }
     }
 
@@ -780,10 +874,10 @@ mod tests {
         let cache: PathBuf = var("BEAT_TEST_CACHE").into();  // made beforehand, as ExecStartPre does: `beat-probe tools`
         let runner = Arc::new(Runner {
             probe: var("BEAT_TEST_PROBE").into(), tools: var("BEAT_TEST_TOOLS").into(), cache,
-            osqueryi: None, journalctl: None, bpf_tools: None, sandbox: Some(ph),
+            osqueryi: None, journalctl: None, bpf_tools: None, capture: None, sandbox: Some(ph),
             secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
             systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(),
-            uncovered: Default::default(),
+            uncovered: Default::default(), question_user: test_user(),
         });
         let walking = runner.clone();
         tokio::spawn(async move { walking.walk_forever().await });
@@ -814,6 +908,225 @@ mod tests {
         println!("heartbeat: {}", runner.walk_state());
     }
 
+    /// capture() through the broker, in real units: flows on lo while connections are made, a field the broker
+    /// refuses, a capture longer than the question allows, and two at once. Needs root, systemd and tcpdump:
+    /// sudo env BEAT_TEST_PROBE=... BEAT_TEST_TOOLS=... BEAT_TEST_CACHE=... [BEAT_TEST_TCPDUMP=/usr/bin/tcpdump]
+    ///   <the test binary> capture_in_real_units --ignored --nocapture
+    /// with the cache filled first, as the sensor's unit does (`beat-probe tools --tools T --cache C`, as root, the
+    /// cache outside /tmp): the units see it read-only, and without it each question compiles the tools (~30 s here).
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore]
+    async fn capture_in_real_units() {
+        let var = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("{k}"));
+        std::fs::create_dir_all(RUN_DIR).unwrap();
+        let ph = std::env::temp_dir().join("beat-ph");
+        std::fs::create_dir_all(ph.join("dir")).unwrap();
+        std::fs::write(ph.join("file"), "placeholder\n").unwrap();
+        let tcpdump = std::env::var("BEAT_TEST_TCPDUMP").unwrap_or_else(|_| "/usr/bin/tcpdump".into());
+        let broker = crate::capture::Broker::new(tcpdump.into(), "/usr/bin".into(), Vec::new(), Vec::new(), RUN_DIR.into());
+        let runner = Arc::new(Runner {
+            probe: var("BEAT_TEST_PROBE").into(), tools: var("BEAT_TEST_TOOLS").into(), cache: var("BEAT_TEST_CACHE").into(),
+            osqueryi: None, journalctl: None, bpf_tools: None, capture: Some(Arc::new(broker)), sandbox: Some(ph),
+            secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
+            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(),
+            uncovered: Default::default(), question_user: test_user(),
+        });
+        let walking = runner.clone();
+        tokio::spawn(async move { walking.walk_forever().await });
+
+        // A server that answers, and a port nobody listens on (reset); connections start once the capture runs: its
+        // pcap file in RUN_DIR has tcpdump's header, written when it has opened lo. Not a fixed delay from here: the
+        // question waits for the first secret walk and its unit's start, and connections made before were not seen.
+        let srv = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = srv.local_addr().unwrap().port();
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for c in srv.incoming().flatten() {
+                let _ = std::io::Write::write_all(&mut &c, b"hello\n");
+            }
+        });
+        std::thread::spawn(move || {
+            let capturing = || std::fs::read_dir(RUN_DIR).into_iter().flatten().flatten()
+                .any(|e| e.file_name().to_string_lossy().ends_with(".pcap") && e.metadata().is_ok_and(|m| m.len() > 0));
+            let waited = Instant::now();
+            while !capturing() && waited.elapsed() < Duration::from_secs(60) {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            for _ in 0..3 {
+                let c = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+                let _ = std::io::Read::read(&mut &c, &mut [0u8; 16]);
+                let _ = std::net::TcpStream::connect(("127.0.0.1", closed));
+            }
+        });
+        let probe = |extra: &str| format!(
+            "def main() -> None:\n    c = capture(\"flows\", host=\"127.0.0.1\"{extra}, key=[\"state\"])\n    \
+             emit(\"capture\", \"groups\", json.encode(c[\"groups\"]), \"test\")\n    \
+             emit(\"capture\", \"capture\", json.encode(c[\"capture\"]), \"test\")\n");
+        let field = |v: &Value, k: &str| -> Value {
+            v["records"].as_array().into_iter().flatten().find(|r| r["key"] == k)
+                .and_then(|r| serde_json::from_str(r["value"].as_str()?).ok()).unwrap_or(Value::Null)
+        };
+        let v = runner.run("flows.star", &probe(", seconds=8"), 60, &Phases::default(), false).await
+            .map_err(|e| e.message).unwrap();
+        let (groups, cap) = (field(&v, "groups"), field(&v, "capture"));
+        println!("groups {groups}\ncapture {cap}\nnotes {}", v["notes"]);
+        assert_eq!(cap["interface"], "lo");
+        assert_eq!(cap["tcpdump"]["end"], "time", "{cap}");
+        let count = |state: &str| groups.as_array().into_iter().flatten().find(|g| g["key"]["state"] == state)
+            .map_or(0, |g| g["count"].as_u64().unwrap_or(0));
+        assert_eq!(count("closed"), 3, "{groups}");
+        assert_eq!(count("reset"), 3, "{groups}");
+
+        // Refused by the broker: a free-form host, and more seconds than the question has.
+        for (extra, why) in [(", host=\"127.0.0.1 or port 22\"", "not an IP address"), (", seconds=55", "left")] {
+            let src = probe(extra).replace("host=\"127.0.0.1\", host=", "host=");
+            let v = runner.run("refused.star", &src, 30, &Phases::default(), false).await.map_err(|e| e.message).unwrap();
+            let text = v.to_string();
+            assert!(text.contains(why), "{extra}: {text}");
+            println!("refused ({why}): {}", v["error"]);
+        }
+
+        // Two at once on one host: the second is refused.
+        let (a, b) = (runner.clone(), runner.clone());
+        let (src_a, src_b) = (probe(", seconds=6"), probe(", seconds=6"));
+        let one = tokio::spawn(async move { a.run("a.star", &src_a, 60, &Phases::default(), false).await.map_err(|e| e.message) });
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let two = b.run("b.star", &src_b, 60, &Phases::default(), false).await.map_err(|e| e.message).unwrap();
+        let one = one.await.unwrap().unwrap();
+        assert!(two.to_string().contains("one at a time"), "{two}");
+        assert_eq!(field(&one, "capture")["tcpdump"]["end"], "time");
+        let left = std::fs::read_dir(RUN_DIR).unwrap().flatten().filter(|e| {
+            let n = e.file_name().to_string_lossy().to_string();
+            n.ends_with(".pcap") || n.ends_with(".capture") || n.ends_with(".tcpdump-err")
+        }).count();
+        assert_eq!(left, 0, "files left in {RUN_DIR}");
+    }
+
+    /// A question's unit sees the host's network and cannot use it (no IP, no packets, no changes; unix sockets yes):
+    /// its exact properties (sandboxed()) around a python3 script in place of beat-probe, which tries each kind of socket. A capture question's unit is the
+    /// private namespace it was. Needs root, systemd and python3:
+    /// sudo <the test binary> question_network --ignored --nocapture
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore]
+    async fn question_network() {
+        let me = std::process::id();
+        let dir = PathBuf::from(format!("/var/lib/beat-net-{me}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let runner = Runner {
+            probe: "/nonexistent".into(), tools: "/nonexistent".into(), cache: "/nonexistent".into(), osqueryi: None, journalctl: None,
+            bpf_tools: None, capture: None, sandbox: None, secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
+            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: test_user(),
+        };
+        // On the host: a TCP listener, an abstract unix socket (what a host-namespace question must not reach) and a
+        // path one.
+        let tcp = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = tcp.local_addr().unwrap().port();
+        let abs = format!("beat-net-test-{me}");
+        let abstract_sock = {
+            use std::os::linux::net::SocketAddrExt;
+            std::os::unix::net::UnixListener::bind_addr(&std::os::unix::net::SocketAddr::from_abstract_name(abs.as_bytes()).unwrap()).unwrap()
+        };
+        let path_sock = dir.join("sock");
+        let _path_listener = std::os::unix::net::UnixListener::bind(&path_sock).unwrap();
+        let nic = std::fs::read_to_string("/proc/1/net/route").unwrap().lines().skip(1)
+            .find(|l| l.split('\t').nth(1) == Some("00000000")).and_then(|l| l.split('\t').next()).unwrap().to_string();
+        // A unit of the host's for the question to try to stop, over the system bus and systemd's private socket.
+        let victim = format!("beat-net-victim-{me}");
+        assert!(std::process::Command::new("/usr/bin/systemd-run").args(["--quiet", &format!("--unit={victim}"), "/usr/bin/sleep", "300"])
+            .status().unwrap().success());
+        let script = format!(r#"
+import socket, subprocess
+def tryit(name, f):
+    try:
+        f(); print(name, "ok")
+    except Exception as e:
+        print(name, "refused", type(e).__name__)
+def tcp():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM); s.settimeout(3); s.connect(("127.0.0.1", {port}))
+def udp():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.sendto(b"x", ("127.0.0.1", 9))
+def tcp6():
+    socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+def packet():
+    socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
+def abstract():
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.connect("\0{abs}")
+def path():
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.connect("{path}")
+def netlink():
+    s = socket.socket(socket.AF_NETLINK, socket.SOCK_RAW, 0); s.bind((0, 0))
+    # RTM_GETLINK dump
+    import struct
+    s.send(struct.pack("=IHHII", 32, 18, 0x301, 1, 0) + struct.pack("=BxHiII", 0, 0, 0, 0, 0))
+    data = s.recv(65536)
+    assert len(data) > 16
+def link_down():
+    # RTM_NEWLINK on lo with an empty change mask: a no-op if allowed, but any message other than a GET needs
+    # CAP_NET_ADMIN, checked before the request is looked at
+    import struct
+    s = socket.socket(socket.AF_NETLINK, socket.SOCK_RAW, 0)
+    s.send(struct.pack("=IHHII", 32, 16, 0x5, 2, 0) + struct.pack("=BxHiII", 0, 0, 1, 0, 0))
+    data = s.recv(65536)
+    err = struct.unpack("=i", data[16:20])[0]
+    if err != 0: raise PermissionError(err)
+def private():
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.connect("/run/systemd/private")
+def stop():
+    r = subprocess.run(["/usr/bin/busctl", "--system", "call", "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
+                        "org.freedesktop.systemd1.Manager", "StopUnit", "ss", "{victim}.service", "replace"],
+                       capture_output=True, text=True, timeout=20)
+    if r.returncode != 0: raise PermissionError(r.stderr.strip())
+def list_units():
+    r = subprocess.run(["/usr/bin/busctl", "--system", "call", "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
+                        "org.freedesktop.systemd1.Manager", "GetUnit", "s", "init.scope"], capture_output=True, text=True, timeout=20)
+    if r.returncode != 0: raise OSError(r.stderr.strip())
+for n, f in [("tcp", tcp), ("udp", udp), ("tcp6", tcp6), ("packet", packet), ("abstract", abstract), ("path", path),
+             ("netlink", netlink), ("link_down", link_down), ("private", private), ("stop", stop), ("list_units", list_units)]:
+    tryit(n, f)
+print("nic", "{nic}:" in open("/proc/net/dev").read())
+"#, path = path_sock.display());
+        let file = |n: &str| dir.join(n);
+        std::fs::write(file("in"), "").unwrap();
+        let run = |capture: Option<&Path>| {
+            let argv = runner.sandboxed(vec!["/usr/bin/python3".into(), "-c".into(), script.clone()], 30, "net",
+                [&file("in"), &file("out"), &file("err"), &file("meta")], Vec::new(), &format!("beat-net-test-{me}"), &[], capture);
+            let st = std::process::Command::new(&argv[0]).args(&argv[1..]).status().unwrap();
+            let _ = std::process::Command::new("/usr/bin/systemctl").args(["reset-failed", &format!("beat-net-test-{me}")]).status();
+            let out = std::fs::read_to_string(file("out")).unwrap_or_default();
+            println!("{} ({st}):\n{out}{}", if capture.is_some() { "capture question" } else { "question" },
+                     std::fs::read_to_string(file("err")).unwrap_or_default());
+            out
+        };
+        let host = run(None);
+        let victim_alive = std::process::Command::new("/usr/bin/systemctl").args(["is-active", "--quiet", &victim]).status().unwrap().success();
+        let _ = std::process::Command::new("/usr/bin/systemctl").args(["stop", &victim]).status();
+        let private = run(Some(&dir.join("capture")));
+        drop((tcp, abstract_sock));
+        std::fs::remove_dir_all(&dir).unwrap();
+        let line = |o: &str, n: &str| o.lines().find(|l| l.starts_with(&format!("{n} "))).unwrap_or("").to_string();
+        for n in ["tcp", "udp", "tcp6", "packet", "link_down"] {
+            assert!(line(&host, n).contains("refused"), "question: {n}: {}", line(&host, n));
+        }
+        // Unix sockets: abstract ones are reached (D-Bus, what osquery needs, is one kind of unix socket); a path
+        // socket only root may write to is refused to the question user, as systemd's private socket is.
+        assert_eq!(line(&host, "abstract"), "abstract ok");
+        let want = if runner.question_user.is_some() { "refused" } else { "ok" };
+        assert!(line(&host, "path").contains(want), "question: path: {}", line(&host, "path"));
+        assert_eq!(line(&host, "netlink"), "netlink ok");
+        // systemd: reads over the system bus, no commands. As root (no --question-user) a question could do both.
+        assert_eq!(line(&host, "list_units"), "list_units ok");
+        if runner.question_user.is_some() {
+            assert!(line(&host, "private").contains("refused"), "question: systemd's private socket: {}", line(&host, "private"));
+            assert!(line(&host, "stop").contains("refused"), "question: StopUnit: {}", line(&host, "stop"));
+            assert!(victim_alive, "the question stopped {victim}");
+        }
+        assert_eq!(line(&host, "nic"), "nic True", "the question sees the host's interfaces");
+        assert_eq!(line(&private, "nic"), "nic False", "a capture question keeps its own namespace");
+        for n in ["tcp", "abstract", "link_down"] {
+            assert!(line(&private, n).contains("refused"), "capture question: {n}: {}", line(&private, n));
+        }
+    }
+
     /// What a question must keep being able to do to debug a host, and what it must not: security work must not take the
     /// first away unnoticed. Real units, real tools, real osquery, the default pack. Needs root and systemd:
     /// sudo env BEAT_TEST_PROBE=... BEAT_TEST_TOOLS=... BEAT_TEST_CACHE=... BEAT_TEST_OSQUERYI=... BEAT_TEST_PACK=src/beat/pack
@@ -832,11 +1145,14 @@ mod tests {
         std::fs::write(ph.join("file"), "placeholder\n").unwrap();
         let key = dir.join("sensor.key");
         std::fs::write(&key, "SENSORKEY").unwrap();
+        // The host's interface on its default route: a question must see it (the host's network namespace).
+        let nic = std::fs::read_to_string("/proc/1/net/route").unwrap().lines().skip(1)
+            .find(|l| l.split('\t').nth(1) == Some("00000000")).and_then(|l| l.split('\t').next()).unwrap().to_string();
         let runner = Arc::new(Runner {
             probe: var("BEAT_TEST_PROBE").into(), tools: var("BEAT_TEST_TOOLS").into(), cache: var("BEAT_TEST_CACHE").into(),
-            osqueryi: Some(var("BEAT_TEST_OSQUERYI").into()), journalctl: Some("/usr/bin/journalctl".into()), bpf_tools: None,
+            osqueryi: Some(var("BEAT_TEST_OSQUERYI").into()), journalctl: Some("/usr/bin/journalctl".into()), bpf_tools: None, capture: None,
             sandbox: Some(ph), secret_mounts_denied: Default::default(), hide: vec![key.clone()], unit_props: Vec::new(),
-            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(),
+            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: test_user(),
         });
         let walking = runner.clone();
         tokio::spawn(async move { walking.walk_forever().await });
@@ -904,6 +1220,10 @@ mod tests {
     emit("tool", "environ", str(r.ok) + r.stdout[:20], "pipe")
     emit("tool", "hint", r.stderr, "pipe")
     emit("checklist", "keys", str(len(checklist())), "checklist")
+    emit("net", "routes", str(len(osq("select destination from routes where interface = '{nic}'"))), "osq")
+    emit("net", "interfaces", str(len(osq("select interface from interface_details where interface = '{nic}'"))), "osq")
+    emit("net", "dev", str("{nic}:" in read("/proc/net/dev")), "read")
+    emit("net", "sysctl", read("/proc/sys/net/ipv4/conf/{nic}/forwarding").strip(), "read")
 "#, sock_fd = sock.as_raw_fd());
         let v = runner.run("debugging.star", &q, 120, &Phases::default(), false).await.map_err(|e| e.message).unwrap();
         let rec = |s: &str, k: &str| v["records"].as_array().unwrap().iter().find(|r| r["subject"] == s && r["key"] == k).map(|r| r["value"].as_str().unwrap().to_string());
@@ -926,6 +1246,12 @@ mod tests {
             }
         }
         if !rec("readlink", "sock").is_some_and(|l| l.contains("socket:")) { bad.push(format!("debugging lost: readlink of an fd: {:?}", rec("readlink", "sock"))); }
+        for k in ["routes", "interfaces"] {
+            if !positive("net", k) { bad.push(format!("the host's network lost: osquery {k} on {nic}: {:?}", rec("net", k))); }
+        }
+        if rec("net", "dev").as_deref() != Some("True") { bad.push(format!("the host's network lost: {nic} not in /proc/net/dev")); }
+        let host_fwd = std::fs::read_to_string(format!("/proc/sys/net/ipv4/conf/{nic}/forwarding")).unwrap().trim().to_string();
+        if rec("net", "sysctl") != Some(host_fwd.clone()) { bad.push(format!("the host's sysctls lost: {nic} forwarding {:?}, host {host_fwd}", rec("net", "sysctl"))); }
         if rec("tool", "meminfo").as_deref() != Some("MemTotal") { bad.push(format!("tools lost /proc/meminfo: {:?}", rec("tool", "meminfo"))); }
         if !rec("tool", "stat").is_some_and(|l| l.starts_with("cpu")) { bad.push(format!("tools lost /proc/stat: {:?}", rec("tool", "stat"))); }
         if rec("tool", "sys").as_deref() != Some("Linux") { bad.push(format!("tools lost /proc/sys: {:?}", rec("tool", "sys"))); }
@@ -954,7 +1280,7 @@ mod tests {
                         && !Path::new("/etc/systemd/system/beat-sensor.service").exists();
                     if no_unit {
                         println!("pack {name}: no beat-sensor.service on this host, as the probe says");
-                    } else if a["outcome"] != "ok" || n == 0 { bad.push(format!("pack {name}: {} {n} records: {}", a["outcome"], a["failures"])); }
+                    } else if a["outcome"] != "ok" || n == 0 { bad.push(format!("pack {name}: {} {n} records: {} {}", a["outcome"], a["failures"], a["error"])); }
                     if name == "listeners.star" && !a["records"].as_array().unwrap().iter().any(|r| r["key"].as_str().is_some_and(|k| k.contains("process") || k.contains("pid"))) {
                         bad.push("listeners does not map sockets to processes".into());
                     }

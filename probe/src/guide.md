@@ -121,6 +121,32 @@ Tracing, B. Gregg's tools (eBPF), where the sensor has the catalog; the answer i
     4. one number that answers the question; then ask that same question of every host
   Do not ask for every event: a key of pid or full path on a busy host is thousands of groups.
 
+The host's network (sensor 0.2.3 on): `/proc/net`, `/proc/sys/net` and osquery's `routes`, `interface_details`,
+`interface_addresses`, `arp_cache` describe the host. On older sensors they describe an empty sandbox; read
+`/proc/1/net` there. Firewall rules (`iptables`) stay empty: reading them needs a privilege questions do not have.
+
+Traffic (where the sensor has tcpdump): headers, DNS questions and the TLS handshake, reduced on the host:
+  capture(view, interface=None, host=None, port=None, proto=None, seconds=5, filter={}, key=[], sum=[], hist=None,
+          top=20, examples=3) -> dict          one capture at a time per host; seconds 1..60
+      The sensor writes the capture filter from host (an IP address), port, proto ("tcp", "udp", "icmp"); there is no
+      free-form filter. interface: the route to host, or the default route's; "any" for all (a packet crossing a
+      bridge is then seen more than once). The packets and flows views also keep ICMP errors from anywhere.
+      Views and their fields (for filter, key, sum, hist as in trace()):
+        packets  one per packet: t proto src dst sport dport flags (tcpdump's letters) win icmp dir len payload
+        flows    one per flow, at the end: proto client cport server port orient packets pkts_c2s pkts_s2c bytes_c2s
+                 bytes_s2c duration_ms syn syn_retrans synack rst rst_by fin retrans_c2s retrans_s2c zero_win
+                 max_seg_c2s max_seg_s2c handshake_ms icmp_errors state (open, closed, reset, syn_unanswered, mid)
+        dns      one per query (udp port 53 by default): qname qtype client server sends rcode answers latency_ms;
+                 rcode no_answer: never answered within the capture
+        tls      one per TCP flow that starts with TLS: client server port sni alpn_offered versions_offered version
+                 cipher alpn alert alert_by alert_level hello_ms state tcp_state tcp_handshake_ms
+      -> .events .keys .groups as trace(); .capture {view frames packets truncated over_1514 ... interface filter
+         snaplen tcpdump {end captured received dropped}}. tcpdump.dropped > 0: the kernel dropped packets.
+      Read with care: on the receiving side offloads merge segments (sizes are the kernel's; retransmits a lower
+      bound); TLS 1.3 encrypts the server's alerts, and a client may close without one: no alert proves nothing.
+  How to ask: flows first (key=["server", "port", "state"]); then the view that answers (dns for names, tls for a
+  handshake), filtered to the server that stands out.
+
 Logs (when drain is among the tools; input: path= a file, tail= its last N lines, or lines= e.g. journal messages):
   log_summary(path=, lines=, tail=0, self_names=[], header=0, templates=None, masks={}, examples=3, top=200,
               minutes=60, levels=12)  -> dict: .lines, .templates: [{id, template, count, params: [{distinct,

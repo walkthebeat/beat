@@ -19,6 +19,9 @@ Environment=HOME=/tmp BEAT_IMAGE=@image@
 EnvironmentFile=/etc/beat-sensor.env
 WorkingDirectory=/
 ExecStartPre=@probe@ tools --tools @tools@ --cache /var/lib/beat-sensor/wasm-cache
+# The user questions run as (runner.rs `question_user`), made here: the sensor's own /etc is read-only ("+": this line
+# alone runs outside the unit's sandbox). Idempotent.
+ExecStartPre=+/usr/bin/systemd-sysusers --inline 'u beat-question - "beat sensor questions" / -'
 ExecStart=@out@/bin/beat-sensor-run
 Restart=always
 RestartSec=5

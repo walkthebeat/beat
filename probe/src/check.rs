@@ -181,6 +181,19 @@ fn catalog_entries(ast: &AstModule, out: &mut Vec<Diagnostic>) {
     });
 }
 
+/// Whether a probe calls `capture()`: its question then gets the sensor's capture broker. Any call, whatever its
+/// arguments (the view is checked when it runs); false if it does not parse.
+pub fn calls_capture(source: &str) -> bool {
+    let Ok(ast) = AstModule::parse("probe.star", source.to_owned(), &dialect()) else { return false };
+    let mut found = false;
+    walk_stmt(ast.statement(), &mut |e| {
+        if let ExprP::Call(callee, _) = &e.node {
+            found |= matches!(&callee.node, ExprP::Identifier(id) if id.node.ident == "capture");
+        }
+    });
+    found
+}
+
 /// The catalog entries a probe names in `trace()` calls, sorted; empty if it does not parse.
 pub fn trace_entries(source: &str) -> Vec<String> {
     let Ok(ast) = AstModule::parse("probe.star", source.to_owned(), &dialect()) else { return Vec::new() };

@@ -449,6 +449,12 @@ impl Reducer {
         }
     }
 
+    /// One event from a source that is not a tool's text output (`capture()`'s views).
+    pub fn event(&mut self, ev: Map<String, Value>) {
+        self.seen += 1;
+        self.add(ev);
+    }
+
     fn add(&mut self, ev: Map<String, Value>) {
         let field = |k: &str| ev.get(k).map(text).unwrap_or_default();
         if !self.filter.iter().all(|(k, m)| m.test(&field(k))) {
@@ -468,8 +474,9 @@ impl Reducer {
         for (i, f) in self.sum.iter().enumerate() {
             g.sums[i] += ev.get(f).and_then(Value::as_f64).unwrap_or(0.0);
         }
-        if let Some(h) = &self.hist {
-            let x = ev.get(h).and_then(Value::as_f64).unwrap_or(0.0).max(0.0) as u64;
+        // an event without the field (a DNS query never answered has no latency) is counted, not put in bucket 0
+        if let Some(x) = self.hist.as_ref().and_then(|h| ev.get(h)).and_then(Value::as_f64) {
+            let x = x.max(0.0) as u64;
             let b = if x == 0 { 0 } else { 64 - x.leading_zeros() as usize };
             if g.hist.len() <= b {
                 g.hist.resize(b + 1, 0);
