@@ -8,8 +8,13 @@
 //! One capture at a time on a host: a second is refused while one runs.
 //!
 //! The capture unit runs tcpdump only, as a dynamic user with CAP_NET_RAW and nothing else, packet and unix sockets
-//! only, the send system calls refused, and its stdout connected by systemd to a socket the sensor listens on (a
-//! file: on a unix socket; not `systemd-run --pipe`, see runner.rs). Measured on systemd 255 / libpcap 1.10.4: libpcap
+//! only, the send system calls refused, and its stdout a regular file in the sensor's run directory, which the sensor
+//! reads as it grows (`Growing`): what it has read is punched out of the file, so the tmpfs holds only what is not
+//! read yet, and the end is the unit's end. Not a socket or a FIFO: systemd opens a unit's stdout as PID 1, and on
+//! RHEL-family hosts SELinux lets init_t neither connect to the sensor's unix socket (unix_stream_socket connectto,
+//! unconfined_service_t) nor write a FIFO in /run (fifo_file write, var_run_t), both dontaudit, so the unit failed at
+//! 209/STDOUT with no AVC logged (AlmaLinux 9, 2026-11-13); a regular file there it may write, as the questions'
+//! answers already are. Not `systemd-run --pipe` either, see runner.rs. Measured on systemd 255 / libpcap 1.10.4: libpcap
 //! needs AF_UNIX for its ethtool ioctl; with AF_NETLINK allowed too the stream came back empty (not explained, not
 //! needed). Refusing sendto/sendmsg/sendmmsg is defence in depth only: write() on a packet socket also sends.
 //!
@@ -22,6 +27,7 @@
 
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
+use std::os::unix::fs::OpenOptionsExt;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -29,6 +35,8 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
+use std::io::Read;
+use std::os::fd::AsRawFd;
 use tokio::process::Command;
 
 /// The longest capture. A judgement: long enough for a retry cycle (SYN retries reach 31 s), short enough that a
@@ -342,39 +350,30 @@ impl Broker {
         };
         let filter = filter(&req);
         let id = format!("{}-{}", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed));
-        let (sock, err) = (self.run_dir.join(format!("{id}.pcap")), self.run_dir.join(format!("{id}.tcpdump-err")));
-        let _files = Removed(vec![sock.clone(), err.clone()]);
-        let _ = std::fs::remove_file(&sock);
-        let pcap = UnixListener::bind(&sock).map_err(|e| format!("{}: {e}", sock.display()))?;
-        std::fs::set_permissions(&sock, std::os::unix::fs::PermissionsExt::from_mode(0o600)).map_err(|e| e.to_string())?;
+        let (pcap, err) = (self.run_dir.join(format!("{id}.pcap")), self.run_dir.join(format!("{id}.tcpdump-err")));
+        let _files = Removed(vec![pcap.clone(), err.clone()]);
+        let _ = std::fs::remove_file(&pcap);
+        let file = std::fs::OpenOptions::new().read(true).write(true).create_new(true)
+            .mode(0o600).open(&pcap).map_err(|e| format!("{}: {e}", pcap.display()))?;
+        let mut stream = Growing { file, read: 0, punched: 0, ended: false };
         let unit = format!("beat-capture-{id}");
-        let argv = self.argv(&req, &filter, &unit, &sock, &err);
+        let argv = self.argv(&req, &filter, &unit, &pcap, &err);
         let mut child = Command::new(&argv[0]).args(&argv[1..]).stdin(Stdio::null()).stdout(Stdio::null())
             .stderr(Stdio::piped()).kill_on_drop(true).spawn().map_err(|e| format!("cannot start {}: {e}", argv[0]))?;
         let mut running = Running { systemctl: self.systemd.join("systemctl"), unit: unit.clone(), done: false };
         let started = Instant::now();
 
-        // The unit's stdout connects when it starts; tcpdump's first bytes (the pcap header) once it opened the
-        // interface. If tcpdump fails first, its reason is in its stderr.
-        let first = async {
-            let (mut c, _) = pcap.accept().await?;
-            let mut buf = vec![0u8; 65536];
-            let n = c.read(&mut buf).await?;
-            buf.truncate(n);
-            Ok::<_, std::io::Error>((c, buf))
-        };
-        let (mut stream, buf) = tokio::select! {
-            r = tokio::time::timeout(START_WITHIN, first) => match r {
-                Ok(Ok((c, b))) if !b.is_empty() => (c, b),
-                _ => {
-                    let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
-                    return refuse(&mut wr, format!("capture: tcpdump did not start: {}", tail(&err, &mut child).await)).await;
-                }
-            },
-            _ = child.wait() => {
+        // tcpdump's first bytes (the pcap header) once it opened the interface. If it fails first (or systemd could
+        // not start it), the unit ends with nothing written, and the reason is in tcpdump's stderr or systemd-run's.
+        let mut buf = vec![0u8; 65536];
+        let n = match tokio::time::timeout(START_WITHIN, stream.read(&mut buf, &mut child)).await {
+            Ok(Ok(n)) if n > 0 => n,
+            _ => {
+                let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
                 return refuse(&mut wr, format!("capture: tcpdump did not start: {}", tail(&err, &mut child).await)).await;
             }
         };
+        buf.truncate(n);
         let header = json!({"ok": {"view": req.view.name(), "interface": req.interface, "filter": filter,
                                    "snaplen": req.view.snaplen(), "seconds": req.seconds}});
         wr.write_all(format!("{header}\n").as_bytes()).await.map_err(|e| e.to_string())?;
@@ -402,7 +401,7 @@ impl Broker {
             }
             let mut buf = vec![0u8; 65536];
             tokio::select! {
-                n = stream.read(&mut buf) => match n {
+                n = stream.read(&mut buf, &mut child) => match n {
                     Ok(0) | Err(_) => break,
                     Ok(n) => { buf.truncate(n); chunk = buf; }
                 },
@@ -442,12 +441,12 @@ impl Broker {
         true
     }
 
-    fn argv(&self, req: &Request, filter: &str, unit: &str, sock: &Path, err: &Path) -> Vec<String> {
+    fn argv(&self, req: &Request, filter: &str, unit: &str, pcap: &Path, err: &Path) -> Vec<String> {
         let mut props: Vec<String> = CAPTURE_UNIT.iter().map(|s| s.to_string()).collect();
         props.push(format!("RuntimeMaxSec={}", req.seconds + MARGIN_S));
         props.extend(self.hide.iter().map(|p| format!("InaccessiblePaths={}", p.display())));
         props.extend(self.unit_props.iter().cloned());
-        props.push(format!("StandardOutput=file:{}", sock.display()));
+        props.push(format!("StandardOutput=file:{}", pcap.display()));
         props.push(format!("StandardError=file:{}", err.display()));
         let mut argv = vec![self.systemd.join("systemd-run").display().to_string()];
         argv.extend(["--quiet", "--wait", "--collect", "--service-type=exec"].map(String::from));
@@ -464,6 +463,56 @@ impl Broker {
             argv.push(filter.to_string());
         }
         argv
+    }
+}
+
+/// The pcap file as tcpdump writes it: each read returns what is new, waiting while the unit runs (`child`, systemd-run
+/// --wait, ends when the unit has), and 0 once it has ended and everything is read. Every PUNCH bytes read are
+/// punched out of the file (its size stays, its pages go), so a capture holds at most about PUNCH of the host's memory
+/// in the tmpfs plus what tcpdump wrote ahead of the reader. Reads of a tmpfs file are memory copies: done inline.
+struct Growing {
+    file: std::fs::File,
+    read: u64,
+    punched: u64,
+    ended: bool,
+}
+
+const PUNCH: u64 = 1 << 20;
+/// How often a reader at the end looks again: tcpdump -U writes each packet as it comes.
+const POLL: Duration = Duration::from_millis(20);
+
+impl Growing {
+    async fn read(&mut self, buf: &mut [u8], child: &mut tokio::process::Child) -> std::io::Result<usize> {
+        loop {
+            let n = self.file.read(buf)?;
+            if n > 0 {
+                self.read += n as u64;
+                if self.read - self.punched >= PUNCH {
+                    self.punch();
+                }
+                return Ok(n);
+            }
+            if self.ended {
+                return Ok(0);
+            }
+            // Once the unit has ended, the next read takes what it wrote last, and the one after is 0.
+            tokio::select! {
+                _ = child.wait() => self.ended = true,
+                _ = tokio::time::sleep(POLL) => {}
+            }
+        }
+    }
+
+    fn punch(&mut self) {
+        let len = (self.read - self.punched) as libc::off_t;
+        // SAFETY: fallocate on a file descriptor we own; it changes only the file's blocks.
+        let r = unsafe {
+            libc::fallocate(self.file.as_raw_fd(), libc::FALLOC_FL_PUNCH_HOLE | libc::FALLOC_FL_KEEP_SIZE,
+                            self.punched as libc::off_t, len)
+        };
+        if r == 0 {
+            self.punched = self.read;
+        }
     }
 }
 
@@ -601,6 +650,33 @@ mod tests {
                  24 packets received by filter\n0 packets dropped by kernel\n";
         assert_eq!(stats(s), json!({"captured": 12, "received": 24, "dropped": 0}));
         assert_eq!(stats("1 packet captured\n"), json!({"captured": 1}));
+    }
+
+    /// A writer that pauses and then writes more than PUNCH: every byte comes back once, in order, the end only after
+    /// the writer has, and what was read is no longer held (on a tmpfs, where captures are).
+    #[tokio::test]
+    async fn the_pcap_file_is_read_as_it_grows_and_punched() {
+        let dir = Path::new("/dev/shm");
+        let path = dir.join(format!("beat-growing-test-{}", std::process::id()));
+        let _gone = Removed(vec![path.clone()]);
+        let file = std::fs::OpenOptions::new().read(true).write(true).create_new(true).mode(0o600).open(&path).unwrap();
+        let out = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        let mut child = Command::new("sh").args(["-c", "printf abc; sleep 0.3; printf def; head -c 3000000 /dev/zero"])
+            .stdout(out).spawn().unwrap();
+        let mut g = Growing { file, read: 0, punched: 0, ended: false };
+        let (mut all, mut buf) = (Vec::new(), vec![0u8; 65536]);
+        loop {
+            let n = g.read(&mut buf, &mut child).await.unwrap();
+            if n == 0 { break; }
+            all.extend_from_slice(&buf[..n]);
+        }
+        assert_eq!(&all[..6], b"abcdef");
+        assert_eq!(all.len(), 6 + 3_000_000);
+        assert!(g.ended);
+        use std::os::unix::fs::MetadataExt;
+        let m = std::fs::metadata(&path).unwrap();
+        assert_eq!(m.len(), 3_000_006);
+        assert!(m.blocks() * 512 <= PUNCH + 4096, "{} bytes still held", m.blocks() * 512);
     }
 
     #[test]

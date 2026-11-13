@@ -12,6 +12,7 @@ base64 = "0.22"
 bytes = "1"
 ed25519-dalek = "2"
 futures = "0.3"
+libc = "0.2"             # capture.rs: fallocate(PUNCH_HOLE) on the pcap file
 hpke = { version = "0.12", default-features = false, features = ["x25519", "alloc"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 serde_json = "1"         # without preserve_order: objects serialize with sorted keys (canonical answers, wire.rs)

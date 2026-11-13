@@ -912,6 +912,8 @@ mod tests {
     /// refuses, a capture longer than the question allows, and two at once. Needs root, systemd and tcpdump:
     /// sudo env BEAT_TEST_PROBE=... BEAT_TEST_TOOLS=... BEAT_TEST_CACHE=... [BEAT_TEST_TCPDUMP=/usr/bin/tcpdump]
     ///   <the test binary> capture_in_real_units --ignored --nocapture
+    /// with the cache filled first, as the sensor's unit does (`beat-probe tools --tools T --cache C`, as root, the
+    /// cache outside /tmp): the units see it read-only, and without it each question compiles the tools (~30 s here).
     #[tokio::test(flavor = "multi_thread")]
     #[ignore]
     async fn capture_in_real_units() {
@@ -932,7 +934,9 @@ mod tests {
         let walking = runner.clone();
         tokio::spawn(async move { walking.walk_forever().await });
 
-        // A server that answers, and a port nobody listens on (reset); connections start once the capture runs.
+        // A server that answers, and a port nobody listens on (reset); connections start once the capture runs: its
+        // pcap file in RUN_DIR has tcpdump's header, written when it has opened lo. Not a fixed delay from here: the
+        // question waits for the first secret walk and its unit's start, and connections made before were not seen.
         let srv = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = srv.local_addr().unwrap().port();
         let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
@@ -942,7 +946,12 @@ mod tests {
             }
         });
         std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_secs(4));
+            let capturing = || std::fs::read_dir(RUN_DIR).into_iter().flatten().flatten()
+                .any(|e| e.file_name().to_string_lossy().ends_with(".pcap") && e.metadata().is_ok_and(|m| m.len() > 0));
+            let waited = Instant::now();
+            while !capturing() && waited.elapsed() < Duration::from_secs(60) {
+                std::thread::sleep(Duration::from_millis(20));
+            }
             for _ in 0..3 {
                 let c = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
                 let _ = std::io::Read::read(&mut &c, &mut [0u8; 16]);
