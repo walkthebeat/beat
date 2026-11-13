@@ -1280,7 +1280,7 @@ print("nic", "{nic}:" in open("/proc/net/dev").read())
                         && !Path::new("/etc/systemd/system/beat-sensor.service").exists();
                     if no_unit {
                         println!("pack {name}: no beat-sensor.service on this host, as the probe says");
-                    } else if a["outcome"] != "ok" || n == 0 { bad.push(format!("pack {name}: {} {n} records: {}", a["outcome"], a["failures"])); }
+                    } else if a["outcome"] != "ok" || n == 0 { bad.push(format!("pack {name}: {} {n} records: {} {}", a["outcome"], a["failures"], a["error"])); }
                     if name == "listeners.star" && !a["records"].as_array().unwrap().iter().any(|r| r["key"].as_str().is_some_and(|k| k.contains("process") || k.contains("pid"))) {
                         bad.push("listeners does not map sockets to processes".into());
                     }
