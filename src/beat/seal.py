@@ -1,7 +1,7 @@
 """Signed questions and sealed answers (docs/protocol.md, docs/protocol.md C14, C16). Sensor side:
 sensor/src/seal.rs; tests/seal_vectors.json keeps both sides in step.
 
-- **One rule for every signature** (Ed25519, header Beat-Signature): it covers the message's kind (ask, survey, ack,
+- **One rule for every signature** (Ed25519, header Beat-Signature): it covers the message's kind (ask, ack,
   answer), all its other Beat-* headers and its payload's hash (`signed_bytes`). A question carries two signatures
   over the same bytes: the org's (Beat-Signature) and the collector's (Beat-Countersignature).
 - **A member of the org signs what it asks** (docs/security.md H16): the collector prepares a
@@ -11,10 +11,8 @@ sensor/src/seal.rs; tests/seal_vectors.json keeps both sides in step.
   own nor change what it relays. It countersigns what it relays with its own key: the survey key in the envelope is
   the collector's, so a member cannot put one of their own in it and receive answers past gate 2.
   A question's headers are its envelope: Beat-Survey, Beat-Question (the payload's hash), Beat-Key (the survey's
-  public key), Beat-Targets (absent: every sensor), Beat-Timeout, Beat-Issued, Beat-Deadline, Beat-Cred. A sensor
-  answers only a question signed by a member key that a root it pins certified, and countersigned by a collector key,
-  before its deadline, once. The survey's
-  announcement on the stream is signed by the collector's key too, so the collector records only its own surveys.
+  public key), Beat-Targets (absent: every sensor), Beat-Timeout, Beat-Issued, Beat-Deadline, Beat-Cred. A sensor answers only a question signed by a member key that a root it pins
+  certified, and countersigned by a collector key, before its deadline, once.
 - **The sensor seals what it answers** to the survey's key (HPKE, RFC 9180 base mode: X25519, HKDF-SHA256,
   ChaCha20-Poly1305; the payload is the encapsulated key followed by the ciphertext; info binds survey and target)
   and signs the message with its own key, acks too. The answer's hash (Beat-Answer) is not on the bus: equal answers
@@ -504,7 +502,7 @@ def destroy_member(cache: Path | None = None) -> bool:
 
 def collector_keys(root: Path | None = None) -> Keyring:
     """The service's: the collector's own keys, which countersign every question it relays (Beat-Countersignature:
-    the survey key in it is the collector's) and sign its announcements on the stream."""
+    the survey key in it is the collector's)."""
     return Keyring((root or service_keys_dir()) / "collector", "collector")
 
 
@@ -554,7 +552,7 @@ class Enrolled:
 # --- what is signed ---------------------------------------------------------------------------------------------
 COUNTERSIGNATURE = "Beat-Countersignature"
 SIGNATURES = ("Beat-Signature", COUNTERSIGNATURE)  # what signed_bytes leaves out: both sign the same bytes
-KINDS = {"beat.ask.": "ask", "beat.survey.": "survey", "beat.ack.": "ack", "beat.answer.": "answer"}
+KINDS = {"beat.ask.": "ask", "beat.ack.": "ack", "beat.answer.": "answer"}
 HEARTBEAT_FRESH_S = 35   # the directory's TTL: an entry older than that is a replay or a stalled sensor
 
 

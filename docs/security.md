@@ -241,12 +241,12 @@ NATS runs in operator mode: nobody connects without a login, and each login allo
 `sensor/src/bus.rs`; the subjects: `docs/protocol.md`, "Logins".
 
 - **A sensor's login is a JWT for its own enrolled key,** minted by the service for a request signed with that key
-  (`POST /v1/bus-credential`, kind `bus`) and valid an hour. The sensor renews it at half life and hands the newest
+  (`POST /v2/bus-credential`, kind `bus`) and valid an hour. The sensor renews it at half life and hands the newest
   to the NATS client at every connection; the server drops a connection whose login expired. No secret is stored
   for it: the key is the one the sensor already has, and the JWT names only its public half.
-- **What it allows:** receiving questions sent to every sensor and to this one by name, publishing its own acks,
-  answers and directory entry, its builtins guide, reading the deny list; replies on an inbox of its own. Not:
-  another sensor's questions or directory entry, sending questions, creating or deleting streams and buckets.
+- **What it allows:** receiving questions sent to every sensor and to this one by name, sending its own acks,
+  answers and heartbeat, its builtins guide, asking for the deny list; replies on an inbox of its own. Not: another
+  sensor's questions or heartbeat, sending questions; the bus keeps nothing (no JetStream, 0.3).
   Signatures still decide what is believed; the login decides who is on the bus and what it can see.
 - **A removed sensor** (`beat sensors remove`) gets no new login: it is off the bus within the hour.
 - **The nonce is signed only if it looks like one.** NATS's server sends a nonce for the client to sign, with the

@@ -1,9 +1,11 @@
 //! The sensor's login to the bus (docs/security.md, "The bus"; docs/protocol.md, "Logins"). NATS runs in operator
 //! mode: a client connects with a user JWT and signs the server's nonce with the key the JWT names. The sensor's JWT
 //! names its own signing key, the one it enrolled; the service mints it for a request signed with that key
-//! (POST <api>/v1/bus-credential, kind "bus") and it allows the sensor's own subjects only, for an hour. The sensor
+//! (POST <api>/v2/bus-credential, kind "bus", with the sensor's version) and it allows the sensor's own subjects only, for an hour. The sensor
 //! renews it at half life; async-nats asks for it (the auth callback) on every connection, and the server drops a
 //! connection whose JWT expired, so the client reconnects with the newest at once. A removed sensor gets no new one.
+//! A sensor too old for the service gets none either: the refusal says to upgrade (the log line of `first`). v1 was
+//! the same request without the version; 0.3 changed the bus (docs/protocol.md), and the service refuses v1.
 //!
 //! The nonce is signed with the key that signs answers and heartbeats, and the server chooses it. Every beat signature
 //! covers canonical JSON (`{"v":1,"kind":...`, seal.rs `signed_bytes`), so the sensor signs a nonce only if it looks
@@ -29,16 +31,17 @@ pub struct Login {
 
 pub type Slot = Arc<Mutex<Login>>;
 
-/// The signed request for a login: name, key and time, signed over its own bytes (kind "bus").
-pub fn request(key: &SigningKey, name: &str, iat: i64) -> Value {
-    let req = json!({"name": name, "iat": iat, "key": STANDARD.encode(key.verifying_key().to_bytes())}).to_string();
+/// The signed request for a login: name, key, time and the sensor's version, signed over its own bytes (kind "bus").
+pub fn request(key: &SigningKey, name: &str, iat: i64, version: &str) -> Value {
+    let req = json!({"name": name, "iat": iat, "key": STANDARD.encode(key.verifying_key().to_bytes()),
+                     "sensor": version}).to_string();
     let sig = key.sign(&seal::signed_bytes("bus", &seal::Headers::new(), req.as_bytes()));
     json!({"request": req, "signature": STANDARD.encode(sig.to_bytes())})
 }
 
 /// A login from the service (blocking HTTP).
 pub fn fetch(api: &str, key: &SigningKey, name: &str, now: i64) -> anyhow::Result<Login> {
-    let v = enroll::post(api, "/v1/bus-credential", &request(key, name, now))?;
+    let v = enroll::post(api, "/v2/bus-credential", &request(key, name, now, &crate::VERSION))?;
     Ok(Login {
         jwt: v["jwt"].as_str().context("the service's answer has no jwt")?.to_string(),
         expires: v["expires"].as_i64().context("the service's answer has no expiry")?,
@@ -112,7 +115,7 @@ mod tests {
     #[test]
     fn the_request_is_signed_over_its_own_bytes() {
         let key = SigningKey::from_bytes(&[9; 32]);
-        let r = request(&key, "api-1", 1_760_000_000);
+        let r = request(&key, "api-1", 1_760_000_000, "beat-sensor/0.3.0");
         let req = r["request"].as_str().unwrap();
         let sig = ed25519_dalek::Signature::from_slice(&STANDARD.decode(r["signature"].as_str().unwrap()).unwrap()).unwrap();
         key.verifying_key().verify_strict(&seal::signed_bytes("bus", &seal::Headers::new(), req.as_bytes()), &sig).unwrap();
