@@ -1225,6 +1225,10 @@ print("nic", "{nic}:" in open("/proc/net/dev").read())
     emit("net", "dev", str("{nic}:" in read("/proc/net/dev")), "read")
     emit("net", "sysctl", read("/proc/sys/net/ipv4/conf/{nic}/forwarding").strip(), "read")
 "#, sock_fd = sock.as_raw_fd());
+        // The first walk done before asking: on a slow CI runner it took over the question's 60 s for it (2026-11-13,
+        // 11-17), and its speed is not what this test is about.
+        tokio::time::timeout(Duration::from_secs(600), runner.walk.subscribe().wait_for(Option::is_some)).await
+            .expect("the first walk for secret files within 10 min").unwrap();
         let v = runner.run("debugging.star", &q, 120, &Phases::default(), false).await.map_err(|e| e.message).unwrap();
         let rec = |s: &str, k: &str| v["records"].as_array().unwrap().iter().find(|r| r["subject"] == s && r["key"] == k).map(|r| r["value"].as_str().unwrap().to_string());
         let mut bad = Vec::new();
