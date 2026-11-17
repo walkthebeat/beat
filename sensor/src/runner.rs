@@ -1186,10 +1186,12 @@ print("nic", "{nic}:" in open("/proc/net/dev").read())
         let sock = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         std::os::unix::fs::symlink("/etc/shadow", path("link")).unwrap();
 
+        // What each read must show, within the 400 characters kept (below): /proc/1/mounts by the proc mount, which must
+        // exist for it to be read at all; the root's line may come later (GitHub's runners, 2026-11-17: efivarfs first).
         let ok_reads: Vec<(String, &str)> = vec![
             (format!("/proc/1/root{op}"), "OPERATOR OUTPUT"), (log.clone(), "INSIDE"), (format!("/proc/{oth}/root/mnt/fine"), "INSIDE"),
             (format!("/proc/{me}/fd/{}", gone.as_raw_fd()), "DELETED LOG"), ("/proc/1/net/dev".into(), "Inter-"), ("/proc/1/net/tcp".into(), "local_address"),
-            ("/proc/1/mounts".into(), " / "), (format!("/proc/{oth}/status"), "Name:"), (format!("/proc/{oth}/stat"), "sleep"), (format!("/proc/{oth}/io"), "rchar"),
+            ("/proc/1/mounts".into(), "/proc proc"), (format!("/proc/{oth}/status"), "Name:"), (format!("/proc/{oth}/stat"), "sleep"), (format!("/proc/{oth}/io"), "rchar"),
             (format!("/proc/{oth}/limits"), "Max"), (format!("/proc/{oth}/cgroup"), "::"), (format!("/proc/{oth}/maps"), "sleep"), ("/proc/meminfo".into(), "MemTotal"),
         ];
         let refused_reads = ["/etc/shadow".to_string(), "/proc/1/root/etc/shadow".into(), "/proc/self/root/etc/shadow".into(), "/proc/./1/root/etc/shadow".into(),
