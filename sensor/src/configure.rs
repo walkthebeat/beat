@@ -105,7 +105,7 @@ pub fn run(argv: &[String], version: &str) -> anyhow::Result<()> {
     let cfg = sensor_config(&api)?;
     let bus = match bus.or_else(|| cfg["bus"].as_str().map(String::from)) {
         Some(b) => b,
-        None => bail!("the service names no bus (BEAT_BUS at the service): give --bus nats://HOST:4222"),
+        None => bail!("the service names no bus (BEAT_BUS at the service): give --bus wss://HOST"),
     };
     let collectors: Vec<(String, String)> = cfg["collector_keys"].as_object().into_iter().flatten()
         .map(|(n, k)| parse_key(&format!("{n}={}", k.as_str().unwrap_or(""))))

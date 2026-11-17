@@ -254,8 +254,9 @@ NATS runs in operator mode: nobody connects without a login, and each login allo
   the sensor signs a nonce only if it is 8-64 characters of `[A-Za-z0-9_-]`, which nats-server's nonces are and a
   JSON object never is: a bus (or something impersonating it) cannot get a beat message signed by sending it as a
   nonce.
-- **TLS to the bus:** a `tls://` bus address, as the hosted service gives, uses TLS. A `nats://` address does not, so
-  keep that to a network you trust; answers are sealed and signed either way, but who talks to whom is visible.
+- **TLS to the bus:** a `wss://` bus address (NATS over WebSocket on 443, as the hosted service gives) or a `tls://`
+  one uses TLS, checked against the system's roots. A `ws://` or `nats://` address does not, so keep that to a
+  network you trust; answers are sealed and signed either way, but who talks to whom is visible.
 - **Not built yet:** an attested sensor attesting again for each login (today it renews with its key, as the others
   do).
 

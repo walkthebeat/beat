@@ -642,30 +642,37 @@ async fn main() -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
-    /// A nats-server of the test's own, on a free port; None (the test is skipped) when there is none on PATH
-    /// (`nix shell nixpkgs#nats-server` gives one).
+    /// A nats-server of the test's own, on free ports (NATS, and WebSocket without TLS: the load balancer's side of
+    /// it); None (the test is skipped) when there is none on PATH (`nix shell nixpkgs#nats-server` gives one).
     struct Server {
         port: u16,
+        ws: u16,
         child: Option<std::process::Child>,
+    }
+
+    fn free_port() -> Option<u16> {
+        std::net::TcpListener::bind("127.0.0.1:0").ok()?.local_addr().ok().map(|a| a.port())
     }
 
     impl Server {
         fn start() -> Option<Server> {
-            let port = std::net::TcpListener::bind("127.0.0.1:0").ok()?.local_addr().ok()?.port();
-            let mut s = Server { port, child: None };
+            let mut s = Server { port: free_port()?, ws: free_port()?, child: None };
             s.restart().then_some(s)
         }
 
         fn restart(&mut self) -> bool {
             self.stop();
-            let Ok(child) = std::process::Command::new("nats-server").args(["-a", "127.0.0.1", "-p", &self.port.to_string()])
+            let conf = std::env::temp_dir().join(format!("beat-sensor-test-nats-{}.conf", self.port));
+            std::fs::write(&conf, format!("listen: \"127.0.0.1:{}\"\nwebsocket {{ listen: \"127.0.0.1:{}\", no_tls: true }}\n",
+                                          self.port, self.ws)).unwrap();
+            let Ok(child) = std::process::Command::new("nats-server").arg("-c").arg(&conf)
                 .stderr(std::process::Stdio::null()).spawn() else {
                 eprintln!("no nats-server on PATH: skipped");
                 return false;
             };
             self.child = Some(child);
             for _ in 0..100 {
-                if std::net::TcpStream::connect(("127.0.0.1", self.port)).is_ok() {
+                if [self.port, self.ws].iter().all(|p| std::net::TcpStream::connect(("127.0.0.1", *p)).is_ok()) {
                     return true;
                 }
                 std::thread::sleep(Duration::from_millis(50));
@@ -719,6 +726,18 @@ mod tests {
 
     fn sender() -> Arc<tokio::sync::watch::Sender<u64>> {
         Arc::new(tokio::sync::watch::Sender::new(0))
+    }
+
+    /// Sensors reach the bus over WebSocket (`wss://` behind the load balancer; `ws://` here): async-nats's
+    /// `websockets` feature, on by default, must stay on.
+    #[tokio::test]
+    async fn the_bus_over_websocket() {
+        let Some(s) = Server::start() else { return };
+        let sensor = async_nats::ConnectOptions::new().connect(format!("ws://127.0.0.1:{}", s.ws)).await.unwrap();
+        let n = collector(s.client(None).await, "beat.answer.s1", r#"{"stored": true}"#).await;
+        let d = deliver(&sender(), &sensor, "beat.answer.s1".into(), Default::default(), b"x".to_vec(), unix_now() + 10).await;
+        assert!(matches!(d, Delivery::Stored));
+        assert_eq!(n.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
