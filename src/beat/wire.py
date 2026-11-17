@@ -8,28 +8,29 @@ format some of them differently. Every message below but progress is signed (Bea
 Beat-* headers and the payload's hash: seal.py): the survey and the ask by the collector, acks and answers by the
 sensor.
 
-  beat.survey.<survey>                 JetStream   payload: question   Beat-Survey, Beat-Question, Beat-Selector,
-                                                                        Beat-Expected, Beat-Asked-By, Beat-Asked-At,
-                                                                        Beat-Deadline, Beat-Ack-Until
   beat.ask.all, beat.ask.host.<name>   core NATS   payload: question   Beat-Survey, Beat-Question, Beat-Key (the
                                                                         survey's public key), Beat-Timeout,
                                                                         Beat-Issued, Beat-Deadline, Beat-Targets
                                                                         (optional: only these answer)
-  beat.ack.<survey>                    JetStream   no payload         Beat-Survey, Beat-Question, Beat-Target,
+  beat.ack.<survey>                    core NATS   no payload         Beat-Survey, Beat-Question, Beat-Target,
                                                                         Beat-Answer-By, Beat-Sensor (only when the
                                                                         answer is not out within a second)
-  beat.answer.<survey>                 JetStream   payload: sealed     Beat-Survey, Beat-Question, Beat-Target,
+  beat.answer.<survey>                 request     payload: sealed     Beat-Survey, Beat-Question, Beat-Target,
                                                    answer              Beat-Outcome, Beat-Started, Beat-Finished,
                                                                         Beat-Phases, Beat-Sensor (the answer's hash is computed
-                                                                        by the collector, once opened)
+                                                                        by the collector, once opened); reply
+                                                                        {"stored": true} once stored, or {"refused": why}
+  beat.heartbeat.<name>                core NATS   payload: entry     sensor heartbeats: {name, sensor, labels, started, guide, sandbox, at, collectors, signature}; signed (kind heartbeat, over the entry without its signature); every collector keeps the enrolled and fresh (<35 s) ones in memory
+  beat.guide.put                       request     payload: guide     the builtins guide a sensor's beat-probe prints; reply {"hash"}: kept by it
+  beat.deny.get                        request     no payload         reply: the org root's deny list as signed (docs/security.md H16), or empty
   beat.api.<method>                    request/reply  the API (api.py), served by the collector; survey.start is the
-                                                      only way to ask (the collector announces and publishes).
+                                                      only way to ask (the collector records and publishes).
                                                       Clients reach it over HTTP only (serve.py: POST /v1/<method>)
-  KV bucket beat-directory, key <name>             sensor heartbeats: {name, sensor, labels, started, guide, sandbox, at, collectors, signature}; signed (kind heartbeat, over the entry without its signature); readers trust enrolled and fresh (<35 s) entries only
-  KV bucket beat-guides, key <sha256>              the builtins guide a sensor's beat-probe prints (`guide` above)
 
-The stream `beat` keeps beat.survey.>, beat.ack.> and beat.answer.>, in order: a survey is announced before it is
-asked, so the collector (collector.py) always sees the survey before its acks and answers.
+Nothing is kept on the bus (0.3; before it, JetStream kept surveys, acks and answers, and KV buckets the directory, the
+guides and the deny list). The collector that asked a survey listens on its ack and answer subjects while it holds the
+survey's key, until the deadline (a restarted one does not: no responders); a sensor sends its answer again until that
+collector replies that it is stored, or the deadline passes. Nothing depends on the order messages arrive in.
 """
 from __future__ import annotations
 
@@ -42,12 +43,10 @@ from pathlib import Path
 
 DEFAULT_NATS = "nats://127.0.0.1:4222"
 DEFAULT_API = "https://api.walkthebeat.ai"  # walkthebeat's hosted service (tier 1)
-STREAM = "beat"
-STREAM_SUBJECTS = ["beat.survey.>", "beat.ack.>", "beat.answer.>"]
-DIRECTORY = "beat-directory"
-GUIDES = "beat-guides"
-DENY = "beat-deny"          # the org root's deny list (docs/security.md H16), key "list"
 ASK_ALL = "beat.ask.all"
+HEARTBEATS = "beat.heartbeat.*"
+GUIDE_PUT = "beat.guide.put"
+DENY_GET = "beat.deny.get"   # the org root's deny list (docs/security.md H16)
 
 
 def services_dir() -> Path:
@@ -92,16 +91,21 @@ def ask_host(name: str) -> str:
     return f"beat.ask.host.{name}"
 
 
-def survey_subject(survey: str) -> str:
-    return f"beat.survey.{survey}"
-
-
 def answer_subject(survey: str) -> str:
     return f"beat.answer.{survey}"
 
 
 def ack_subject(survey: str) -> str:
     return f"beat.ack.{survey}"
+
+
+def heartbeat_subject(name: str) -> str:
+    return f"beat.heartbeat.{name}"
+
+
+def is_token(s: str) -> bool:
+    """A name that can be one token of a subject: not empty, no `.`, space or wildcard."""
+    return bool(s) and not any(c in s for c in ". *>")
 
 
 

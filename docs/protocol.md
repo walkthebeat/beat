@@ -12,17 +12,17 @@ The security reasoning behind it: `docs/security.md`.
 
 ## Messages
 
-NATS subjects, with JetStream where a message must be kept. The payload is a content-addressed blob; the headers are
+NATS subjects; nothing is kept on the bus (0.3: no JetStream). The payload is a content-addressed blob; the headers are
 the relations (survey, target, times).
 
 | Subject | Transport | Payload | From | Headers |
 | --- | --- | --- | --- | --- |
-| `beat.survey.<survey>` | JetStream | question | collector | Beat-Survey, Beat-Question, Beat-Selector, Beat-Expected, Beat-Asked-By, Beat-Asked-At, Beat-Deadline, Beat-Ack-Until |
 | `beat.ask.all`, `beat.ask.host.<name>` | core NATS | question | member, countersigned by the collector | Beat-Survey, Beat-Question, Beat-Key, Beat-Timeout, Beat-Issued, Beat-Deadline, Beat-Cred, Beat-Targets (optional), Beat-Profile (optional) |
-| `beat.ack.<survey>` | JetStream | none | sensor | Beat-Survey, Beat-Question, Beat-Target, Beat-Answer-By, Beat-Sensor |
-| `beat.answer.<survey>` | JetStream | sealed answer | sensor | Beat-Survey, Beat-Question, Beat-Target, Beat-Outcome, Beat-Started, Beat-Finished, Beat-Phases, Beat-Sensor |
-| KV `beat-directory`, key `<name>` | KV | heartbeat | sensor | (the entry is signed JSON) |
-| KV `beat-deny`, key `list` | KV | the org root's deny list | root, relayed by the service | (signed JSON) |
+| `beat.ack.<survey>` | core NATS | none | sensor | Beat-Survey, Beat-Question, Beat-Target, Beat-Answer-By, Beat-Sensor |
+| `beat.answer.<survey>` | request | sealed answer | sensor | Beat-Survey, Beat-Question, Beat-Target, Beat-Outcome, Beat-Started, Beat-Finished, Beat-Phases, Beat-Sensor; reply `{"stored": true}` or `{"refused": why}` |
+| `beat.heartbeat.<name>` | core NATS | heartbeat | sensor | (the entry is signed JSON) |
+| `beat.guide.put` | request | the builtins guide | sensor | reply `{"hash"}`: kept by it |
+| `beat.deny.get` | request | none | sensor | reply: the org root's deny list as the root signed it, or empty |
 
 `Beat-Phases` says where an answer's time went: `key=N,...`, in milliseconds except keys ending in `_calls` (counts)
 and `_bytes`. The sensor's steps: `queue` (waiting for a slot), `secrets` (finding secret files), `run` (all of what
@@ -40,8 +40,24 @@ timed, the slowest as records of the answer (docs/probes.md §9). An older senso
 and what was left out (`docs/security.md`).
 
 - A sensor acks only when its answer is not out within a second, with the time it will answer by.
-- The stream `beat` keeps `beat.survey.>`, `beat.ack.>` and `beat.answer.>` in order, so a survey is announced
-  before its acks and answers.
+- Nothing depends on the order messages arrive in.
+
+## Delivery
+
+The collector that asked a survey listens on `beat.ack.<survey>` and `beat.answer.<survey>` from before its question
+goes out until its deadline, when it destroys the survey's key. A collector that restarted holds none of the old keys
+and listens for none of the old surveys.
+
+A sensor sends each answer as a request and waits for the reply until the survey's deadline, which the collector
+sends once the answer is stored (or refused: sealed, too late, not admitted). It does not send again because the reply
+is slow: a collector that is behind replies late, and records what reached it before the deadline. It sends again:
+
+- after "no responders" (nobody listening: the bus restarting, or the survey's collector gone), in 1 s, doubling to
+  8 s;
+- when its connection drops while it waits (the request or the reply may have gone with it), once it is back.
+
+At the deadline it gives up. An answer that arrives twice is harmless: the collector writes by hash. Heartbeats, acks,
+the guide and the deny list are not retried: the next heartbeat (every 10 s) sends them again.
 
 ## Blobs
 
@@ -53,8 +69,8 @@ and what was left out (`docs/security.md`).
 
 ## Signatures
 
-- **One rule:** an Ed25519 signature covers the message's kind (`ask`, `survey`, `ack`, `answer`, `heartbeat`,
-  `enroll`), all its other `Beat-*` headers, and the payload's hash, as canonical JSON (`signed_bytes`). A header given
+- **One rule:** an Ed25519 signature covers the message's kind (`ask`, `ack`, `answer`, `heartbeat`, `enroll`,
+  `bus`), all its other `Beat-*` headers, and the payload's hash, as canonical JSON (`signed_bytes`). A header given
   twice is refused.
 - **C14. A question carries two signatures over the same bytes:** the member's (`Beat-Signature`) and the
   collector's (`Beat-Countersignature`). `Beat-Key`, the survey's public key, is the collector's, so a member cannot
@@ -95,33 +111,35 @@ it only finds the org, and what the sensor gets there still needs that org's app
 - `POST <api>/v1/enroll`, open: `{request, signature}`, the request being the sensor's name, public key, host name
   and time, plus a rollout token or an identity token when it has one, signed with the sensor's key (kind `enroll`).
   The answer is a code to approve, or `enrolled` (`sensor/src/enroll.rs`).
-- `POST <api>/v1/bus-credential`, open: `{request, signature}`, the request being the sensor's name, public key and
-  time (`iat`, within 5 minutes of the service's clock), signed with the sensor's key (kind `bus`). The answer is
-  `{jwt, expires, inbox}` when the key is enrolled under that name, else 403 (`sensor/src/bus.rs`).
+- `POST <api>/v2/bus-credential`, open: `{request, signature}`, the request being the sensor's name, public key,
+  time (`iat`, within 5 minutes of the service's clock) and version (`sensor`), signed with the sensor's key (kind
+  `bus`). The answer is `{jwt, expires, inbox}` when the key is enrolled under that name, else 403
+  (`sensor/src/bus.rs`). `/v1/`, without the version, was the login of sensors before 0.3, which used JetStream: the
+  service answers it 426, with an error that says to upgrade, which those sensors log at every try.
 
 ## Logins (NATS operator mode)
 
 The service's operator key signs one account per org; the org's account key signs every login (a NATS user JWT,
 `alg: ed25519-nkey`). A client sends the JWT and signs the server's nonce with the key the JWT names (`sub`).
-Accounts share nothing: every subject, stream and bucket below exists once per org, so two orgs' sensors never hear
+Accounts share nothing: every subject below exists once per org, so two orgs' sensors never hear
 each other's questions, and two orgs may each have a sensor of the same name.
 
 | Login | Key | Life | Subscribe | Publish |
 | --- | --- | --- | --- | --- |
-| sensor `<name>` | its enrolled key | an hour | `beat.ask.all`, `beat.ask.host.<name>`, `_INBOX_<name>.>` | `beat.ack.*`, `beat.answer.*`, `$KV.beat-directory.<name>`, `$KV.beat-guides.*`, `$JS.API.STREAM.INFO.KV_<bucket>` for those and `beat-deny`, the deny list's `list` by direct or message get |
+| sensor `<name>` | its enrolled key | an hour | `beat.ask.all`, `beat.ask.host.<name>`, `_INBOX_<name>.>` | `beat.ack.*`, `beat.answer.*`, `beat.heartbeat.<name>`, `beat.guide.put`, `beat.deny.get` |
 | collector | the service's | a day | everything in the account | everything in the account |
 | API | the service's | a day | `_INBOX_serve.>` | `beat.api.>`, `beat.cp.>` |
 
-The collector makes the stream and the buckets; a sensor uses them.
+Accounts have no JetStream.
 
 ## Survey outcomes
 
 **C25. An up sensor answers; one that does not is a finding.** Each target ends **answered** (ok, partial or error,
 including the sensor's own `busy` and `too_large`) or **not answered**: **down** (no fresh heartbeat: one every 10 s,
-stale after 35 s) or **up, no answer**. The deadline is the only clock, judged by when a message reached the stream,
-not when it was processed. There is no threshold: every up sensor that did not answer is reported.
+stale after 35 s) or **up, no answer**. The deadline is the only clock, judged by when a message reached the
+collector (stamped on receipt), not when it was processed. There is no threshold: every up sensor that did not answer
+is reported.
 
-An up sensor's answer can also be lost at the service: a stream over its limit drops its oldest messages unread, and what
-is dropped cannot be read. A target with no answer in a survey open during such a gap stays `no_answer` and is marked
-`maybe_lost`, and the survey carries `service_loss` (messages dropped, hosts in doubt). That points at beat, not the host:
-ask again first. It is a doubt, not a verdict: a stalled host in that survey is marked too.
+Surveys from before 0.3 may carry `maybe_lost` and `service_loss`: then, a stream over its limit could drop answers
+unread. Since 0.3 there is no stream; an answer that did not reach the collector by the deadline is in the sensor's
+log ("answer not confirmed").

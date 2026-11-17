@@ -8,24 +8,27 @@
 //!   beat.ask.all, beat.ask.host.<name>   core NATS   payload: question   Beat-Survey, Beat-Question, Beat-Key,
 //!                                                                         Beat-Timeout, Beat-Issued, Beat-Deadline,
 //!                                                                         Beat-Targets (optional: only these answer)
-//!   beat.answer.<survey>                 JetStream   payload: sealed     Beat-Survey, Beat-Question, Beat-Target,
+//!   beat.answer.<survey>                 request     payload: sealed     Beat-Survey, Beat-Question, Beat-Target,
 //!                                                    answer              Beat-Outcome, Beat-Started, Beat-Finished,
-//!                                                                         Beat-Sensor
-//!   beat.ack.<survey>                    JetStream   no payload          Beat-Survey, Beat-Question, Beat-Target,
+//!                                                                         Beat-Sensor; reply {"stored": true} or
+//!                                                                         {"refused": why}, once it is stored
+//!   beat.ack.<survey>                    core NATS   no payload          Beat-Survey, Beat-Question, Beat-Target,
 //!                                                                         Beat-Answer-By, Beat-Sensor (only when the
 //!                                                                         answer is not out within a second)
-//!   KV bucket beat-directory, key <name>             sensor heartbeats: {name, sensor, labels, started, guide, sandbox, secret_walk, at, collectors, signature}; signed (kind heartbeat, over the entry without its signature); readers trust enrolled and fresh (<35 s) entries only
+//!   beat.heartbeat.<name>                core NATS   payload: entry      {name, sensor, labels, started, guide, sandbox, secret_walk, at, collectors, signature}; signed (kind heartbeat, over the entry without its signature); every collector keeps the fresh (<35 s) ones in memory
+//!   beat.guide.put                       request     payload: guide      the builtins guide beat-probe prints; reply {"hash"} (kept by its hash)
+//!   beat.deny.get                        request     no payload          reply: the org root's deny list as signed, or empty
 //!
-//! Questions, acks and answers carry Beat-Signature (seal.rs): questions the collector's, acks and answers ours.
-//!   KV bucket beat-guides, key <sha256>              the builtins guide a sensor's beat-probe prints (`guide` above)
+//! Questions, acks and answers carry Beat-Signature (seal.rs): questions the collector's, acks and answers ours. No
+//! JetStream, nothing kept on the bus (0.3): the collector that asked a survey listens on its subjects while it holds
+//! the survey's key, and the sensor sends an answer again until that collector says it is stored, or the deadline.
 
 use serde_json::{json, Value};
 
 pub const ASK_ALL: &str = "beat.ask.all";
-pub const DIRECTORY: &str = "beat-directory";
-pub const GUIDES: &str = "beat-guides";
-/// The org root's deny list (docs/security.md H16), key "list"; the collector publishes it.
-pub const DENY: &str = "beat-deny";
+pub const GUIDE_PUT: &str = "beat.guide.put";
+/// The org root's deny list (docs/security.md H16), as the collector holds it.
+pub const DENY_GET: &str = "beat.deny.get";
 
 pub fn ask_host(name: &str) -> String {
     format!("beat.ask.host.{name}")
@@ -37,6 +40,15 @@ pub fn answer_subject(survey: &str) -> String {
 
 pub fn ack_subject(survey: &str) -> String {
     format!("beat.ack.{survey}")
+}
+
+pub fn heartbeat_subject(name: &str) -> String {
+    format!("beat.heartbeat.{name}")
+}
+
+/// A name that can be one token of a subject: not empty, no `.`, space or wildcard.
+pub fn is_token(s: &str) -> bool {
+    !s.is_empty() && !s.contains(['.', ' ', '*', '>'])
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {

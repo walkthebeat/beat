@@ -14,8 +14,9 @@
 //! Connects *out* to NATS; nothing listens on the host. Subscribes to beat.ask.all and beat.ask.host.<name>, runs
 //! each question a member of the org signed (its credential signed by a root this sensor pins, docs/security.md H16)
 //! and a collector key countersigned with beat-probe (runner.rs), seals the answer to
-//! the survey's key and signs it (seal.rs), publishes it to beat.answer.<survey> through JetStream, and heartbeats
-//! into the beat-directory KV bucket so surveys know whom to expect; heartbeats are signed too, and list the org roots
+//! the survey's key and signs it (seal.rs), sends it to the survey's collector (beat.answer.<survey>, a request)
+//! until it says it is stored or the deadline passes (`deliver`), and heartbeats on beat.heartbeat.<name>
+//! so surveys know whom to expect; heartbeats are signed too, and list the org roots
 //! and collector keys this sensor trusts (`DIR/<name>.pub`, read for each question: a key deployed or removed counts at
 //! once). A question not signed and countersigned by them, issued before this sensor started (a replay across a restart), past its deadline or with a deadline
 //! further than its time limit allows, or asked again, is dropped unanswered, with a line in the log.
@@ -50,7 +51,6 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{bail, Context};
-use async_nats::jetstream;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use futures::StreamExt;
 use serde_json::json;
@@ -82,12 +82,14 @@ struct Config {
     key: ed25519_dalek::SigningKey,
     roots: PathBuf,
     collectors: PathBuf,
-    /// The org root's deny list (H16): read from the KV bucket beat-deny at each heartbeat, taken when a pinned root
+    /// The org root's deny list (H16): asked of a collector at each heartbeat (beat.deny.get), taken when a pinned root
     /// signed it and its seq is higher; kept in `deny_file` (--deny), so a restart cannot roll it back.
     deny: std::sync::Mutex<seal::Deny>,
     deny_file: Option<PathBuf>,
     /// Unix seconds this sensor started: a question issued before then may be a replay (`seen` was empty).
     started: i64,
+    /// Counts the bus's (re)connections: an answer in flight when the connection dropped is sent again (`deliver`).
+    connections: tokio::sync::watch::Sender<u64>,
 }
 
 fn parse(argv: &[String]) -> anyhow::Result<Config> {
@@ -163,6 +165,7 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
         roots,
         collectors,
         started: unix_now(),
+        connections: tokio::sync::watch::Sender::new(0),
         nats: nats.context("--nats is required")?,
         api: api.context("--api is required: the service's API, where the sensor gets its bus login")?,
         name,
@@ -263,6 +266,8 @@ struct Ask {
     question_hash: String,
     key: String,
     timeout: u64,
+    /// Beat-Deadline, unix seconds: past it the survey is sealed and an answer is refused.
+    deadline: i64,
     /// Beat-Profile: 1, signed with the rest: each host call timed, the slowest reported as records (beat-probe --profile)
     profile: bool,
 }
@@ -284,7 +289,7 @@ fn admit(cfg: &Config, seen: &Seen, msg: &async_nats::Message) -> Result<Ask, Op
     seal::verify_any(&collectors, "collector", seal::COUNTERSIGNATURE, "ask", &h, &msg.payload)
         .map_err(|e| Some(format!("question {e}")))?;
     let survey = seal::get(&h, "Beat-Survey").unwrap_or("").to_string();
-    if survey.is_empty() || survey.contains(['.', ' ', '*', '>']) {
+    if !wire::is_token(&survey) {
         return Err(Some(format!("survey id {survey:?} is not a subject token")));
     }
     if let Some(targets) = seal::get(&h, "Beat-Targets") {
@@ -322,15 +327,15 @@ fn admit(cfg: &Config, seen: &Seen, msg: &async_nats::Message) -> Result<Ask, Op
         return Err(Some(format!("survey {survey}: asked again (a replay)")));
     }
     let profile = seal::get(&h, "Beat-Profile") == Some("1");
-    Ok(Ask { survey, question_hash, key, timeout, profile })
+    Ok(Ask { survey, question_hash, key, timeout, deadline, profile })
 }
 
 /// Handles one message on an ask subject: answer it, or drop it (admit). `slots` bounds how many questions run at
 /// once; the time limit counts from arrival, waiting for a slot included.
-async fn handle(cfg: Arc<Config>, client: async_nats::Client, js: jetstream::Context, slots: Arc<tokio::sync::Semaphore>,
-                seen: Seen, msg: async_nats::Message) {
+async fn handle(cfg: Arc<Config>, client: async_nats::Client, slots: Arc<tokio::sync::Semaphore>, seen: Seen,
+                msg: async_nats::Message) {
     let arrived = std::time::Instant::now();
-    let Ask { survey, question_hash, key, timeout, profile } = match admit(&cfg, &seen, &msg) {
+    let Ask { survey, question_hash, key, timeout, deadline, profile } = match admit(&cfg, &seen, &msg) {
         Ok(a) => a,
         Err(None) => return,
         Err(Some(why)) => {
@@ -367,7 +372,7 @@ async fn handle(cfg: Arc<Config>, client: async_nats::Client, js: jetstream::Con
     let answer = tokio::select! {
         a = &mut work => a,
         _ = tokio::time::sleep(ACK_AFTER) => {
-            ack(&cfg, &js, &survey, &question_hash, &answer_by).await;
+            ack(&cfg, &client, &survey, &question_hash, &answer_by).await;
             work.await
         }
     };
@@ -387,7 +392,7 @@ async fn handle(cfg: Arc<Config>, client: async_nats::Client, js: jetstream::Con
     let answer_hash = wire::sha256_hex(&body);
     let outcome = answer["outcome"].as_str().unwrap_or("error").to_string();
     let size = body.len();
-    // Sealed to the survey's key: the stream holds no readable answer. Its hash is not a header either (equal answers
+    // Sealed to the survey's key: the bus carries no readable answer. Its hash is not a header either (equal answers
     // would show as equal on the bus); the collector hashes what it opens.
     let body = match seal::seal(&key, &survey, &cfg.name, &body) {
         Ok(b) => b,
@@ -404,40 +409,78 @@ async fn handle(cfg: Arc<Config>, client: async_nats::Client, js: jetstream::Con
                                  ("Beat-Finished", &finished), ("Beat-Phases", &phase_text), ("Beat-Sensor", &cfg.version)]
         .iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
     let h = header_map(seal::sign(&cfg.key, "answer", fields, &body));
-    let subject = wire::answer_subject(&survey);
-    // JetStream acks once the answer is stored in the stream; retried a few times, since losing it makes us silent.
-    for attempt in 1..=3 {
-        match js.publish_with_headers(subject.clone(), h.clone(), body.clone().into()).await {
-            Ok(ack) => match ack.await {
-                Ok(_) => {
-                    eprintln!("survey {survey}: answered {outcome} ({size} bytes, {}; ms: {phase_text})", &answer_hash[..12]);
-                    return;
-                }
-                Err(e) => eprintln!("survey {survey}: answer not acknowledged (attempt {attempt}): {e}"),
-            },
-            Err(e) => eprintln!("survey {survey}: publish failed (attempt {attempt}): {e}"),
-        }
-        tokio::time::sleep(Duration::from_secs(attempt)).await;
+    match deliver(&cfg.connections, &client, wire::answer_subject(&survey), h, body, deadline).await {
+        Delivery::Stored => eprintln!("survey {survey}: answered {outcome} ({size} bytes, {}; ms: {phase_text})",
+                                      &answer_hash[..12]),
+        Delivery::Refused(why) => eprintln!("survey {survey}: answer refused by the collector: {why}"),
+        Delivery::GaveUp(why) => eprintln!("survey {survey}: answer not confirmed: {why}"),
     }
-    eprintln!("survey {survey}: answer lost after 3 attempts");
 }
 
-/// Publishes the builtins guide by its hash (kept, no TTL: content-addressed, the same for every sensor of a build).
-/// "Working on it, the answer comes by `answer_by`": one ack per question, through JetStream like answers, so the
-/// collector reads acks and answers in order. A lost ack makes the target look silent until its answer arrives.
-async fn ack(cfg: &Config, js: &jetstream::Context, survey: &str, question_hash: &str, answer_by: &str) {
+enum Delivery {
+    Stored,
+    Refused(String),
+    GaveUp(String),
+}
+
+/// First wait after a request no one took ("no responders"), doubled up to RETRY_MAX.
+const RETRY_FIRST: Duration = Duration::from_secs(1);
+const RETRY_MAX: Duration = Duration::from_secs(8);
+
+/// Sends a sealed answer to the survey's collector and waits for its reply, sent once the answer is stored, until the
+/// survey's deadline (docs/protocol.md, "Delivery"). The wait is not cut short: a collector that is behind replies
+/// late, and sending again would only add to what it has to read. Sent again: a request no one took ("no responders":
+/// the bus restarting, or the survey's collector gone, as a restarted one does not listen for surveys it no longer
+/// holds the key of), after 1 s doubling to 8 s; one in flight when the connection dropped,
+/// once it is back (the reply, or the request, may have gone with it). A copy that arrives twice is harmless: the
+/// collector writes by hash. Past the deadline the survey is sealed, so the sensor gives up.
+async fn deliver(connections: &tokio::sync::watch::Sender<u64>, client: &async_nats::Client, subject: String,
+                 h: async_nats::HeaderMap, body: Vec<u8>, deadline: i64) -> Delivery {
+    use async_nats::client::{Request, RequestErrorKind};
+    let mut wait = RETRY_FIRST;
+    let mut connections = connections.subscribe();
+    loop {
+        let left = deadline - unix_now();
+        if left <= 0 {
+            return Delivery::GaveUp("the survey's deadline passed before a collector took it: lost".into());
+        }
+        connections.mark_unchanged();
+        let request = Request::new().headers(h.clone()).payload(body.clone().into())
+            .timeout(Some(Duration::from_secs(left as u64)));
+        tokio::select! {
+            r = client.send_request(subject.clone(), request) => match r {
+                Ok(reply) => return match serde_json::from_slice::<serde_json::Value>(&reply.payload) {
+                    Ok(v) if v["stored"] == json!(true) => Delivery::Stored,
+                    Ok(v) => Delivery::Refused(v["refused"].as_str().unwrap_or("no reason given").to_string()),
+                    Err(e) => Delivery::Refused(format!("a reply that is not JSON: {e}")),
+                },
+                // A collector that is behind still records what reached it in time, and replies only then: this
+                // answer may be among them.
+                Err(e) if e.kind() == RequestErrorKind::TimedOut =>
+                    return Delivery::GaveUp("no reply by the deadline (a collector that is behind still records \
+                                             what reached it in time)".into()),
+                Err(e) => eprintln!("{subject}: not taken ({e}); sending again in {} s", wait.as_secs()),
+            },
+            _ = connections.changed() => {
+                eprintln!("{subject}: the bus reconnected while waiting; sending again");
+                continue;
+            }
+        }
+        tokio::time::sleep(wait.min(Duration::from_secs(left.max(0) as u64))).await;
+        wait = (wait * 2).min(RETRY_MAX);
+    }
+}
+
+/// "Working on it, the answer comes by `answer_by`": one ack per question, to the survey's collector. Information only
+/// (C25): a lost one changes no outcome, so it is published once, not delivered.
+async fn ack(cfg: &Config, client: &async_nats::Client, survey: &str, question_hash: &str, answer_by: &str) {
     let fields: seal::Headers = [("Beat-Survey", survey), ("Beat-Question", question_hash),
                                  ("Beat-Target", cfg.name.as_str()), ("Beat-Answer-By", answer_by),
                                  ("Beat-Sensor", cfg.version.as_str())]
         .iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
     let h = header_map(seal::sign(&cfg.key, "ack", fields, b""));
-    match js.publish_with_headers(wire::ack_subject(survey), h, Vec::new().into()).await {
-        Ok(f) => {
-            if let Err(e) = f.await {
-                eprintln!("survey {survey}: ack not acknowledged: {e}");
-            }
-        }
-        Err(e) => eprintln!("survey {survey}: ack failed: {e}"),
+    if let Err(e) = client.publish_with_headers(wire::ack_subject(survey), h, Vec::new().into()).await {
+        eprintln!("survey {survey}: ack failed: {e}");
     }
 }
 
@@ -449,19 +492,28 @@ fn header_map(h: seal::Headers) -> async_nats::HeaderMap {
     m
 }
 
-/// Puts the builtins guide in the guides bucket by its hash. The collector makes the bucket: a sensor may not (H17).
-async fn publish_guide(cfg: &Config, js: &jetstream::Context) -> Option<String> {
-    let kv = js.get_key_value(wire::GUIDES).await.map_err(|e| eprintln!("guides bucket: {e}")).ok()?;
+/// Hands the builtins guide to a collector, which keeps it by its hash; the heartbeat names the hash.
+async fn publish_guide(cfg: &Config, client: &async_nats::Client) -> Option<String> {
     let guide = cfg.runner.guide().await.map_err(|e| eprintln!("guide: {e}")).ok()?;
     let hash = wire::sha256_hex(guide.as_bytes());
-    kv.put(&hash, guide.into_bytes().into()).await.map_err(|e| eprintln!("guide: {e}")).ok()?;
-    Some(hash)
+    let reply = client.request(wire::GUIDE_PUT, guide.into_bytes().into()).await
+        .map_err(|e| eprintln!("guide: not taken ({e}); again at the next heartbeat")).ok()?;
+    match serde_json::from_slice::<serde_json::Value>(&reply.payload) {
+        Ok(v) if v["hash"].as_str() == Some(hash.as_str()) => Some(hash),
+        _ => {
+            eprintln!("guide: the collector's reply does not name it: {}", String::from_utf8_lossy(&reply.payload));
+            None
+        }
+    }
 }
 
-/// Takes the org root's deny list from the KV bucket when it is newer than the one held and a pinned root signed it.
-async fn refresh_deny(cfg: &Config, js: &jetstream::Context) {
-    let Ok(kv) = js.get_key_value(wire::DENY).await else { return };  // none published yet
-    let Ok(Some(data)) = kv.get("list").await else { return };
+/// Takes the org root's deny list from a collector when it is newer than the one held and a pinned root signed it.
+async fn refresh_deny(cfg: &Config, client: &async_nats::Client) {
+    let Ok(reply) = client.request(wire::DENY_GET, Vec::new().into()).await else { return };  // again next heartbeat
+    let data = reply.payload;
+    if data.is_empty() {
+        return;  // none put yet
+    }
     let roots = match seal::read_keys(&cfg.roots) {
         Ok(r) => r,
         Err(_) => return,
@@ -485,12 +537,12 @@ async fn refresh_deny(cfg: &Config, js: &jetstream::Context) {
     *cfg.deny.lock().unwrap() = d;
 }
 
-async fn heartbeat(cfg: Arc<Config>, js: jetstream::Context) {
+async fn heartbeat(cfg: Arc<Config>, client: async_nats::Client) {
     let started = iso_now();
-    let (mut guide, mut kv) = (None, None);
+    let mut guide = None;
     loop {
         if guide.is_none() {
-            guide = publish_guide(&cfg, &js).await;
+            guide = publish_guide(&cfg, &client).await;
         }
         // The keys trusted now, as name:fingerprint (`beat keys use` checks a new key is trusted).
         let trusted = |dir: &std::path::Path| -> Vec<String> {
@@ -502,7 +554,7 @@ async fn heartbeat(cfg: Arc<Config>, js: jetstream::Context) {
                 }
             }
         };
-        refresh_deny(&cfg, &js).await;
+        refresh_deny(&cfg, &client).await;
         let deny_seq = cfg.deny.lock().unwrap().seq;
         let (roots, collectors) = (trusted(&cfg.roots), trusted(&cfg.collectors));
         // The roots' public keys themselves: the service checks credentials against what enrolled sensors pin, so it
@@ -516,13 +568,8 @@ async fn heartbeat(cfg: Arc<Config>, js: jetstream::Context) {
                            "roots": roots, "collectors": collectors, "root_keys": root_keys,
                            "deny": deny_seq});
         let entry = serde_json::Value::Object(seal::sign_entry(&cfg.key, entry.as_object().cloned().unwrap_or_default()));
-        if kv.is_none() {  // the collector makes the bucket
-            kv = js.get_key_value(wire::DIRECTORY).await.map_err(|e| eprintln!("directory bucket: {e}")).ok();
-        }
-        if let Some(k) = &kv {
-            if let Err(e) = k.put(&cfg.name, wire::canonical(&entry).into()).await {
-                eprintln!("heartbeat: {e}");
-            }
+        if let Err(e) = client.publish(wire::heartbeat_subject(&cfg.name), wire::canonical(&entry).into()).await {
+            eprintln!("heartbeat: {e}");
         }
         tokio::time::sleep(HEARTBEAT).await;
     }
@@ -559,16 +606,24 @@ async fn main() -> anyhow::Result<()> {
         })
         .name(format!("beat-sensor {}", cfg.name))
         .custom_inbox_prefix(format!("_INBOX_{}", cfg.name))  // its replies only: its login allows no other inbox
+        .event_callback({
+            let cfg = cfg.clone();
+            move |event| {
+                if let async_nats::Event::Connected = event {
+                    cfg.connections.send_modify(|n| *n += 1);
+                }
+                async {}
+            }
+        })
         .retry_on_initial_connect()
         .connect(&cfg.nats)
         .await
         .with_context(|| format!("connecting to {}", cfg.nats))?;
-    let js = jetstream::new(client.clone());
     let all = client.subscribe(wire::ASK_ALL).await?;
     let mine = client.subscribe(wire::ask_host(&cfg.name)).await?;
     eprintln!("{} as {:?}: listening on {} and {} via {}", cfg.version, cfg.name, wire::ASK_ALL,
               wire::ask_host(&cfg.name), cfg.nats);
-    tokio::spawn(heartbeat(cfg.clone(), js.clone()));
+    tokio::spawn(heartbeat(cfg.clone(), client.clone()));
     if cfg.runner.sandbox.is_some() {
         let walking = cfg.clone();
         tokio::spawn(async move { walking.runner.walk_forever().await });
@@ -578,7 +633,7 @@ async fn main() -> anyhow::Result<()> {
     let seen = Seen::default();
     let mut asks = futures::stream::select(all, mine);
     while let Some(msg) = asks.next().await {
-        tokio::spawn(handle(cfg.clone(), client.clone(), js.clone(), slots.clone(), seen.clone(), msg));
+        tokio::spawn(handle(cfg.clone(), client.clone(), slots.clone(), seen.clone(), msg));
     }
     bail!("NATS subscriptions closed")
 }
@@ -586,6 +641,157 @@ async fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A nats-server of the test's own, on a free port; None (the test is skipped) when there is none on PATH
+    /// (`nix shell nixpkgs#nats-server` gives one).
+    struct Server {
+        port: u16,
+        child: Option<std::process::Child>,
+    }
+
+    impl Server {
+        fn start() -> Option<Server> {
+            let port = std::net::TcpListener::bind("127.0.0.1:0").ok()?.local_addr().ok()?.port();
+            let mut s = Server { port, child: None };
+            s.restart().then_some(s)
+        }
+
+        fn restart(&mut self) -> bool {
+            self.stop();
+            let Ok(child) = std::process::Command::new("nats-server").args(["-a", "127.0.0.1", "-p", &self.port.to_string()])
+                .stderr(std::process::Stdio::null()).spawn() else {
+                eprintln!("no nats-server on PATH: skipped");
+                return false;
+            };
+            self.child = Some(child);
+            for _ in 0..100 {
+                if std::net::TcpStream::connect(("127.0.0.1", self.port)).is_ok() {
+                    return true;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            false
+        }
+
+        fn stop(&mut self) {
+            if let Some(mut c) = self.child.take() {
+                let _ = c.kill();
+                let _ = c.wait();
+            }
+        }
+
+        async fn client(&self, connections: Option<Arc<tokio::sync::watch::Sender<u64>>>) -> async_nats::Client {
+            let mut o = async_nats::ConnectOptions::new().retry_on_initial_connect();
+            if let Some(c) = connections {
+                o = o.event_callback(move |event| {
+                    if let async_nats::Event::Connected = event {
+                        c.send_modify(|n| *n += 1);
+                    }
+                    async {}
+                });
+            }
+            o.connect(format!("127.0.0.1:{}", self.port)).await.unwrap()
+        }
+    }
+
+    impl Drop for Server {
+        fn drop(&mut self) {
+            self.stop();
+        }
+    }
+
+    /// A collector stand-in: replies `reply` to each request on `subject`, and counts them.
+    async fn collector(client: async_nats::Client, subject: &str, reply: &'static str) -> Arc<std::sync::atomic::AtomicU32> {
+        let n = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let mut sub = client.subscribe(subject.to_string()).await.unwrap();
+        client.flush().await.unwrap();
+        let seen = n.clone();
+        tokio::spawn(async move {
+            while let Some(m) = sub.next().await {
+                seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if let Some(r) = m.reply {
+                    let _ = client.publish(r, reply.into()).await;
+                }
+            }
+        });
+        n
+    }
+
+    fn sender() -> Arc<tokio::sync::watch::Sender<u64>> {
+        Arc::new(tokio::sync::watch::Sender::new(0))
+    }
+
+    #[tokio::test]
+    async fn an_answer_is_delivered_once_stored_and_a_refusal_is_final() {
+        let Some(s) = Server::start() else { return };
+        let (c, sensor) = (sender(), s.client(None).await);
+        let n = collector(s.client(None).await, "beat.answer.s1", r#"{"stored": true}"#).await;
+        let d = deliver(&c, &sensor, "beat.answer.s1".into(), Default::default(), b"x".to_vec(), unix_now() + 10).await;
+        assert!(matches!(d, Delivery::Stored));
+        let r = collector(s.client(None).await, "beat.answer.s2", r#"{"refused": "sealed"}"#).await;
+        let d = deliver(&c, &sensor, "beat.answer.s2".into(), Default::default(), b"x".to_vec(), unix_now() + 10).await;
+        assert!(matches!(d, Delivery::Refused(ref w) if w == "sealed"));
+        assert_eq!((n.load(std::sync::atomic::Ordering::SeqCst), r.load(std::sync::atomic::Ordering::SeqCst)), (1, 1));
+    }
+
+    #[tokio::test]
+    async fn no_responders_is_sent_again_until_someone_takes_it() {
+        let Some(s) = Server::start() else { return };
+        let (c, sensor) = (sender(), s.client(None).await);
+        let late = s.client(None).await;
+        let started = std::time::Instant::now();
+        let n = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(2500)).await;  // after the tries at 0, 1 and 3 s: taken at 3 s
+            collector(late, "beat.answer.s1", r#"{"stored": true}"#).await
+        });
+        let d = deliver(&c, &sensor, "beat.answer.s1".into(), Default::default(), b"x".to_vec(), unix_now() + 20).await;
+        assert!(matches!(d, Delivery::Stored));
+        assert!((2..6).contains(&started.elapsed().as_secs()), "{:?}", started.elapsed());
+        assert_eq!(n.await.unwrap().load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn past_the_deadline_it_gives_up() {
+        let Some(s) = Server::start() else { return };
+        let (c, sensor) = (sender(), s.client(None).await);
+        let started = std::time::Instant::now();
+        // no one subscribed: tried again until the deadline, 3 s away
+        let d = deliver(&c, &sensor, "beat.answer.s1".into(), Default::default(), b"x".to_vec(), unix_now() + 3).await;
+        assert!(matches!(d, Delivery::GaveUp(_)));
+        assert!(started.elapsed() < Duration::from_secs(5), "{:?}", started.elapsed());
+        // subscribed but never replying (a collector far behind, or gone with the request): waited on, to the deadline
+        let mut silent = s.client(None).await.subscribe("beat.answer.s2").await.unwrap();
+        tokio::spawn(async move { while silent.next().await.is_some() {} });
+        let started = std::time::Instant::now();
+        let d = deliver(&c, &sensor, "beat.answer.s2".into(), Default::default(), b"x".to_vec(), unix_now() + 3).await;
+        assert!(matches!(d, Delivery::GaveUp(ref w) if w.contains("no reply")));
+        assert!(started.elapsed() >= Duration::from_secs(2), "{:?}", started.elapsed());
+    }
+
+    #[tokio::test]
+    async fn an_answer_in_flight_when_the_bus_restarts_is_sent_again() {
+        let Some(mut s) = Server::start() else { return };
+        let c = sender();
+        let sensor = s.client(Some(c.clone())).await;
+        // The first copy is taken and never answered (the collector's reply went with the old server); after the
+        // restart the copy sent again is stored.
+        let first = s.client(None).await;
+        let mut sub = first.subscribe("beat.answer.s1").await.unwrap();
+        first.flush().await.unwrap();
+        let got_first = tokio::spawn(async move { sub.next().await.is_some() });
+        let deliver = tokio::spawn({
+            let (c, sensor) = (c.clone(), sensor.clone());
+            async move {
+                deliver(&c, &sensor, "beat.answer.s1".into(), Default::default(), b"x".to_vec(), unix_now() + 30).await
+            }
+        });
+        assert!(got_first.await.unwrap());
+        s.restart();
+        let n = collector(s.client(None).await, "beat.answer.s1", r#"{"stored": true}"#).await;
+        let d = tokio::time::timeout(Duration::from_secs(20), deliver).await.expect("sent again").unwrap();
+        assert!(matches!(d, Delivery::Stored));
+        assert!(n.load(std::sync::atomic::Ordering::SeqCst) >= 1);
+    }
 
     #[test]
     fn iso_round_trips() {
