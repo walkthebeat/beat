@@ -1,0 +1,69 @@
+# beat's sensor on every node of a cluster (docs/guide/kubernetes.md). Before applying: a trust policy in your org for
+# this cluster's service-account issuer (`beat org trust add`), the ConfigMap's values, and the image. The sensor
+# enrols with its pod's token and is named after its node; nothing here is secret.
+#
+# What it is given, and why: the host's PID and network namespaces and its / read-only (questions read the host as
+# they do on one without Kubernetes); privileged, to sandbox each question itself (mount namespaces, a seccomp filter,
+# a cgroup per question under the pod's: sensor/src/bwrap.rs). That is root on the node, as the host install is. The
+# questions themselves run as an unprivileged user, read-only, without network, with two capabilities.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: beat
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: beat-sensor, namespace: beat}
+automountServiceAccountToken: false   # no API token: the sensor does not use the cluster's API (yet)
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: beat-sensor, namespace: beat}
+data:
+  BEAT_API: "https://api.walkthebeat.ai/o/ORG"      # `beat sensors add` prints yours
+  BEAT_ORG_ROOT: "NAME=KEY"                          # the org root the sensor obeys, as `beat sensors add` prints it
+  BEAT_CLUSTER: "my-cluster"                         # a label on every sensor: ask one cluster with --label cluster=...
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: beat-sensor, namespace: beat}
+spec:
+  selector: {matchLabels: {app: beat-sensor}}
+  updateStrategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 1}}
+  template:
+    metadata: {labels: {app: beat-sensor}}
+    spec:
+      serviceAccountName: beat-sensor
+      hostPID: true
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      priorityClassName: system-node-critical
+      tolerations: [{operator: Exists}]               # every node, control plane included
+      containers:
+      - name: sensor
+        image: walkthebeat/beat-sensor:VERSION
+        imagePullPolicy: IfNotPresent
+        envFrom: [{configMapRef: {name: beat-sensor}}]
+        securityContext: {privileged: true}
+        resources:
+          requests: {cpu: 50m, memory: 128Mi}
+          # questions run inside the pod's cgroup: two at a time at up to 1 GiB each, the walk 256 MiB, the sensor
+          limits: {memory: 2560Mi}
+        volumeMounts:
+        - {name: host, mountPath: /host, readOnly: true, mountPropagation: HostToContainer}
+        - {name: state, mountPath: /var/lib/beat-sensor}
+        - {name: run, mountPath: /run/beat-sensor}
+        - {name: token, mountPath: /var/run/secrets/beat, readOnly: true}
+        - {name: tmp, mountPath: /tmp}
+      volumes:
+      - {name: host, hostPath: {path: /}}
+      # the same paths on the host: a question (whose / is the host's) reads them where the sensor wrote them
+      - {name: state, hostPath: {path: /var/lib/beat-sensor, type: DirectoryOrCreate}}
+      - {name: run, hostPath: {path: /run/beat-sensor, type: DirectoryOrCreate}}
+      - {name: tmp, emptyDir: {}}
+      - name: token
+        projected:
+          sources:
+          - serviceAccountToken: {audience: beat-enroll, expirationSeconds: 3600, path: token}

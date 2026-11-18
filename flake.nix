@@ -142,6 +142,12 @@
           inherit pkgs sensor sensorBin probe; tools = wasm.tools; base = "https://github.com/walkthebeat/beat/releases/download/v${release}";
         };
         libbpf-tools = libbpfTools;
+        # The seccomp filters of a sensor that sandboxes with bubblewrap (packaging/kubernetes/seccomp.c): question, capture.
+        beat-sensor-seccomp = import ./packaging/kubernetes/seccomp.nix { inherit pkgs; };
+        # The sensor as a container image for a Kubernetes DaemonSet (packaging/kubernetes).
+        beat-sensor-oci = import ./packaging/kubernetes/image.nix {
+          inherit pkgs sensor sensorBin probe libbpfTools; tools = wasm.tools;
+        };
         wasm-tools = wasm.tools; # every tool behind pipe(), one directory
         wasm-demo = wasm.demo;
         wasm-coreutils = wasm.coreutils;
