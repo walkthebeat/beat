@@ -5,6 +5,7 @@
 //!               [--label k=v]... [--osqueryi PATH] [--journalctl PATH] [--bpf-tools DIR] [--tcpdump PATH]
 //!               [--placeholders DIR | --no-sandbox] [--question-user NAME]
 //!               [--concurrency N] [--unit-property P]... [--systemd DIR]
+//!               [--bwrap PATH --setpriv PATH --seccomp FILE --seccomp-capture FILE --host-root DIR --question-uid N]
 //!   beat-sensor keygen FILE     creates the sensor's signing key when missing; prints its public key (to enroll)
 //!   beat-sensor enroll --api URL [--name NAME] [--key FILE]
 //!                               asks the service to admit this sensor; waits for a member's approval (enroll.rs)
@@ -35,8 +36,12 @@
 //! `question_user` says which).
 //! --systemd: the directory of the host's systemd-run and systemctl, /usr/bin by default (NixOS: the systemd
 //! package's bin; the NixOS module passes it).
+//! --bwrap ...: questions and the walk sandboxed by bubblewrap in a cgroup of the sensor's own, not in systemd units:
+//! a sensor in a Kubernetes pod (bwrap.rs, packaging/kubernetes). --host-root is the host's / in the pod; questions
+//! run as --question-uid, capture()'s tcpdump as the next uid.
 
 mod aws;
+mod bwrap;
 mod bus;
 mod capture;
 mod configure;
@@ -98,6 +103,9 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
     let (mut bpf_tools, mut unit_props, mut systemd) = (None, vec![], PathBuf::from("/usr/bin"));
     let mut tcpdump: Option<PathBuf> = None;
     let mut question_user: Option<String> = None;
+    // --bwrap (bwrap.rs): a sensor in a pod sandboxes questions itself.
+    let (mut bwrap, mut setpriv, mut seccomp, mut host_root, mut question_uid) = (None, None, None, None, None);
+    let mut seccomp_capture = None;
     let (mut key, mut roots, mut collector, mut deny_file) = (None, None, None, None);
     let mut labels = serde_json::Map::new();
     let mut concurrency = 2;
@@ -117,6 +125,12 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
             "--bpf-tools" => bpf_tools = Some(PathBuf::from(val()?)),
             "--tcpdump" => tcpdump = Some(PathBuf::from(val()?)),
             "--question-user" => question_user = Some(val()?),
+            "--bwrap" => bwrap = Some(PathBuf::from(val()?)),
+            "--setpriv" => setpriv = Some(PathBuf::from(val()?)),
+            "--seccomp" => seccomp = Some(PathBuf::from(val()?)),
+            "--seccomp-capture" => seccomp_capture = Some(PathBuf::from(val()?)),
+            "--host-root" => host_root = Some(PathBuf::from(val()?)),
+            "--question-uid" => question_uid = Some(val()?.parse::<u32>().context("--question-uid")?),
             "--placeholders" => placeholders = Some(PathBuf::from(val()?)),
             "--no-sandbox" => no_sandbox = true,
             "--key" => key = Some(PathBuf::from(val()?)),
@@ -148,8 +162,27 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
         (None, true) => None,
         _ => bail!("give exactly one of --placeholders DIR and --no-sandbox"),
     };
-    let question_user = question_user.filter(|_| sandbox.is_some()).and_then(|u| runner::question_user(&u)
-        .map_err(|e| eprintln!("--question-user {u}: {e}; questions run as root")).ok());
+    let bwrap = match bwrap {
+        Some(b) if sandbox.is_some() => {
+            let bw = bwrap::Bwrap {
+                bwrap: b, setpriv: setpriv.context("--bwrap needs --setpriv")?, seccomp: seccomp.context("--bwrap needs --seccomp")?,
+                seccomp_capture: seccomp_capture.context("--bwrap needs --seccomp-capture")?,
+                host: host_root.context("--bwrap needs --host-root: the host's / in the pod")?, cgroup: PathBuf::from("/sys/fs/cgroup"),
+            };
+            bw.init().map_err(|e| anyhow::anyhow!("--bwrap: {e}"))?;
+            Some(std::sync::Arc::new(bw))
+        }
+        _ => None,
+    };
+    // Under --bwrap the question's user is a number: the pod has no account for it, and the host's is not needed.
+    let question_user = match (&bwrap, question_uid) {
+        (Some(_), Some(uid)) => Some((question_user.clone().unwrap_or_else(|| "beat-question".into()), uid)),
+        _ => question_user.filter(|_| sandbox.is_some()).and_then(|u| runner::question_user(&u)
+            .map_err(|e| eprintln!("--question-user {u}: {e}; questions run as root")).ok()),
+    };
+    // capture()'s tcpdump under --bwrap: in a sandbox of its own, as the user after the questions' (a unit's
+    // DynamicUser= on a host).
+    let capture_as = bwrap.clone().zip(question_uid.map(|u| u + 1));
     let key = key.context("--key is required (beat-sensor keygen FILE creates one)")?;
     let roots = roots.context("--roots is required: the directory of the org roots' public keys")?;
     seal::read_keys(&roots).context("--roots")?;
@@ -180,8 +213,12 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
             journalctl,
             bpf_tools,
             // capture() needs the sandbox's units: without them (--no-sandbox) there is no broker.
-            capture: tcpdump.filter(|_| sandbox.is_some()).map(|t| std::sync::Arc::new(capture::Broker::new(
-                t, systemd.clone(), unit_props.clone(), vec![key.clone()], PathBuf::from(runner::RUN_DIR)))),
+            capture: tcpdump.filter(|_| sandbox.is_some()).map(|t| {
+                let mut b = capture::Broker::new(t, systemd.clone(), unit_props.clone(), vec![key.clone()],
+                                                 PathBuf::from(runner::RUN_DIR));
+                b.bwrap = capture_as;
+                std::sync::Arc::new(b)
+            }),
             sandbox,
             secret_mounts_denied: Default::default(),
             hide: vec![key.clone()],
@@ -191,6 +228,7 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
             walk_error: Default::default(),
             uncovered: Default::default(),
             question_user,
+            bwrap,
         },
     })
 }

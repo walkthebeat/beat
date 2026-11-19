@@ -126,6 +126,31 @@ A question is a Starlark program (`docs/probes.md`) run by `beat-probe` in a tra
   belongs to that user, mode 0600. The root-test `question_network` runs as both: as root it stops a unit, as
   `beat-question` it cannot.
 
+## A sensor in a Kubernetes pod
+
+On Kubernetes the sensor is a DaemonSet (`packaging/kubernetes`, `docs/guide/kubernetes.md`), and the host's systemd
+is not its to command. So the sensor makes each question's sandbox itself (`sensor/src/bwrap.rs`, `--bwrap`), with
+the same properties as the unit above:
+
+| Unit (above) | In the pod |
+| --- | --- |
+| The host's file system, read-only | bubblewrap: each top-level entry of the host's `/` (a read-only hostPath) bound read-only into a new root, which is then made read-only; the sensor's own `/nix` added for its programs |
+| `PrivateTmp`, `PrivateDevices`, `ProtectKernelTunables` | a private `/tmp`, a minimal `/dev`, `/proc/sys` read-only |
+| Netlink and unix sockets only | a seccomp filter: `socket()` and `socketpair()` with any other family fail. A question that calls `capture()` gets no network at all |
+| `beat-question` with two capabilities ambient | `setpriv`: an unprivileged uid (`--question-uid`), no groups, `no_new_privs`, the same capabilities as ambient, inheritable and bounding set, `CAP_BPF` and `CAP_PERFMON` added only for a `trace()` entry |
+| `MemoryMax`, `TasksMax`, `CPUQuota`, `RuntimeMaxSec` | a cgroup per question under the pod's own: `memory.max` (no swap), `pids.max`, `cpu.max`, killed whole at the time limit. Questions count against the pod's limits |
+| `InaccessiblePaths` (the sensor's key) | an empty file or directory bound over it |
+| Placeholders over secret files | the same placeholders, bound over each (not over a symbolic link: the file it leads to is covered on its own) |
+| `capture()`'s tcpdump unit | tcpdump in a sandbox of its own: the next uid, `CAP_NET_RAW` only, packet and unix sockets only, the send calls refused |
+
+What the pod is given, and why: the host's PID and network namespaces and its `/` read-only, so questions see the
+host as they do without Kubernetes; `privileged`, to make mount namespaces and cgroups for each question. That is root
+on the node, as the host install is, and needs a namespace that allows privileged pods. It needs no API access
+(`automountServiceAccountToken: false`): its only token is the projected one it enrols with (audience
+`beat-enroll`, an hour). Its key and state are in `/var/lib/beat-sensor` on the node, so a restarted pod is the same
+sensor. The regression test (`debugging_regression_bwrap`) runs the same reads, refusals and probes under this sandbox
+as under units.
+
 ## Secrets
 
 - **Placeholders.** The unit binds a placeholder over each secret file (keys, keytabs, credential caches,
@@ -150,6 +175,10 @@ A question is a Starlark program (`docs/probes.md`) run by `beat-probe` in a tra
     left out.
   - **Paths systemd cannot express** (a quote or a control character in the name) get no placeholder, and are reported
     the same way.
+  - **Kubernetes credentials** are secret wherever the sensor runs: every pod's mounted Secrets and projected volumes
+    (service-account tokens) under `/var/lib/kubelet/pods`, `/var/run/secrets` and `/run/secrets` (as a container sees
+    them, through `/proc/<pid>/root`), the kubelet's and control plane's keys and kubeconfigs, etcd's data, and k3s's
+    (`/etc/rancher/k3s/k3s.yaml`, its server token, TLS and database). Their placeholders come from the live check.
   - `/proc/*/environ` is not enumerated: `read()` refuses it, and so does each other way there (below).
 - **Processes' environments.** A question gets them through `environ(pid)`: every variable's name; the value of a short
   list of names known not to be secrets (`PATH`, `PYTHONPATH`, `CLASSPATH`, `LD_LIBRARY_PATH`, `JAVA_HOME`, `LANG`,

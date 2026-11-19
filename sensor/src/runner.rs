@@ -59,6 +59,9 @@ pub struct Runner {
     /// took a question's commands (docs/security.md). As this user, with its two capabilities ambient, it reads as
     /// before and D-Bus answers it as an unprivileged caller.
     pub question_user: Option<(String, u32)>,
+    /// Questions and the walk sandboxed by bubblewrap instead of systemd units (bwrap.rs: a sensor in a pod). The
+    /// host's / is then `bwrap.host`, for the live check and its re-check of the walk's files.
+    pub bwrap: Option<Arc<crate::bwrap::Bwrap>>,
 }
 
 /// The question user, looked up (getent: every NSS source; /etc/passwd when getent is not on PATH, NixOS). The sensor's
@@ -340,6 +343,31 @@ impl Runner {
             }
             _ => None,
         };
+        if let Some(bw) = &self.bwrap {
+            phases.prepare_ms.store(preparing.elapsed().as_millis() as u64, Ordering::Relaxed);
+            let started = Instant::now();
+            let binds = if mounts {
+                q.secrets.iter().map(|s| (q.placeholders.join(if s.dir { "dir" } else { "file" }), s.path.clone())).collect()
+            } else { Vec::new() };
+            let caps: Vec<String> = BASE_CAPS.split(' ').map(String::from).chain(q.caps.iter().cloned()).collect();
+            let hidden = self.hide.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\n");
+            let mut env = vec![("HOME".into(), "/tmp".into()), ("LANG".into(), "C.UTF-8".into()),
+                               ("BEAT_SECRETS_FILE".into(), meta.display().to_string()), ("BEAT_HIDDEN".into(), hidden)];
+            if _broker.is_some() {
+                env.push(("BEAT_CAPTURE".into(), socket.display().to_string()));
+            }
+            let spec = crate::bwrap::Spec { capture: false,
+                argv: &probe, uid: self.question_user.as_ref().map(|(_, u)| *u), caps, private_net: q.capture, binds,
+                hide: &self.hide, env, limits: crate::bwrap::Limits { memory: MEMORY_MAX, tasks: 64, cpu: 100 },
+                timeout: Duration::from_secs(timeout_s), stdin: Some(&input), stdout: &output, stderr: &error,
+            };
+            let ended = bw.run(&spec).await?;
+            phases.unit_ms.store(started.elapsed().as_millis() as u64, Ordering::Relaxed);
+            let stdout = tokio::fs::read(&output).await.unwrap_or_default();
+            let stderr = tokio::fs::read(&error).await.unwrap_or_default();
+            return Ok((Exit { stdout, stderr, status: status_text(ended.code), result: ended.result.into(),
+                              memory_peak: ended.memory_peak }, ended.code));
+        }
         let argv = self.sandboxed(probe, timeout_s, name, [&input, &output, &error, &meta], if mounts { binds } else { Vec::new() },
                                   &unit, q.caps, _broker.as_ref().map(|_| socket.as_path()));
         let size: usize = argv.iter().map(|a| a.len() + 1).sum();
@@ -446,6 +474,28 @@ impl Runner {
         let file = |ext: &str| Path::new(RUN_DIR).join(format!("{id}.{ext}"));
         let (output, error) = (file("walk"), file("walk-err"));
         let _cleanup = TempFiles(vec![output.clone(), error.clone()]);
+        let walk = [self.probe.display().to_string(), "secrets".into(), "--walk".into(), "--map".into(), "/".into(),
+                    "--budget-s".into(), WALK_BUDGET_S.to_string()];
+        if let Some(bw) = &self.bwrap {
+            let spec = crate::bwrap::Spec { capture: false,
+                argv: &walk, uid: self.question_user.as_ref().map(|(_, u)| *u),
+                caps: BASE_CAPS.split(' ').map(String::from).collect(), private_net: true, binds: Vec::new(),
+                hide: &self.hide, env: vec![("HOME".into(), "/tmp".into())],
+                limits: crate::bwrap::Limits { memory: "256M", tasks: 8, cpu: 25 },
+                timeout: Duration::from_secs(WALK_BUDGET_S + 60), stdin: None, stdout: &output, stderr: &error,
+            };
+            let ended = bw.run(&spec).await?;
+            let stdout = tokio::fs::read(&output).await.unwrap_or_default();
+            if ended.result != "success" {
+                let err = tokio::fs::read(&error).await.unwrap_or_default();
+                return Err(format!("{} ({}): {}", status_text(ended.code), ended.result, String::from_utf8_lossy(&err).trim()));
+            }
+            let (secrets, scan) = parse_secrets(&stdout);
+            if scan.is_null() {
+                return Err("no report from beat-probe secrets --walk".into());
+            }
+            return Ok(Walked { when: Instant::now(), at: crate::iso_now(), secrets, scan });
+        }
         let mut argv: Vec<String> = ["--quiet", "--wait", "--collect", "--service-type=exec"].iter().map(|s| s.to_string()).collect();
         argv.push(format!("--unit={unit}"));
         argv.push("--description=beat secret walk".into());
@@ -463,8 +513,7 @@ impl Runner {
         for p in props {
             argv.extend(["-p".into(), p]);
         }
-        argv.extend([self.probe.display().to_string(), "secrets".into(), "--walk".into(), "--map".into(), "/".into(),
-                     "--budget-s".into(), WALK_BUDGET_S.to_string()]);
+        argv.extend(walk);
         let run = Command::new(self.systemd.join("systemd-run")).args(&argv).stdin(Stdio::null()).kill_on_drop(true).output();
         let run = tokio::time::timeout(Duration::from_secs(WALK_BUDGET_S + 90), run).await
             .map_err(|_| "its unit did not end within its limit".to_string())?
@@ -502,7 +551,8 @@ impl Runner {
                 "the sensor's look for secret files is {} s old, over its {} s limit: a question does not run without a \
                  recent one. The last attempt: {why}", latest.when.elapsed().as_secs(), WALK_MAX_AGE.as_secs())));
         }
-        let run = Command::new(&self.probe).args(["secrets", "--live", "--map", "/"]).env_remove("BEAT_SECRETS_FILE")
+        let root = self.host_root();
+        let run = Command::new(&self.probe).args(["secrets", "--live", "--map", "/", "--root"]).arg(&root).env_remove("BEAT_SECRETS_FILE")
             .stdin(Stdio::null()).kill_on_drop(true).output();
         let out = tokio::time::timeout(LIVE_TIMEOUT, run).await
             .map_err(|_| refuse(format!(
@@ -515,7 +565,7 @@ impl Runner {
         // A cached path may be gone or changed: binding over a missing path makes systemd create it on the host, and a
         // directory over a file fails the unit (226, as a refused mount looks). So each is looked at again, cheaply.
         let cached = latest.secrets.clone();
-        let still = tokio::task::spawn_blocking(move || still_there(cached));
+        let still = tokio::task::spawn_blocking(move || still_there(&root, cached));
         let still = tokio::time::timeout(LIVE_TIMEOUT, still).await
             .map_err(|_| refuse(format!(
                 "the check for secret files did not finish in {} s (a stalled disk?): the question was not run", LIVE_TIMEOUT.as_secs())))?
@@ -546,6 +596,11 @@ impl Runner {
 
     /// The sandbox this sensor's questions get: "full", "no-secret-mounts" (see secret_mounts_denied) or "none".
     /// Who questions run as, for the heartbeat.
+    /// The host's / as this sensor sees it: / on a host, the pod's mount of it under --bwrap.
+    fn host_root(&self) -> PathBuf {
+        self.bwrap.as_ref().map_or_else(|| PathBuf::from("/"), |b| b.host.clone())
+    }
+
     pub fn question_user_name(&self) -> &str {
         self.question_user.as_ref().map_or("root", |(u, _)| u)
     }
@@ -634,9 +689,9 @@ fn pairs(v: &Value) -> Vec<(String, String)> {
 }
 
 /// Those that still exist and are still what they were.
-fn still_there(files: Vec<SecretFile>) -> Vec<SecretFile> {
+fn still_there(root: &Path, files: Vec<SecretFile>) -> Vec<SecretFile> {
     files.into_iter()
-        .filter(|f| std::fs::symlink_metadata(&f.path).is_ok_and(|m| m.is_dir() == f.dir))
+        .filter(|f| std::fs::symlink_metadata(root.join(f.path.trim_start_matches('/'))).is_ok_and(|m| m.is_dir() == f.dir))
         .collect()
 }
 
@@ -778,7 +833,7 @@ mod tests {
         std::fs::write(&here, "x").unwrap();
         let mut as_dir = file(here.to_str().unwrap());
         as_dir.dir = true;
-        let kept = still_there(vec![file(here.to_str().unwrap()), file(gone.to_str().unwrap()), as_dir]);
+        let kept = still_there(Path::new("/"), vec![file(here.to_str().unwrap()), file(gone.to_str().unwrap()), as_dir]);
         assert_eq!(kept.len(), 1, "a gone file, and a file that was a directory, drop out");
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -798,7 +853,7 @@ mod tests {
         Runner {
             probe, tools: "/nonexistent".into(), cache: "/nonexistent".into(), osqueryi: None, journalctl: None, bpf_tools: None, capture: None,
             sandbox: Some("/nonexistent".into()), secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
-            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: None,
+            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: None, bwrap: None,
         }
     }
 
@@ -877,7 +932,7 @@ mod tests {
             osqueryi: None, journalctl: None, bpf_tools: None, capture: None, sandbox: Some(ph),
             secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
             systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(),
-            uncovered: Default::default(), question_user: test_user(),
+            uncovered: Default::default(), question_user: test_user(), bwrap: None,
         });
         let walking = runner.clone();
         tokio::spawn(async move { walking.walk_forever().await });
@@ -929,7 +984,7 @@ mod tests {
             osqueryi: None, journalctl: None, bpf_tools: None, capture: Some(Arc::new(broker)), sandbox: Some(ph),
             secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
             systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(),
-            uncovered: Default::default(), question_user: test_user(),
+            uncovered: Default::default(), question_user: test_user(), bwrap: None,
         });
         let walking = runner.clone();
         tokio::spawn(async move { walking.walk_forever().await });
@@ -1015,7 +1070,7 @@ mod tests {
         let runner = Runner {
             probe: "/nonexistent".into(), tools: "/nonexistent".into(), cache: "/nonexistent".into(), osqueryi: None, journalctl: None,
             bpf_tools: None, capture: None, sandbox: None, secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
-            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: test_user(),
+            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: test_user(), bwrap: None,
         };
         // On the host: a TCP listener, an abstract unix socket (what a host-namespace question must not reach) and a
         // path one.
@@ -1131,9 +1186,31 @@ print("nic", "{nic}:" in open("/proc/net/dev").read())
     /// first away unnoticed. Real units, real tools, real osquery, the default pack. Needs root and systemd:
     /// sudo env BEAT_TEST_PROBE=... BEAT_TEST_TOOLS=... BEAT_TEST_CACHE=... BEAT_TEST_OSQUERYI=... BEAT_TEST_PACK=src/beat/pack
     ///   <the test binary> debugging_regression --ignored --nocapture
+    /// The same under bubblewrap (a sensor in a pod, bwrap.rs), on this host as its own pod would see it (its / at /,
+    /// its cgroup a child of the root): debugging_regression_bwrap, with BEAT_TEST_BWRAP, BEAT_TEST_SETPRIV and
+    /// BEAT_TEST_SECCOMP (a directory with `question` and `capture`, packaging/kubernetes/seccomp.c) also set.
     #[tokio::test(flavor = "multi_thread")]
     #[ignore]
     async fn debugging_regression() {
+        regression(None).await
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore]
+    async fn debugging_regression_bwrap() {
+        let var = |k: &str| PathBuf::from(std::env::var(k).unwrap_or_else(|_| panic!("{k}")));
+        let seccomp = var("BEAT_TEST_SECCOMP");
+        let cgroup = PathBuf::from(format!("/sys/fs/cgroup/beat-regression-{}", std::process::id()));
+        let bw = crate::bwrap::Bwrap { bwrap: var("BEAT_TEST_BWRAP"), setpriv: var("BEAT_TEST_SETPRIV"),
+                                       seccomp: seccomp.join("question"), seccomp_capture: seccomp.join("capture"),
+                                       host: "/".into(), cgroup: cgroup.clone() };
+        bw.init().unwrap();
+        regression(Some(Arc::new(bw))).await;
+        let _ = std::fs::remove_dir(cgroup.join("sensor"));
+        let _ = std::fs::remove_dir(&cgroup);
+    }
+
+    async fn regression(bwrap: Option<Arc<crate::bwrap::Bwrap>>) {
         use std::os::fd::AsRawFd;
         let var = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("{k}"));
         let me = std::process::id();
@@ -1152,7 +1229,7 @@ print("nic", "{nic}:" in open("/proc/net/dev").read())
             probe: var("BEAT_TEST_PROBE").into(), tools: var("BEAT_TEST_TOOLS").into(), cache: var("BEAT_TEST_CACHE").into(),
             osqueryi: Some(var("BEAT_TEST_OSQUERYI").into()), journalctl: Some("/usr/bin/journalctl".into()), bpf_tools: None, capture: None,
             sandbox: Some(ph), secret_mounts_denied: Default::default(), hide: vec![key.clone()], unit_props: Vec::new(),
-            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: test_user(),
+            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: test_user(), bwrap,
         });
         let walking = runner.clone();
         tokio::spawn(async move { walking.walk_forever().await });

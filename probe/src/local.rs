@@ -43,6 +43,14 @@ pub const SECRET_GLOBS: &[&str] = &[
     "/proc/*/mem", "/proc/*/task/*/mem",
     // The sensor's own keys: hidden from questions' mounts, and reachable through /proc/<pid>/root but for this.
     SENSOR_KEYS,
+    // Kubernetes on the node: every pod's mounted Secrets and service-account tokens (projected volumes hold the
+    // token; their other files, the cluster CA and namespace, are covered with it), what a container sees of them
+    // (through /proc/<pid>/root), the kubelet's and the control plane's credentials, the cluster's store; k3s's own.
+    "/var/lib/kubelet/pods/*/volumes/kubernetes.io~secret", "/var/lib/kubelet/pods/*/volumes/kubernetes.io~projected",
+    "/var/run/secrets", "/run/secrets", "/var/lib/kubelet/pki", "/etc/kubernetes/pki", "/etc/kubernetes/*.conf",
+    "/var/lib/etcd", "/etc/rancher/k3s/k3s.yaml", "/var/lib/rancher/k3s/server/tls", "/var/lib/rancher/k3s/server/cred",
+    "/var/lib/rancher/k3s/server/db", "/var/lib/rancher/k3s/server/token", "/var/lib/rancher/k3s/server/node-token",
+    "/var/lib/rancher/k3s/server/agent-token", "/var/lib/rancher/k3s/agent/*.key", "/var/lib/rancher/k3s/agent/*.kubeconfig",
 ];
 const SENSOR_KEYS: &str = "/var/lib/beat-sensor/keys";
 /// How many /proc doors one path may go through, each inside the last: /proc/1/root/proc/1/root/... Past this: refused.
@@ -160,11 +168,14 @@ pub struct LocalHost {
     pruned: RefCell<HashMap<String, String>>,
     /// The mount points `pruned` actually stopped at.
     pruned_hit: RefCell<Vec<(String, String)>>,
+    /// --root is not this process's /: the host's, seen from a pod (mount_table).
+    other_root: bool,
 }
 
 impl LocalHost {
     pub fn new(c: LocalConfig) -> anyhow::Result<LocalHost> {
         let LocalConfig { root, maps: guest_dirs, tools, limits, osqueryi, journalctl, bpf_tools } = c;
+        let other_root = root != Path::new("/");
         let mut maps = Vec::new();
         for g in &guest_dirs {
             let guest = normalize(g).ok_or_else(|| anyhow::anyhow!("mapped directory must be absolute: {g}"))?;
@@ -184,7 +195,7 @@ impl LocalHost {
             journal: journalctl.map(|journalctl| Journal { journalctl }),
             bpf_tools,
             users: HashMap::new(), groups: HashMap::new(), notes: RefCell::new(Vec::new()), prepared: OnceCell::new(),
-            pruned: RefCell::new(HashMap::new()), pruned_hit: RefCell::new(Vec::new()),
+            pruned: RefCell::new(HashMap::new()), pruned_hit: RefCell::new(Vec::new()), other_root,
         };
         h.users = h.id_names("/etc/passwd");
         h.groups = h.id_names("/etc/group");
@@ -527,8 +538,11 @@ impl LocalHost {
         Some(copies)
     }
 
+    /// The mounts of the tree being looked at: this process's, or under another --root (a sensor in a pod, whose own
+    /// / is its image's overlay, with the host's at --root and the host's PIDs) the host's PID 1's.
     fn mount_table(&self) -> Vec<(String, String)> {
-        self.text("/proc/self/mountinfo").map(|t| scan::parse_mountinfo(&t)).unwrap_or_default()
+        let table = if self.other_root { "/proc/1/mountinfo" } else { "/proc/self/mountinfo" };
+        self.text(table).map(|t| scan::parse_mountinfo(&t)).unwrap_or_default()
     }
 
     fn secret_of(&self, p: String) -> Option<Secret> {
@@ -889,7 +903,7 @@ mod scan_tests {
     #[test]
     fn the_live_check_takes_fixed_paths_only_and_keeps_off_network_mounts() {
         let (root, h) = host(&["etc/shadow", "etc/deep/a.key", "root/.ssh/id", "home/a/.ssh/id",
-                               "proc/self/mountinfo=1 2 0:1 / /home rw - nfs4 s:/h rw\n"]);
+                               "proc/1/mountinfo=1 2 0:1 / /home rw - nfs4 s:/h rw\n"]);
         let (list, skipped) = h.secrets_live().unwrap();
         let paths: Vec<&str> = list.iter().map(|s| s.path.as_str()).collect();
         assert_eq!(paths, ["/etc/shadow", "/root/.ssh"]);
@@ -910,6 +924,23 @@ mod scan_tests {
         assert_eq!(r.skipped, [("/opt/dock".to_string(), "Docker data root".to_string()),
                                ("/var/lib/docker".to_string(), "Docker data root".to_string())]);
         assert!(h.is_secret("/opt/dock/layer/c.key"), "not walked, but read() still refuses it");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_kubernetes_nodes_credentials_are_secret() {
+        let pod = "var/lib/kubelet/pods/0b1c/volumes";
+        let (root, h) = host(&[&format!("{pod}/kubernetes.io~projected/kube-api-access-x/token"),
+                               &format!("{pod}/kubernetes.io~secret/db/password"), &format!("{pod}/kubernetes.io~configmap/c/app.conf"),
+                               "var/lib/rancher/k3s/server/token", "etc/rancher/k3s/k3s.yaml"]);
+        let (live, _) = h.secrets_live().unwrap();
+        let paths: Vec<&str> = live.iter().map(|s| s.path.as_str()).collect();
+        assert!(paths.contains(&"/var/lib/kubelet/pods/0b1c/volumes/kubernetes.io~projected"), "{paths:?}");
+        assert!(paths.contains(&"/var/lib/kubelet/pods/0b1c/volumes/kubernetes.io~secret"), "{paths:?}");
+        assert!(h.is_secret("/var/lib/kubelet/pods/0b1c/volumes/kubernetes.io~projected/kube-api-access-x/token"));
+        assert!(h.is_secret("/var/run/secrets/kubernetes.io/serviceaccount/token"));
+        assert!(h.is_secret("/var/lib/rancher/k3s/server/token") && h.is_secret("/etc/rancher/k3s/k3s.yaml"));
+        assert!(!h.is_secret("/var/lib/kubelet/pods/0b1c/volumes/kubernetes.io~configmap/c/app.conf"), "a ConfigMap is not");
         std::fs::remove_dir_all(root).unwrap();
     }
 

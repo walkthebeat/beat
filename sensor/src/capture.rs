@@ -286,6 +286,8 @@ pub struct Broker {
     pub run_dir: PathBuf,
     pub net: Box<dyn Net + Send + Sync>,
     busy: tokio::sync::Mutex<()>,
+    /// tcpdump in a bubblewrap sandbox instead of a unit (a sensor in a pod, bwrap.rs), as this user.
+    pub bwrap: Option<(std::sync::Arc<crate::bwrap::Bwrap>, u32)>,
 }
 
 /// Stops a capture unit that is still running when its capture is abandoned (the question ended, the sensor erred).
@@ -316,7 +318,7 @@ impl Drop for Removed {
 
 impl Broker {
     pub fn new(tcpdump: PathBuf, systemd: PathBuf, unit_props: Vec<String>, hide: Vec<PathBuf>, run_dir: PathBuf) -> Broker {
-        Broker { tcpdump, systemd, unit_props, hide, run_dir, net: Box::new(HostNet), busy: Default::default() }
+        Broker { tcpdump, systemd, unit_props, hide, run_dir, net: Box::new(HostNet), busy: Default::default(), bwrap: None }
     }
 
     /// A question's socket: its requests one after the other until the question ends (the task is dropped with it).
@@ -357,10 +359,28 @@ impl Broker {
             .mode(0o600).open(&pcap).map_err(|e| format!("{}: {e}", pcap.display()))?;
         let mut stream = Growing { file, read: 0, punched: 0, ended: false };
         let unit = format!("beat-capture-{id}");
-        let argv = self.argv(&req, &filter, &unit, &pcap, &err);
-        let mut child = Command::new(&argv[0]).args(&argv[1..]).stdin(Stdio::null()).stdout(Stdio::null())
-            .stderr(Stdio::piped()).kill_on_drop(true).spawn().map_err(|e| format!("cannot start {}: {e}", argv[0]))?;
-        let mut running = Running { systemctl: self.systemd.join("systemctl"), unit: unit.clone(), done: false };
+        let (mut child, sandbox) = match &self.bwrap {
+            // tcpdump alone, in the host's network (the pod's): CAP_NET_RAW, packet and unix sockets, no send calls
+            // (the capture filter, seccomp.c); the host's files read-only; stdout the pcap file, as the unit's.
+            Some((bw, uid)) => {
+                let argv = self.tcpdump_argv(&req, &filter);
+                let spec = crate::bwrap::Spec {
+                    argv: &argv, capture: true, uid: Some(*uid), caps: vec!["CAP_NET_RAW".into()], private_net: false,
+                    binds: Vec::new(), hide: &self.hide, env: vec![("HOME".into(), "/tmp".into())],
+                    limits: crate::bwrap::Limits { memory: "256M", tasks: 4, cpu: 50 },
+                    timeout: Duration::from_secs(req.seconds + MARGIN_S), stdin: None, stdout: &pcap, stderr: &err,
+                };
+                let r = bw.spawn(&spec)?;
+                (r.child, Some(r.sandbox))
+            }
+            None => {
+                let argv = self.argv(&req, &filter, &unit, &pcap, &err);
+                let child = Command::new(&argv[0]).args(&argv[1..]).stdin(Stdio::null()).stdout(Stdio::null())
+                    .stderr(Stdio::piped()).kill_on_drop(true).spawn().map_err(|e| format!("cannot start {}: {e}", argv[0]))?;
+                (child, None)
+            }
+        };
+        let mut running = Running { systemctl: self.systemd.join("systemctl"), unit: unit.clone(), done: sandbox.is_some() };
         let started = Instant::now();
 
         // tcpdump's first bytes (the pcap header) once it opened the interface. If it fails first (or systemd could
@@ -386,7 +406,7 @@ impl Broker {
             if !chunk.is_empty() && !gone && end != "bytes" {
                 if bytes + chunk.len() as u64 > MAX_BYTES {
                     end = "bytes";
-                    stopping = self.stop(&unit, stopping).await;
+                    stopping = self.stop(&unit, sandbox.as_ref(), stopping).await;
                 } else {
                     bytes += chunk.len() as u64;
                     let mut frame = (chunk.len() as u32).to_be_bytes().to_vec();
@@ -395,7 +415,7 @@ impl Broker {
                         // The question went away: stop, and drain so tcpdump is not blocked on a full socket.
                         gone = true;
                         end = "gone";
-                        stopping = self.stop(&unit, stopping).await;
+                        stopping = self.stop(&unit, sandbox.as_ref(), stopping).await;
                     }
                 }
             }
@@ -407,7 +427,7 @@ impl Broker {
                 },
                 _ = tokio::time::sleep_until(until), if !stopping => {
                     end = "time";
-                    stopping = self.stop(&unit, stopping).await;
+                    stopping = self.stop(&unit, sandbox.as_ref(), stopping).await;
                     chunk = Vec::new();
                 }
             }
@@ -433,7 +453,13 @@ impl Broker {
     /// SIGINT to tcpdump: it flushes what it buffered, prints its counts and exits. To the whole unit (tcpdump is all
     /// it runs): `--kill-whom=` is systemd 252's name, 249 knows only `--kill-who=` and refused the call, and the
     /// capture then ran to RuntimeMaxSec (api-1, Ubuntu 22.04, 2026-11-11).
-    async fn stop(&self, unit: &str, already: bool) -> bool {
+    async fn stop(&self, unit: &str, sandbox: Option<&crate::bwrap::Sandbox>, already: bool) -> bool {
+        if let Some(sb) = sandbox {
+            if !already {
+                sb.signal("tcpdump", libc::SIGINT);
+            }
+            return true;
+        }
         if !already {
             let _ = Command::new(self.systemd.join("systemctl")).args(["kill", "--signal=SIGINT", unit])
                 .stdin(Stdio::null()).output().await;
@@ -455,7 +481,12 @@ impl Broker {
         for p in props {
             argv.extend(["-p".into(), p]);
         }
-        argv.push(self.tcpdump.display().to_string());
+        argv.extend(self.tcpdump_argv(req, filter));
+        argv
+    }
+
+    fn tcpdump_argv(&self, req: &Request, filter: &str) -> Vec<String> {
+        let mut argv = vec![self.tcpdump.display().to_string()];
         // -p: not promiscuous (the host's own traffic); -n: no lookups; -U: each packet written when captured.
         argv.extend(["-i".into(), req.interface.clone(), "-p".into(), "-n".into(), "-U".into(),
                      "-s".into(), req.view.snaplen().to_string(), "-w".into(), "-".into()]);
