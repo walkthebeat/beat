@@ -120,6 +120,11 @@ impl Bwrap {
         a.extend(["--ro-bind", "/nix", "/nix", "--proc", "/proc", "--ro-bind", "/proc/sys", "/proc/sys",
                   "--dev", "/dev", "--perms", "1777", "--tmpfs", "/tmp"].map(String::from));
         for (src, dst) in &s.binds {
+            // Not under another bind: that one's placeholder directory has emptied it, so there is no file left to
+            // mount over (the live check gives /etc/ssl/private, the walk the key in it; Ubuntu 24.04, 2026-11-19).
+            if s.binds.iter().any(|(_, outer)| outer != dst && Path::new(dst).starts_with(outer)) {
+                continue;
+            }
             // Not over a link: bwrap cannot mount there; the file it leads to is covered on its own when it is secret,
             // and beat-probe refuses a link by where it leads either way.
             let on_host = self.host.join(dst.trim_start_matches('/'));
@@ -329,5 +334,19 @@ mod tests {
                             --inh-caps=-all,+dac_read_search,+bpf --ambient-caps=-all,+dac_read_search,+bpf \
                             --bounding-set=-all,+dac_read_search,+bpf -- /p/beat-probe run -"), "{a}");
         assert!(!a.contains("--unshare-net"), "{a}");
+    }
+
+    #[test]
+    fn a_secret_under_a_secret_directory_is_left_to_the_directory() {
+        let argv = vec!["/p/beat-probe".to_string()];
+        let binds = vec![("/ph/dir".into(), "/etc/ssl/private".into()), ("/ph/file".into(), "/etc/ssl/private/k.key".into()),
+                         ("/ph/file".into(), "/etc/ssl/private2".into())];
+        let s = Spec { argv: &argv, capture: false, uid: None, caps: vec![], private_net: false, binds, hide: &[], env: vec![],
+                       limits: Limits { memory: "1G", tasks: 64, cpu: 100 }, timeout: Duration::from_secs(1),
+                       stdin: None, stdout: Path::new("/o"), stderr: Path::new("/e") };
+        let a = bw().argv(&s).join(" ");
+        assert!(a.contains("--ro-bind-try /ph/dir /etc/ssl/private "), "{a}");
+        assert!(a.contains("--ro-bind-try /ph/file /etc/ssl/private2 "), "{a}");
+        assert!(!a.contains("k.key"), "{a}");
     }
 }
