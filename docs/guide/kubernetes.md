@@ -39,12 +39,13 @@ Then, signed in as a member of your org:
 ```
 beat org trust add my-cluster --issuer ISSUER --jwks cluster-jwks.json \
   --claim kubernetes.io/namespace=beat --claim kubernetes.io/serviceaccount/name=beat-sensor \
-  --name-from kubernetes.io/node/name
+  --sensor-name '{policy}_{kubernetes.io/node/name}'
 ```
 
 `--jwks` pins the keys, for an issuer the service cannot reach (most clusters); an issuer on the internet (EKS, GKE,
 AKS) can leave it out. The two claims say which workload may be a sensor: any pod can get a token for itself, and
-only the `beat-sensor` service account in `beat` is one. When the cluster rotates its signing keys, run the command
+only the `beat-sensor` service account in `beat` is one. Each sensor is named after its cluster and its node,
+`my-cluster_ip-10-0-1-17`: node names repeat across clusters, and a node name never holds `_`. When the cluster rotates its signing keys, run the command
 again with the new keys.
 
 ## 3. Apply
@@ -55,7 +56,7 @@ yours. Then:
 
 ```
 kubectl apply -f beat-sensor.yaml
-kubectl -n beat logs ds/beat-sensor     # "Enrolled by trust policy my-cluster: <node> is enrolled"
+kubectl -n beat logs ds/beat-sensor     # "Enrolled by trust policy my-cluster: my-cluster_<node> is enrolled"
 beat sensors                            # one per node, labelled cluster=my-cluster platform=kubernetes
 ```
 

@@ -94,7 +94,7 @@ def _main() -> None:
                         "keep in your password manager; this laptop certified with it); the org's settings at the "
                         "service: `org trust` lists its trust policies, which "
                         "admit sensors by an identity their platform gives them (docs/security.md H13); `org trust add "
-                        "NAME --issuer URL --name-from CLAIM`, `org trust remove NAME`")
+                        "NAME --issuer URL --name-from CLAIM | --sensor-name TEMPLATE`, `org trust remove NAME`")
     og.add_argument("what", choices=["init", "trust", "list", "pin"], help="also `list`: the orgs signed in on this "
                     "machine; `pin [ID]`: pin this estate repository to an org (beat.json, committed)")
     og.add_argument("--keep", action="store_true", help="init: also keep the root on this machine (BEAT_KEYS/org): "
@@ -110,6 +110,9 @@ def _main() -> None:
     og.add_argument("--any-workload", action="store_true", help="add: no --claim: every workload the issuer "
                     "vouches for may be a sensor (in Kubernetes, any pod can get such a token for itself)")
     og.add_argument("--name-from", help="add: the claim that names the sensor, e.g. kubernetes.io/node/name")
+    og.add_argument("--sensor-name", metavar="TEMPLATE", help="add, instead of --name-from: claims in braces, "
+                    "{policy} for the policy's name, other text as it is: {policy}_{kubernetes.io/node/name} names a "
+                    "cluster's node sensors my-cluster_<node>")
     og.add_argument("--jwks", metavar="FILE", help="add: the issuer's public keys (JWKS), for an issuer the service "
                     "cannot reach; default: its discovery document")
     rp = sub.add_parser("report", help="tell walkthebeat something is wrong with beat: `draft` writes it here and sends "
@@ -699,7 +702,7 @@ def _trust(a) -> None:
         policies = asyncio.run(ask.api("trust.list"))["policies"]
         for p in policies:
             claims = " ".join(f"{k}={v}" for k, v in p["claims"].items())
-            print(f"{p['name']}  {p['kind']}  {p['issuer']}  aud {p['audience']}  name from {p['name_from']}  "
+            print(f"{p['name']}  {p['kind']}  {p['issuer']}  aud {p['audience']}  named {p.get('sensor_name') or '{' + p['name_from'] + '}'}  "
                   f"keys {p['keys']}  {claims or 'ANY WORKLOAD'}  (by {p['by']})".replace("    ", "  "))
         if not policies:
             print("no trust policy: sensors enrol by approval or rollout token (beat org trust add NAME --issuer ...)")
@@ -711,8 +714,9 @@ def _trust(a) -> None:
         print(f"removed trust policy {a.name}: no sensor enrols by it from now on; the ones it enrolled stay "
               "(beat sensors remove NAME)")
         return
-    if not a.issuer or not a.name_from:
-        raise SystemExit("error: beat org trust add NAME --issuer URL --name-from CLAIM --claim PATH=VALUE... "
+    if not a.issuer or bool(a.name_from) == bool(a.sensor_name):
+        raise SystemExit("error: beat org trust add NAME --issuer URL --name-from CLAIM | --sensor-name TEMPLATE "
+                         "--claim PATH=VALUE... "
                          "[--audience AUD] [--jwks FILE] (or --any-workload instead of --claim)")
     claims = {}
     for c in a.claim:
@@ -721,7 +725,7 @@ def _trust(a) -> None:
             raise SystemExit(f"error: --claim {c}: PATH=VALUE")
         claims[k] = v
     body = {"name": a.name, "issuer": a.issuer, "audience": a.audience, "claims": claims, "name_from": a.name_from,
-            "any_workload": a.any_workload}
+            "sensor_name": a.sensor_name, "any_workload": a.any_workload}
     if a.jwks:
         with open(a.jwks) as f:
             body["jwks"] = json.load(f)
@@ -729,7 +733,7 @@ def _trust(a) -> None:
     print(f"trust policy {p['name']}: sensors with a token from {p['issuer']} for audience {p['audience']}"
           + (f", with {', '.join(f'{k}={v}' for k, v in p['claims'].items())}" if p["claims"]
              else ", from ANY workload it vouches for")
-          + f", enrol at once, named by {p['name_from']} (keys: {p['keys']}).")
+          + f", enrol at once, named {p.get('sensor_name') or 'by ' + p['name_from']} (keys: {p['keys']}).")
     print("The configure line for those hosts: beat sensors add --attest oidc:FILE (FILE: where the platform puts "
           "the token), or --attest aws on EC2")
 
