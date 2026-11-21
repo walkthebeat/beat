@@ -17,11 +17,21 @@ let
       --replace-fail @tcpdump@ ${pkgs.tcpdump}/bin/tcpdump
     chmod +x $out
   '';
+  # The cluster sensor's (beat-cluster.yaml): the Deployment runs /bin/beat-cluster.
+  clusterEntrypoint = pkgs.runCommand "beat-cluster-entrypoint" { } ''
+    mkdir -p $out/bin
+    substitute ${./entrypoint-cluster.sh} $out/bin/beat-cluster --replace-fail @shell@ ${pkgs.runtimeShell} \
+      --replace-fail @path@ ${pkgs.lib.makeBinPath [ pkgs.coreutils ]} --replace-fail @cacert@ ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt \
+      --replace-fail @probe@ ${probe}/bin/beat-probe --replace-fail @tools@ ${tools} \
+      --replace-fail @sensor@ ${sensorBin} --replace-fail @version@ ${version} \
+      --replace-fail @seccomp_cluster@ ${seccomp}/cluster
+    chmod +x $out/bin/beat-cluster
+  '';
 in
 pkgs.dockerTools.streamLayeredImage {
   name = "walkthebeat/beat-sensor";
   tag = builtins.replaceStrings [ "+" ] [ "-" ] version;  # a tag cannot hold "+"
-  contents = [ pkgs.cacert ];
+  contents = [ pkgs.cacert clusterEntrypoint ];
   # bwrap makes each question's root on a tmpfs at /tmp; configure writes /etc/beat-sensor.env and /etc/beat-sensor/.
   extraCommands = "mkdir -m 1777 tmp; mkdir -p etc run var/lib";
   config = {
