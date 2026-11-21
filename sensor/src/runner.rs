@@ -1442,14 +1442,16 @@ print("nic", "{nic}:" in open("/proc/net/dev").read())
             if text.contains(leak) { bad.push(format!("leaked {leak}")); }
         }
 
-        // The default pack: every probe runs and answers, and the listeners map sockets to processes.
+        // The default pack: every host probe runs and answers, and the listeners map sockets to processes.
         let pack = PathBuf::from(var("BEAT_TEST_PACK"));
         let mut names = 0;
         for f in std::fs::read_dir(&pack).unwrap().flatten() {
             let (p, name) = (f.path(), f.file_name().to_string_lossy().into_owned());
             if !name.ends_with(".star") { continue; }
-            names += 1;
             let src = std::fs::read_to_string(&p).unwrap();
+            // The cluster's API probes are the cluster sensor's (estate.asks_api); landlock_questions asks k8s().
+            if src.lines().any(|l| !l.trim_start().starts_with('#') && l.contains("k8s(")) { continue; }
+            names += 1;
             match runner.run(&name, &src, 120, &Phases::default(), false).await {
                 Ok(a) => {
                     let n = a["records"].as_array().map_or(0, Vec::len);
@@ -1467,7 +1469,7 @@ print("nic", "{nic}:" in open("/proc/net/dev").read())
                 Err(e) => bad.push(format!("pack {name}: {}: {}", e.kind, e.message)),
             }
         }
-        if names != 7 { bad.push(format!("the default pack has {names} probes, this test expected 7")); }
+        if names != 7 { bad.push(format!("the default pack has {names} probes, this test expected 7 host probes")); }
 
         let _ = other.kill();
         let _ = other.wait();
