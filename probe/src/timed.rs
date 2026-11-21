@@ -96,6 +96,9 @@ impl Host for Timed {
     fn environ(&self, pid: u32) -> HostResult<Vec<(String, String)>> {
         self.time("environ", || pid.to_string(), || self.inner.environ(pid))
     }
+    fn k8s(&self, q: &crate::k8s::Query) -> HostResult<Vec<Value>> {
+        self.time("k8s", || format!("{q:?}"), || self.inner.k8s(q))
+    }
     fn journal(&self, opts: &JournalOptions) -> HostResult<Vec<Value>> {
         let what = || {
             let mut w = Vec::new();

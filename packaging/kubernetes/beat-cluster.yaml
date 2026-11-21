@@ -1,6 +1,7 @@
 # beat's cluster sensor: one per cluster, beside the node sensors (beat-sensor.yaml, whose namespace and ConfigMap it
-# uses). It will answer what only the cluster's API knows (pending pods, events, rollouts); for now it answers
-# questions with no host behind them. Before applying: a trust policy of its own, for its service account:
+# uses). It answers what only the cluster's API knows (pending pods, events, rollouts): it watches the API with the
+# read-only ClusterRole below and questions read its snapshot with k8s() (sensor/src/kube.rs). Before applying: a trust
+# policy of its own, for its service account:
 #
 #   beat org trust add my-cluster-api --issuer ISSUER [--jwks cluster-jwks.json] \
 #     --claim kubernetes.io/namespace=beat --claim kubernetes.io/serviceaccount/name=beat-cluster \
@@ -9,12 +10,35 @@
 # What it is given, and why: nothing beyond an ordinary pod. Not privileged, no host namespace or path, not root, every
 # capability dropped, the runtime's seccomp and AppArmor profiles (Pod Security "restricted"). Each question is
 # sandboxed by Landlock and seccomp inside it (sensor/src/landlock.rs): its programs readable, nothing else; no socket.
+# Its API token is the sensor's alone: a question cannot open it, and gets the snapshot as files already open.
+# The ClusterRole reads no Secrets and no ConfigMaps; pod specs it reads carry env values, which k8s() gives questions
+# as environ() does (names known to be safe, the rest a keyed hash).
 # /etc and /var/lib/beat-sensor are emptyDirs: configure writes there as no root, and a new pod enrols a new key under
 # the same name.
 apiVersion: v1
 kind: ServiceAccount
 metadata: {name: beat-cluster, namespace: beat}
-automountServiceAccountToken: false   # its enrolment token is projected below; no API token yet
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: beat-cluster}
+rules:   # what kube.rs RESOURCES watches: get, list, watch; nothing that writes, no Secrets, no ConfigMaps
+- apiGroups: [""]
+  resources: [pods, events, nodes, namespaces, services, persistentvolumeclaims, persistentvolumes, resourcequotas, limitranges]
+  verbs: [get, list, watch]
+- {apiGroups: [apps], resources: [deployments, replicasets, statefulsets, daemonsets], verbs: [get, list, watch]}
+- {apiGroups: [batch], resources: [jobs, cronjobs], verbs: [get, list, watch]}
+- {apiGroups: [discovery.k8s.io], resources: [endpointslices], verbs: [get, list, watch]}
+- {apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [get, list, watch]}
+- {apiGroups: [policy], resources: [poddisruptionbudgets], verbs: [get, list, watch]}
+- {apiGroups: [storage.k8s.io], resources: [storageclasses], verbs: [get, list, watch]}
+- {apiGroups: [scheduling.k8s.io], resources: [priorityclasses], verbs: [get, list, watch]}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: beat-cluster}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: beat-cluster}
+subjects: [{kind: ServiceAccount, name: beat-cluster, namespace: beat}]
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -27,6 +51,7 @@ spec:
     metadata: {labels: {app: beat-cluster}}
     spec:
       serviceAccountName: beat-cluster
+      automountServiceAccountToken: true   # the API token, for the watch
       priorityClassName: system-cluster-critical   # it must outlive the trouble it is asked about
       tolerations: [{operator: Exists}]
       securityContext:

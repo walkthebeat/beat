@@ -151,6 +151,30 @@ on the node, as the host install is, and needs a namespace that allows privilege
 sensor. The regression test (`debugging_regression_bwrap`) runs the same reads, refusals and probes under this sandbox
 as under units.
 
+### The cluster sensor
+
+What only the cluster's API knows (a Pending pod, Events, rollouts, quotas) is answered by one more sensor per cluster
+(`packaging/kubernetes/beat-cluster.yaml`), an ordinary pod: not privileged, not root, every capability dropped, the
+runtime's seccomp and AppArmor profiles, read-only root (Pod Security "restricted"). It has no host to read, and
+bubblewrap cannot work there (it needs those profiles off), so each question is sandboxed without privilege
+(`sensor/src/landlock.rs`, `--landlock`):
+
+| Unit (above) | In the cluster sensor |
+| --- | --- |
+| The host's file system, read-only | Landlock: read and execute under `/nix` (its programs) and the tools and their cache; nothing else opens, nothing is written |
+| Netlink and unix sockets only | seccomp: `socket()` and `socketpair()` fail for every family. No network |
+| `beat-question` | the sensor's own uid with `no_new_privs`; on Landlock ABI 6 and later (Linux 6.12), signals and abstract sockets scoped to the question. Before that a question could signal the sensor |
+| `MemoryMax`, `RuntimeMaxSec` | no cgroup per question: beat-probe's own limits, the container's memory limit, the sensor's deadline kill. `RLIMIT_FSIZE` 0, `RLIMIT_CORE` 0 |
+| `InaccessiblePaths` (the sensor's key) | outside Landlock's paths, as is the API token |
+
+A kernel without Landlock (before 5.13, or with it disabled) refuses to start the sensor.
+
+It reads the API with a ClusterRole of `get`, `list` and `watch` on the kinds it keeps (`sensor/src/kube.rs`): no
+verb that writes, no Secrets, no ConfigMaps. Pod specs carry env values in plain text, so `k8s()` gives a question
+each container env value as `environ()` gives a process's: names known to be safe shown, the others a token that
+becomes a keyed hash at the collector. Command lines and annotations are passed as the API has them. The question
+gets the snapshot as files the sensor opened for it, so it needs neither the token nor network.
+
 ## Secrets
 
 - **Placeholders.** The unit binds a placeholder over each secret file (keys, keytabs, credential caches,

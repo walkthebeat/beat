@@ -6,7 +6,7 @@
 //!               [--placeholders DIR | --no-sandbox] [--question-user NAME]
 //!               [--concurrency N] [--unit-property P]... [--systemd DIR]
 //!               [--bwrap PATH --setpriv PATH --seccomp FILE --seccomp-capture FILE --host-root DIR --question-uid N]
-//!               [--landlock --seccomp FILE]
+//!               [--landlock --seccomp FILE] [--kube DIR]
 //!   beat-sensor keygen FILE     creates the sensor's signing key when missing; prints its public key (to enroll)
 //!   beat-sensor enroll --api URL [--name NAME] [--key FILE]
 //!                               asks the service to admit this sensor; waits for a member's approval (enroll.rs)
@@ -43,6 +43,8 @@
 //! --landlock (instead of --placeholders or --no-sandbox): questions sandboxed with no privilege (landlock.rs), for a
 //! sensor in a pod that is not privileged, the cluster sensor; --seccomp is then packaging/kubernetes/seccomp.c's
 //! `cluster` filter (no socket). No secret walk, no capture(), no host tools: there is no host to read.
+//! --kube DIR: the cluster sensor watches the cluster's API with its service account and keeps the objects in DIR,
+//! given to each question as open files for k8s() (kube.rs).
 
 mod aws;
 mod bwrap;
@@ -50,6 +52,7 @@ mod bus;
 mod capture;
 mod configure;
 mod enroll;
+mod kube;
 mod landlock;
 mod runner;
 mod seal;
@@ -111,6 +114,7 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
     // --bwrap (bwrap.rs): a sensor in a pod sandboxes questions itself.
     let (mut bwrap, mut setpriv, mut seccomp, mut host_root, mut question_uid) = (None, None, None, None, None);
     let mut landlock = false;
+    let mut kube: Option<PathBuf> = None;
     let mut seccomp_capture = None;
     let (mut key, mut roots, mut collector, mut deny_file) = (None, None, None, None);
     let mut labels = serde_json::Map::new();
@@ -140,6 +144,7 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
             "--placeholders" => placeholders = Some(PathBuf::from(val()?)),
             "--no-sandbox" => no_sandbox = true,
             "--landlock" => landlock = true,
+            "--kube" => kube = Some(PathBuf::from(val()?)),
             "--key" => key = Some(PathBuf::from(val()?)),
             "--roots" => roots = Some(PathBuf::from(val()?)),
             "--deny" => deny_file = Some(PathBuf::from(val()?)),
@@ -229,6 +234,7 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
             tools,
             cache,
             landlock,
+            kube,
             osqueryi,
             journalctl,
             bpf_tools,
@@ -654,6 +660,10 @@ async fn main() -> anyhow::Result<()> {
         return tokio::task::block_in_place(|| configure::run(&argv[1..], &VERSION));
     }
     let cfg = Arc::new(parse(&argv)?);
+    if let Some(dir) = &cfg.runner.kube {
+        kube::start(dir).map_err(|e| anyhow::anyhow!("--kube: {e}"))?;
+        eprintln!("watching the cluster's API: {} kinds in {}", kube::RESOURCES.len(), dir.display());
+    }
     // Its own login (bus.rs): a JWT for its key from the API, renewed at half life, handed over at every connection.
     let slot: bus::Slot = Arc::new(std::sync::Mutex::new(
         bus::first(cfg.api.clone(), cfg.key.clone(), cfg.name.clone()).await));

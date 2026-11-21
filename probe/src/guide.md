@@ -71,6 +71,16 @@ beat-sensor: leave them out of unit and process lists, or every run looks like a
                                       (at most 60): .seconds (measured) .before .after ({path: content}); for
                                       counters in /proc and /sys. A process gone by then is missing from .after.
 
+Kubernetes, on the cluster sensor (<cluster>_api; node sensors answer for their node's processes and files):
+  k8s(kind, namespace=, name=, selector=) -> list[dict]   objects of a kind as the API gives them, from the sensor's
+                                      watch: Pod Event Node Namespace Service PersistentVolumeClaim PersistentVolume
+                                      ResourceQuota LimitRange Deployment ReplicaSet StatefulSet DaemonSet Job CronJob
+                                      EndpointSlice HorizontalPodAutoscaler PodDisruptionBudget StorageClass
+                                      PriorityClass. selector as kubectl -l takes it. Container env values as
+                                      environ() gives them (.value or .hash). No Secrets, no ConfigMaps. For a
+                                      Pending pod, start from its PodScheduled condition and its Events: the cluster's
+                                      own message says where to look (nodes, requests, taints, the PVC, the quota)
+
 Performance, Gregg's 60-second checklist and the USE method (utilization, saturation, errors per resource):
   checklist(seconds=5, top=10, cgroup_depth=4) -> dict   one interval, as uptime, vmstat, mpstat, pidstat, iostat
                                       -xz, free, sar -n DEV and sar -n TCP,ETCP would show it, plus pressure (PSI)

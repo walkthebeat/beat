@@ -64,6 +64,8 @@ pub struct Runner {
     pub bwrap: Option<Arc<crate::bwrap::Bwrap>>,
     /// Questions sandboxed without privileges (landlock.rs: the cluster sensor). With `sandbox` None.
     pub landlock: Option<Arc<crate::landlock::Landlock>>,
+    /// The cluster's API snapshot (kube.rs), handed to each question as open files: the cluster sensor.
+    pub kube: Option<PathBuf>,
 }
 
 /// The question user, looked up (getent: every NSS source; /etc/passwd when getent is not on PATH, NixOS). The sensor's
@@ -240,7 +242,7 @@ impl Runner {
                 phases.run_ms.store(ran.elapsed().as_millis() as u64, Ordering::Relaxed);
                 x?
             }
-            None => run_piped(probe, source, timeout_s, self.landlock.clone()).await?,
+            None => run_piped(probe, source, timeout_s, self.landlock.clone(), self.kube.as_deref()).await?,
         };
         if let Ok(v) = serde_json::from_slice::<Value>(&x.stdout) {
             *phases.probe.lock().unwrap() = v.get("timings").cloned();
@@ -755,17 +757,34 @@ async fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
 }
 
 /// The probe as a direct child, over pipes: sandboxed by Landlock and seccomp (--landlock), or not at all
-/// (--no-sandbox: development).
-async fn run_piped(argv: Vec<String>, source: &str, timeout_s: u64, landlock: Option<Arc<crate::landlock::Landlock>>)
-                   -> Result<Exit, String> {
+/// (--no-sandbox: development). With `kube`, the snapshot's files are open in it (BEAT_K8S: Kind=fd ...): Landlock
+/// checks a file when it is opened, so the question reads these and cannot open the directory itself.
+async fn run_piped(argv: Vec<String>, source: &str, timeout_s: u64, landlock: Option<Arc<crate::landlock::Landlock>>,
+                   kube: Option<&Path>) -> Result<Exit, String> {
     let mut cmd = Command::new(&argv[0]);
     cmd.args(&argv[1..]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
-    if let Some(l) = landlock {
+    if landlock.is_some() {
         cmd.env_clear().env("HOME", "/tmp").env("LANG", "C.UTF-8");
-        // Safety: apply() makes only system calls (setrlimit, prctl, landlock_restrict_self) on what new() prepared.
-        unsafe { cmd.pre_exec(move || l.apply()); }
+    }
+    let files = kube.map(crate::kube::open).unwrap_or_default();
+    let fds: Vec<i32> = files.iter().map(|(_, f)| std::os::fd::AsRawFd::as_raw_fd(f)).collect();
+    if kube.is_some() {
+        cmd.env("BEAT_K8S", files.iter().map(|(k, f)| format!("{k}={}", std::os::fd::AsRawFd::as_raw_fd(f)))
+            .collect::<Vec<_>>().join(" "));
+    }
+    // Safety: only system calls (fcntl, setrlimit, prctl, landlock_restrict_self) on what was prepared before fork.
+    unsafe {
+        cmd.pre_exec(move || {
+            for fd in &fds {
+                if libc::fcntl(*fd, libc::F_SETFD, 0) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+            }
+            landlock.as_ref().map_or(Ok(()), |l| l.apply())
+        });
     }
     let mut child = cmd.spawn().map_err(|e| format!("cannot start {}: {e}", argv[0]))?;
+    drop(files);
     let mut stdin = child.stdin.take().expect("piped stdin");
     let src = source.as_bytes().to_vec();
     tokio::spawn(async move {
@@ -863,7 +882,7 @@ mod tests {
         Runner {
             probe, tools: "/nonexistent".into(), cache: "/nonexistent".into(), osqueryi: None, journalctl: None, bpf_tools: None, capture: None,
             sandbox: Some("/nonexistent".into()), secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
-            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: None, bwrap: None, landlock: None,
+            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: None, bwrap: None, landlock: None, kube: None,
         }
     }
 
@@ -941,7 +960,15 @@ mod tests {
         assert!(warm.status.success(), "beat-probe tools: {}", String::from_utf8_lossy(&warm.stderr));
         let l = crate::landlock::Landlock::new(&["/nix".into(), tools.clone(), cache.clone()], &seccomp).unwrap();
         println!("Landlock ABI {}", l.abi);
-        let runner = Runner { tools, cache, sandbox: None, landlock: Some(Arc::new(l)), ..runner_with(var("BEAT_TEST_PROBE").into()) };
+        // A cluster snapshot as kube.rs writes it: given to the question as open files, its directory out of reach.
+        let snap = std::env::temp_dir().join(format!("beat-landlock-kube-{}", std::process::id()));
+        std::fs::create_dir_all(&snap).unwrap();
+        std::fs::write(snap.join("Pod.json"), concat!("{\"kind\":\"Pod\",\"synced\":1,\"error\":null,\"count\":2}\n",
+            "{\"metadata\":{\"name\":\"web-1\",\"namespace\":\"shop\",\"labels\":{\"app\":\"web\"}},",
+            "\"spec\":{\"containers\":[{\"name\":\"c\",\"env\":[{\"name\":\"DB_PASS\",\"value\":\"hunter2\"}]}]}}\n",
+            "{\"metadata\":{\"name\":\"db-1\",\"namespace\":\"shop\",\"labels\":{\"app\":\"db\"}}}\n")).unwrap();
+        let runner = Runner { tools, cache, sandbox: None, landlock: Some(Arc::new(l)), kube: Some(snap.clone()),
+                              ..runner_with(var("BEAT_TEST_PROBE").into()) };
         assert_eq!(runner.sandbox_mode(), "landlock");
         let ask = |src: &'static str| { let r = &runner; async move {
             r.run("t.star", src, 60, &Phases::default(), false).await.unwrap_or_else(|e| panic!("{}: {}", e.kind, e.message)) } };
@@ -959,6 +986,17 @@ mod tests {
             assert_ne!(v["outcome"], "ok", "{path}: {text}");
         }
         std::fs::remove_file(&secret).unwrap();
+        let v = ask(concat!("def main() -> None:\n    pods = k8s(\"pod\", namespace = \"shop\", selector = \"app=web\")\n",
+                            "    emit(\"a\", \"b\", \"%d %s\" % (len(pods), pods[0][\"spec\"][\"containers\"][0][\"env\"][0][\"hash\"]), \"test\")\n")).await;
+        let text = v.to_string();
+        println!("k8s(): {}", &text[..text.len().min(400)]);
+        assert_eq!(v["outcome"], "ok", "{text}");
+        assert!(text.contains("1 beat-env-value:") && !text.contains("hunter2"), "{text}");
+        let src: &'static str = Box::leak(format!("def main() -> None:\n    emit(\"a\", \"b\", \"c\", read({:?}))\n",
+                                                  snap.join("Pod.json").display().to_string()).into_boxed_str());
+        let v = ask(src).await;
+        assert!(v["outcome"] != "ok" && !v.to_string().contains("hunter2"), "the snapshot's directory is out of reach: {v}");
+        std::fs::remove_dir_all(&snap).unwrap();
         // No socket of any family: a shell from /nix (readable) under the same sandbox.
         let sh = std::env::var("BEAT_TEST_SHELL").unwrap_or_else(|_| "bash".into());
         for (what, cmd) in [("tcp", "exec 3<>/dev/tcp/127.0.0.1/22"), ("udp", "exec 3<>/dev/udp/127.0.0.1/53")] {
@@ -990,7 +1028,7 @@ mod tests {
             osqueryi: None, journalctl: None, bpf_tools: None, capture: None, sandbox: Some(ph),
             secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
             systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(),
-            uncovered: Default::default(), question_user: test_user(), bwrap: None, landlock: None,
+            uncovered: Default::default(), question_user: test_user(), bwrap: None, landlock: None, kube: None,
         });
         let walking = runner.clone();
         tokio::spawn(async move { walking.walk_forever().await });
@@ -1042,7 +1080,7 @@ mod tests {
             osqueryi: None, journalctl: None, bpf_tools: None, capture: Some(Arc::new(broker)), sandbox: Some(ph),
             secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
             systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(),
-            uncovered: Default::default(), question_user: test_user(), bwrap: None, landlock: None,
+            uncovered: Default::default(), question_user: test_user(), bwrap: None, landlock: None, kube: None,
         });
         let walking = runner.clone();
         tokio::spawn(async move { walking.walk_forever().await });
@@ -1128,7 +1166,7 @@ mod tests {
         let runner = Runner {
             probe: "/nonexistent".into(), tools: "/nonexistent".into(), cache: "/nonexistent".into(), osqueryi: None, journalctl: None,
             bpf_tools: None, capture: None, sandbox: None, secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
-            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: test_user(), bwrap: None, landlock: None,
+            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: test_user(), bwrap: None, landlock: None, kube: None,
         };
         // On the host: a TCP listener, an abstract unix socket (what a host-namespace question must not reach) and a
         // path one.
@@ -1287,7 +1325,7 @@ print("nic", "{nic}:" in open("/proc/net/dev").read())
             probe: var("BEAT_TEST_PROBE").into(), tools: var("BEAT_TEST_TOOLS").into(), cache: var("BEAT_TEST_CACHE").into(),
             osqueryi: Some(var("BEAT_TEST_OSQUERYI").into()), journalctl: Some("/usr/bin/journalctl".into()), bpf_tools: None, capture: None,
             sandbox: Some(ph), secret_mounts_denied: Default::default(), hide: vec![key.clone()], unit_props: Vec::new(),
-            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: test_user(), bwrap, landlock: None,
+            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: test_user(), bwrap, landlock: None, kube: None,
         });
         let walking = runner.clone();
         tokio::spawn(async move { walking.walk_forever().await });
