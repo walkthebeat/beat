@@ -6,6 +6,7 @@
 //!               [--placeholders DIR | --no-sandbox] [--question-user NAME]
 //!               [--concurrency N] [--unit-property P]... [--systemd DIR]
 //!               [--bwrap PATH --setpriv PATH --seccomp FILE --seccomp-capture FILE --host-root DIR --question-uid N]
+//!               [--landlock --seccomp FILE]
 //!   beat-sensor keygen FILE     creates the sensor's signing key when missing; prints its public key (to enroll)
 //!   beat-sensor enroll --api URL [--name NAME] [--key FILE]
 //!                               asks the service to admit this sensor; waits for a member's approval (enroll.rs)
@@ -39,6 +40,9 @@
 //! --bwrap ...: questions and the walk sandboxed by bubblewrap in a cgroup of the sensor's own, not in systemd units:
 //! a sensor in a Kubernetes pod (bwrap.rs, packaging/kubernetes). --host-root is the host's / in the pod; questions
 //! run as --question-uid, capture()'s tcpdump as the next uid.
+//! --landlock (instead of --placeholders or --no-sandbox): questions sandboxed with no privilege (landlock.rs), for a
+//! sensor in a pod that is not privileged, the cluster sensor; --seccomp is then packaging/kubernetes/seccomp.c's
+//! `cluster` filter (no socket). No secret walk, no capture(), no host tools: there is no host to read.
 
 mod aws;
 mod bwrap;
@@ -46,6 +50,7 @@ mod bus;
 mod capture;
 mod configure;
 mod enroll;
+mod landlock;
 mod runner;
 mod seal;
 mod wire;
@@ -105,6 +110,7 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
     let mut question_user: Option<String> = None;
     // --bwrap (bwrap.rs): a sensor in a pod sandboxes questions itself.
     let (mut bwrap, mut setpriv, mut seccomp, mut host_root, mut question_uid) = (None, None, None, None, None);
+    let mut landlock = false;
     let mut seccomp_capture = None;
     let (mut key, mut roots, mut collector, mut deny_file) = (None, None, None, None);
     let mut labels = serde_json::Map::new();
@@ -133,6 +139,7 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
             "--question-uid" => question_uid = Some(val()?.parse::<u32>().context("--question-uid")?),
             "--placeholders" => placeholders = Some(PathBuf::from(val()?)),
             "--no-sandbox" => no_sandbox = true,
+            "--landlock" => landlock = true,
             "--key" => key = Some(PathBuf::from(val()?)),
             "--roots" => roots = Some(PathBuf::from(val()?)),
             "--deny" => deny_file = Some(PathBuf::from(val()?)),
@@ -157,10 +164,22 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
     if name.is_empty() || name.contains(['.', ' ', '*', '>']) {
         bail!("sensor name {name:?} cannot be a NATS subject token");
     }
-    let sandbox = match (placeholders, no_sandbox) {
-        (Some(p), false) => Some(p),
-        (None, true) => None,
-        _ => bail!("give exactly one of --placeholders DIR and --no-sandbox"),
+    let sandbox = match (placeholders, no_sandbox, landlock) {
+        (Some(p), false, false) => Some(p),
+        (None, true, false) | (None, false, true) => None,
+        _ => bail!("give exactly one of --placeholders DIR, --landlock and --no-sandbox"),
+    };
+    let cache = cache.context("--cache is required")?;
+    let tools = tools.context("--tools is required")?;
+    let landlock = match landlock {
+        true => {
+            let seccomp = seccomp.clone().context("--landlock needs --seccomp FILE (seccomp.c's `cluster` filter)")?;
+            let l = landlock::Landlock::new(&[PathBuf::from("/nix"), tools.clone(), cache.clone()], &seccomp)
+                .map_err(|e| anyhow::anyhow!("--landlock: {e}"))?;
+            eprintln!("questions sandboxed by Landlock (ABI {}) and seccomp, without privileges", l.abi);
+            Some(std::sync::Arc::new(l))
+        }
+        false => None,
     };
     let bwrap = match bwrap {
         Some(b) if sandbox.is_some() => {
@@ -207,8 +226,9 @@ fn parse(argv: &[String]) -> anyhow::Result<Config> {
         version,
         runner: Runner {
             probe: probe.context("--probe is required")?,
-            tools: tools.context("--tools is required")?,
-            cache: cache.context("--cache is required")?,
+            tools,
+            cache,
+            landlock,
             osqueryi,
             journalctl,
             bpf_tools,

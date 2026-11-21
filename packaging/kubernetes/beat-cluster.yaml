@@ -1,0 +1,62 @@
+# beat's cluster sensor: one per cluster, beside the node sensors (beat-sensor.yaml, whose namespace and ConfigMap it
+# uses). It will answer what only the cluster's API knows (pending pods, events, rollouts); for now it answers
+# questions with no host behind them. Before applying: a trust policy of its own, for its service account:
+#
+#   beat org trust add my-cluster-api --issuer ISSUER [--jwks cluster-jwks.json] \
+#     --claim kubernetes.io/namespace=beat --claim kubernetes.io/serviceaccount/name=beat-cluster \
+#     --sensor-name my-cluster_api
+#
+# What it is given, and why: nothing beyond an ordinary pod. Not privileged, no host namespace or path, not root, every
+# capability dropped, the runtime's seccomp and AppArmor profiles (Pod Security "restricted"). Each question is
+# sandboxed by Landlock and seccomp inside it (sensor/src/landlock.rs): its programs readable, nothing else; no socket.
+# /etc and /var/lib/beat-sensor are emptyDirs: configure writes there as no root, and a new pod enrols a new key under
+# the same name.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: beat-cluster, namespace: beat}
+automountServiceAccountToken: false   # its enrolment token is projected below; no API token yet
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: beat-cluster, namespace: beat}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}           # never two pods under one name
+  selector: {matchLabels: {app: beat-cluster}}
+  template:
+    metadata: {labels: {app: beat-cluster}}
+    spec:
+      serviceAccountName: beat-cluster
+      priorityClassName: system-cluster-critical   # it must outlive the trouble it is asked about
+      tolerations: [{operator: Exists}]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+      - name: sensor
+        image: walkthebeat/beat-sensor:VERSION
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/beat-cluster"]
+        envFrom: [{configMapRef: {name: beat-sensor}}]
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+        resources:
+          requests: {cpu: 20m, memory: 64Mi}
+          limits: {memory: 1Gi}        # no cgroup per question here: this is every question's backstop
+        volumeMounts:
+        - {name: etc, mountPath: /etc}
+        - {name: state, mountPath: /var/lib/beat-sensor}
+        - {name: tmp, mountPath: /tmp}
+        - {name: token, mountPath: /var/run/secrets/beat, readOnly: true}
+      volumes:
+      - {name: etc, emptyDir: {}}
+      - {name: state, emptyDir: {}}
+      - {name: tmp, emptyDir: {}}
+      - name: token
+        projected:
+          sources:
+          - serviceAccountToken: {audience: beat-enroll, expirationSeconds: 3600, path: token}

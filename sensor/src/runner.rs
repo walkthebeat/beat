@@ -62,6 +62,8 @@ pub struct Runner {
     /// Questions and the walk sandboxed by bubblewrap instead of systemd units (bwrap.rs: a sensor in a pod). The
     /// host's / is then `bwrap.host`, for the live check and its re-check of the walk's files.
     pub bwrap: Option<Arc<crate::bwrap::Bwrap>>,
+    /// Questions sandboxed without privileges (landlock.rs: the cluster sensor). With `sandbox` None.
+    pub landlock: Option<Arc<crate::landlock::Landlock>>,
 }
 
 /// The question user, looked up (getent: every NSS source; /etc/passwd when getent is not on PATH, NixOS). The sensor's
@@ -238,7 +240,7 @@ impl Runner {
                 phases.run_ms.store(ran.elapsed().as_millis() as u64, Ordering::Relaxed);
                 x?
             }
-            None => run_piped(probe, source, timeout_s).await?,
+            None => run_piped(probe, source, timeout_s, self.landlock.clone()).await?,
         };
         if let Ok(v) = serde_json::from_slice::<Value>(&x.stdout) {
             *phases.probe.lock().unwrap() = v.get("timings").cloned();
@@ -607,6 +609,7 @@ impl Runner {
 
     pub fn sandbox_mode(&self) -> &'static str {
         match (&self.sandbox, self.secret_mounts_denied.load(Ordering::Relaxed)) {
+            (None, _) if self.landlock.is_some() => "landlock",
             (None, _) => "none",
             (Some(_), false) => "full",
             (Some(_), true) => "no-secret-mounts",
@@ -751,11 +754,18 @@ async fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
     f.write_all(text.as_bytes()).await
 }
 
-/// The probe as a direct child, over pipes (--no-sandbox: development).
-async fn run_piped(argv: Vec<String>, source: &str, timeout_s: u64) -> Result<Exit, String> {
-    let mut child = Command::new(&argv[0])
-        .args(&argv[1..]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true)
-        .spawn().map_err(|e| format!("cannot start {}: {e}", argv[0]))?;
+/// The probe as a direct child, over pipes: sandboxed by Landlock and seccomp (--landlock), or not at all
+/// (--no-sandbox: development).
+async fn run_piped(argv: Vec<String>, source: &str, timeout_s: u64, landlock: Option<Arc<crate::landlock::Landlock>>)
+                   -> Result<Exit, String> {
+    let mut cmd = Command::new(&argv[0]);
+    cmd.args(&argv[1..]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+    if let Some(l) = landlock {
+        cmd.env_clear().env("HOME", "/tmp").env("LANG", "C.UTF-8");
+        // Safety: apply() makes only system calls (setrlimit, prctl, landlock_restrict_self) on what new() prepared.
+        unsafe { cmd.pre_exec(move || l.apply()); }
+    }
+    let mut child = cmd.spawn().map_err(|e| format!("cannot start {}: {e}", argv[0]))?;
     let mut stdin = child.stdin.take().expect("piped stdin");
     let src = source.as_bytes().to_vec();
     tokio::spawn(async move {
@@ -853,7 +863,7 @@ mod tests {
         Runner {
             probe, tools: "/nonexistent".into(), cache: "/nonexistent".into(), osqueryi: None, journalctl: None, bpf_tools: None, capture: None,
             sandbox: Some("/nonexistent".into()), secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
-            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: None, bwrap: None,
+            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: None, bwrap: None, landlock: None,
         }
     }
 
@@ -916,6 +926,54 @@ mod tests {
         assert_eq!(scan.cut_root.as_deref(), Some("/var/lib"));
     }
 
+    /// A real question under --landlock (landlock.rs), as the cluster sensor runs it: no root, no systemd. BEAT_TEST_PROBE,
+    /// BEAT_TEST_TOOLS, BEAT_TEST_CACHE as below; BEAT_TEST_SECCOMP the filters' directory (its `cluster`).
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore]
+    async fn landlock_questions() {
+        let var = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("{k}"));
+        let (tools, cache): (PathBuf, PathBuf) = (var("BEAT_TEST_TOOLS").into(), var("BEAT_TEST_CACHE").into());
+        let seccomp = PathBuf::from(var("BEAT_TEST_SECCOMP")).join("cluster");
+        // The tools compiled into the cache first, as the pod's entrypoint does: a question writes no file
+        // (RLIMIT_FSIZE 0), so it cannot fill the cache itself.
+        let warm = std::process::Command::new(var("BEAT_TEST_PROBE")).arg("tools").arg("--tools").arg(&tools)
+            .arg("--cache").arg(&cache).output().unwrap();
+        assert!(warm.status.success(), "beat-probe tools: {}", String::from_utf8_lossy(&warm.stderr));
+        let l = crate::landlock::Landlock::new(&["/nix".into(), tools.clone(), cache.clone()], &seccomp).unwrap();
+        println!("Landlock ABI {}", l.abi);
+        let runner = Runner { tools, cache, sandbox: None, landlock: Some(Arc::new(l)), ..runner_with(var("BEAT_TEST_PROBE").into()) };
+        assert_eq!(runner.sandbox_mode(), "landlock");
+        let ask = |src: &'static str| { let r = &runner; async move {
+            r.run("t.star", src, 60, &Phases::default(), false).await.unwrap_or_else(|e| panic!("{}: {}", e.kind, e.message)) } };
+        let v = ask("def main() -> None:\n    emit(\"a\", \"b\", \"c\", \"test\")\n").await;
+        assert_eq!(v["outcome"], "ok", "{v}");
+        // Outside its paths a question reads nothing: the host's files, the sensor's key, the pod's token.
+        let secret = std::env::temp_dir().join(format!("beat-landlock-{}", std::process::id()));
+        std::fs::write(&secret, "the sensor's key\n").unwrap();
+        for path in ["/etc/hostname", secret.to_str().unwrap(), "/proc/1/status", "/proc/self/environ"] {
+            let src: &'static str = Box::leak(format!("def main() -> None:\n    emit(\"a\", \"b\", \"c\", read({path:?}))\n").into_boxed_str());
+            let v = ask(src).await;
+            let text = v.to_string();
+            println!("read {path}: {}", &text[..text.len().min(400)]);
+            assert!(!text.contains("the sensor's key"), "{text}");
+            assert_ne!(v["outcome"], "ok", "{path}: {text}");
+        }
+        std::fs::remove_file(&secret).unwrap();
+        // No socket of any family: a shell from /nix (readable) under the same sandbox.
+        let sh = std::env::var("BEAT_TEST_SHELL").unwrap_or_else(|_| "bash".into());
+        for (what, cmd) in [("tcp", "exec 3<>/dev/tcp/127.0.0.1/22"), ("udp", "exec 3<>/dev/udp/127.0.0.1/53")] {
+            let l = runner.landlock.clone().unwrap();
+            let mut c = std::process::Command::new(&sh);
+            c.args(["-c", cmd]);
+            use std::os::unix::process::CommandExt;
+            unsafe { c.pre_exec(move || l.apply()); }
+            let out = c.output().unwrap();
+            let err = String::from_utf8_lossy(&out.stderr);
+            println!("{what}: {}", err.trim());
+            assert!(!out.status.success() && err.contains("Address family not supported"), "{what}: {err}");
+        }
+    }
+
     /// A real question in a real unit: needs root and systemd, so not in `cargo test`. BEAT_TEST_PROBE and
     /// BEAT_TEST_TOOLS and BEAT_TEST_CACHE name the built probe, the tools and their cache; BEAT_TEST_N, how many to time.
     #[tokio::test(flavor = "multi_thread")]
@@ -932,7 +990,7 @@ mod tests {
             osqueryi: None, journalctl: None, bpf_tools: None, capture: None, sandbox: Some(ph),
             secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
             systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(),
-            uncovered: Default::default(), question_user: test_user(), bwrap: None,
+            uncovered: Default::default(), question_user: test_user(), bwrap: None, landlock: None,
         });
         let walking = runner.clone();
         tokio::spawn(async move { walking.walk_forever().await });
@@ -984,7 +1042,7 @@ mod tests {
             osqueryi: None, journalctl: None, bpf_tools: None, capture: Some(Arc::new(broker)), sandbox: Some(ph),
             secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
             systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(),
-            uncovered: Default::default(), question_user: test_user(), bwrap: None,
+            uncovered: Default::default(), question_user: test_user(), bwrap: None, landlock: None,
         });
         let walking = runner.clone();
         tokio::spawn(async move { walking.walk_forever().await });
@@ -1070,7 +1128,7 @@ mod tests {
         let runner = Runner {
             probe: "/nonexistent".into(), tools: "/nonexistent".into(), cache: "/nonexistent".into(), osqueryi: None, journalctl: None,
             bpf_tools: None, capture: None, sandbox: None, secret_mounts_denied: Default::default(), hide: Vec::new(), unit_props: Vec::new(),
-            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: test_user(), bwrap: None,
+            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: test_user(), bwrap: None, landlock: None,
         };
         // On the host: a TCP listener, an abstract unix socket (what a host-namespace question must not reach) and a
         // path one.
@@ -1229,7 +1287,7 @@ print("nic", "{nic}:" in open("/proc/net/dev").read())
             probe: var("BEAT_TEST_PROBE").into(), tools: var("BEAT_TEST_TOOLS").into(), cache: var("BEAT_TEST_CACHE").into(),
             osqueryi: Some(var("BEAT_TEST_OSQUERYI").into()), journalctl: Some("/usr/bin/journalctl".into()), bpf_tools: None, capture: None,
             sandbox: Some(ph), secret_mounts_denied: Default::default(), hide: vec![key.clone()], unit_props: Vec::new(),
-            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: test_user(), bwrap,
+            systemd: "/usr/bin".into(), walk: watch::Sender::new(None), walk_error: Default::default(), uncovered: Default::default(), question_user: test_user(), bwrap, landlock: None,
         });
         let walking = runner.clone();
         tokio::spawn(async move { walking.walk_forever().await });
