@@ -934,6 +934,11 @@ mod tests {
         let var = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("{k}"));
         let (tools, cache): (PathBuf, PathBuf) = (var("BEAT_TEST_TOOLS").into(), var("BEAT_TEST_CACHE").into());
         let seccomp = PathBuf::from(var("BEAT_TEST_SECCOMP")).join("cluster");
+        // The tools compiled into the cache first, as the pod's entrypoint does: a question writes no file
+        // (RLIMIT_FSIZE 0), so it cannot fill the cache itself.
+        let warm = std::process::Command::new(var("BEAT_TEST_PROBE")).arg("tools").arg("--tools").arg(&tools)
+            .arg("--cache").arg(&cache).output().unwrap();
+        assert!(warm.status.success(), "beat-probe tools: {}", String::from_utf8_lossy(&warm.stderr));
         let l = crate::landlock::Landlock::new(&["/nix".into(), tools.clone(), cache.clone()], &seccomp).unwrap();
         println!("Landlock ABI {}", l.abi);
         let runner = Runner { tools, cache, sandbox: None, landlock: Some(Arc::new(l)), ..runner_with(var("BEAT_TEST_PROBE").into()) };
