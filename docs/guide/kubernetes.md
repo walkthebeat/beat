@@ -76,8 +76,13 @@ beat org trust add my-cluster-api --issuer ISSUER [--jwks cluster-jwks.json] \
   --claim kubernetes.io/namespace=beat --claim kubernetes.io/serviceaccount/name=beat-cluster \
   --sensor-name my-cluster_api
 kubectl apply -f beat-cluster.yaml      # after beat-sensor.yaml: it uses its namespace and ConfigMap
-beat sensors                            # my-cluster_api, labelled role=cluster
+beat sensors                            # my-cluster_api, labelled role=cluster, "the cluster's API"
 ```
+
+beat's pack has `k8s-pending` for it: every Pending pod with the scheduler's reason and the evidence it points to
+(requests, node selectors, taints, each node's free capacity, claims and StorageClasses), and every workload whose pods
+are not being created (a quota, admission): `beat run k8s-pending my-cluster_api` in an estate. `beat probes run` asks
+probes that call `k8s()` of cluster sensors only, and the others of the node sensors.
 
 A question for it, `web.star`, then `beat ask web.star --host my-cluster_api --show`:
 

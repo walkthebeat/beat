@@ -161,6 +161,13 @@ def _summary(text: str) -> str:
     return ""
 
 
+def asks_api(path: Path) -> bool:
+    """Whether a probe reads the cluster's API (calls k8s()): it is for cluster sensors, and the others are not."""
+    import re
+    text = re.sub(r'^\s*"""(.|\n)*?"""', "", path.read_text())   # the docstring
+    return any(re.search(r"\bk8s\s*\(", line.split("#")[0]) for line in text.splitlines())
+
+
 def probes(repo: Path) -> list[dict]:
     """Every probe a name finds: {name, origin ("estate", "pack", "estate, forked from the pack", "estate, over the
     pack's"), summary}, by name."""
@@ -191,10 +198,13 @@ def fork(repo: Path, name: str) -> Path:
     return dst
 
 
-def run_every(hosts: list[str], commit: bool = True, workers: int = 8) -> list[tuple[str, str | None, dict]]:
+def run_every(hosts: list[str], cluster: set[str] = frozenset(), commit: bool = True,
+              workers: int = 8) -> list[tuple[str, str | None, dict]]:
     """Every probe a name finds (`probes`), asked of the hosts at once: one survey per probe, all of them in
-    flight together, then each host's facts written and committed as `run_probe` does. [(probe, survey id or None,
-    {host: run_probe's result, or an EstateError})], by probe."""
+    flight together, then each host's facts written and committed as `run_probe` does. A probe that reads the
+    cluster's API (`asks_api`) is asked of the `cluster` sensors among them, every other probe of the rest; a probe
+    with no host left is skipped. [(probe, survey id or None, {host: run_probe's result, or an EstateError})], by
+    probe."""
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
     from . import ask, seal
@@ -205,17 +215,20 @@ def run_every(hosts: list[str], commit: bool = True, workers: int = 8) -> list[t
     asyncio.run(ask.whoami())
     seal.member()
     names = [p["name"] for p in probes(repo)]
+    api = {n: asks_api(probe_path(repo, n)) for n in names}
+    asked = {n: [h for h in hosts if (h in cluster) == api[n]] for n in names}
+    names = [n for n in names if asked[n]]
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {n: pool.submit(ask_star, n, hosts) for n in names}
+        futures = {n: pool.submit(ask_star, n, asked[n]) for n in names}
     out = []
     for n in names:  # facts and commits one at a time: git is not shared between threads
         try:
             survey, answers = futures[n].result()
         except EstateError as e:
-            out.append((n, None, {h: e for h in hosts}))
+            out.append((n, None, {h: e for h in asked[n]}))
             continue
         results = {}
-        for h in hosts:
+        for h in asked[n]:
             try:
                 results[h] = run_probe(n, h, commit=commit, answer=answers.get(h))
             except EstateError as e:
