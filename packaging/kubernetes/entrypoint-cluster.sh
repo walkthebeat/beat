@@ -1,5 +1,5 @@
 #!@shell@
-# The cluster sensor (beat-cluster.yaml; beat-notes kubernetes.md §5): one per cluster, in a pod that is not privileged,
+# The cluster sensor (beat-cluster.yaml): one per cluster, in a pod that is not privileged,
 # no host to read. It enrols with its pod's projected token under a trust policy of its own (the cluster's name and
 # `_api`, `beat org trust add --sensor-name`) and runs each question sandboxed by Landlock and seccomp
 # (sensor/src/landlock.rs). /etc and /var/lib/beat-sensor are the pod's emptyDirs: it runs as no root, and a new pod

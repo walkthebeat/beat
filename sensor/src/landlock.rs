@@ -1,5 +1,5 @@
 //! --landlock: questions sandboxed with no privilege at all, for a sensor in a pod that is not privileged (the
-//! cluster sensor: no host to read, beat-notes kubernetes.md §5). bwrap there needs the pod's seccomp and AppArmor
+//! cluster sensor: no host to read, packaging/kubernetes/beat-cluster.yaml). bwrap there needs the pod's seccomp and AppArmor
 //! profiles turned off and still has no cgroup (tested 2026-11-20); this needs neither. Before beat-probe starts:
 //! - no_new_privs;
 //! - Landlock: the files the question may read (its programs under /nix, the compiled tools, the paths given), nothing
