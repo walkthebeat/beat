@@ -16,6 +16,7 @@ pub mod catalog;
 pub mod check;
 pub mod environ;
 pub mod host;
+pub mod k8s;
 pub mod local;
 pub mod run;
 pub mod scan;

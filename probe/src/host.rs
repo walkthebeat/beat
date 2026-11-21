@@ -116,6 +116,8 @@ pub trait Host {
     /// A process's environment, as (name, value): for `environ()`, which never hands a question the value of a name it
     /// does not know to be safe (environ.rs).
     fn environ(&self, pid: u32) -> HostResult<Vec<(String, String)>>;
+    /// Kubernetes objects of a kind from the cluster sensor's snapshot of its API (k8s.rs), filtered by `q`.
+    fn k8s(&self, q: &crate::k8s::Query) -> HostResult<Vec<serde_json::Value>>;
     /// Journal entries, oldest first: ts, unit, pid, priority, message.
     fn journal(&self, opts: &JournalOptions) -> HostResult<Vec<serde_json::Value>>;
     /// The files matching `patterns` (globs) read at once, then again after `seconds`: counters in /proc and /sys.

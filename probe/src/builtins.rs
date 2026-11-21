@@ -363,6 +363,27 @@ fn beat_builtins(builder: &mut GlobalsBuilder) {
         Ok(heap.alloc(items))
     }
 
+    /// Kubernetes objects of `kind` (Pod, Event, Node, Deployment, ... case aside), on the cluster sensor: dicts as
+    /// the API gives them, from its watch, less managedFields and last-applied-configuration. Filtered by namespace,
+    /// name and a label `selector` as kubectl takes it. A container env entry's value is as environ() gives it:
+    /// .value for names known to be safe, else None and .hash, a token equal to environ()'s for an equal value.
+    fn k8s<'v>(
+        #[starlark(require = pos)] kind: &str,
+        #[starlark(require = named)] namespace: Option<&str>,
+        #[starlark(require = named)] name: Option<&str>,
+        #[starlark(require = named)] selector: Option<&str>,
+        eval: &mut Evaluator<'v, '_, '_>,
+    ) -> starlark::Result<Value<'v>> {
+        let q = crate::k8s::Query { kind: kind.into(), namespace: namespace.map(Into::into), name: name.map(Into::into),
+                                    selector: selector.map(Into::into) };
+        let mut objects = ctx(eval).host.k8s(&q).map_err(|e| host_error(eval, e))?;
+        {
+            let tokens = &mut ctx(eval).state.borrow_mut().env_tokens;
+            objects.iter_mut().for_each(|o| crate::k8s::env_as_environ(o, tokens));
+        }
+        Ok(eval.heap().alloc(objects))
+    }
+
     /// Journal entries, oldest first, as dicts: ts, unit, pid, priority, message. `since` as journalctl takes it
     /// ("-30d", "2026-10-01"), `grep` a regex on the message, `limit` the newest N entries. `kernel`: the kernel's
     /// messages only, this boot (what dmesg shows).

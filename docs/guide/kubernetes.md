@@ -64,17 +64,43 @@ Questions then see the node and its containers: their processes and cgroups, the
 their logs under `/var/log/pods`, their traffic with `capture()`. Pods' Secrets and service-account tokens are secret
 files: a question sees that they exist, never their contents.
 
+## The cluster sensor
+
+The node sensors see the nodes. What only the API knows, such as why a pod is Pending, its Events, a rollout or a
+quota, comes from one more sensor, `<cluster>_api`: an ordinary pod (not privileged) that watches the API with a
+read-only ClusterRole and gives questions `k8s()` (`docs/probes.md` [B11c]). Its trust policy names it by its service
+account:
+
+```
+beat org trust add my-cluster-api --issuer ISSUER [--jwks cluster-jwks.json] \
+  --claim kubernetes.io/namespace=beat --claim kubernetes.io/serviceaccount/name=beat-cluster \
+  --sensor-name my-cluster_api
+kubectl apply -f beat-cluster.yaml      # after beat-sensor.yaml: it uses its namespace and ConfigMap
+beat sensors                            # my-cluster_api, labelled role=cluster
+```
+
+A question for it, `web.star`, then `beat ask web.star --host my-cluster_api --show`:
+
+```python
+def main() -> None:
+    for p in k8s("pod", namespace = "shop", selector = "app=web"):
+        emit(p["metadata"]["name"], "phase", p["status"]["phase"], "k8s.pod")
+```
+
+Its node needs Landlock (Linux 5.13 or later, enabled: the default on current distributions).
+
 ## Known limits
 
 - `trace()` is refused on kernels with `kernel.perf_event_paranoid` 3 (Debian's default): the eBPF tools need
   `CAP_SYS_ADMIN` there, which questions do not get.
-- No pod-aware built-ins yet: a question finds a pod from its cgroup path or its log directory's name.
+- On a node sensor, no pod-aware built-ins yet: a question finds a pod from its cgroup path or its log directory's
+  name, and the cluster sensor's `k8s("pod")` gives the pod's node and container IDs.
 
 ## Remove
 
 ```
-kubectl delete -f beat-sensor.yaml
-beat sensors remove NODE                # each node's sensor, at the service
+kubectl delete -f beat-cluster.yaml -f beat-sensor.yaml
+beat sensors remove NODE                # each node's sensor, and my-cluster_api, at the service
 ```
 
 The node keeps `/var/lib/beat-sensor` (the sensor's key and state): remove it to forget the sensor there.

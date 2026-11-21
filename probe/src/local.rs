@@ -170,6 +170,7 @@ pub struct LocalHost {
     pruned_hit: RefCell<Vec<(String, String)>>,
     /// --root is not this process's /: the host's, seen from a pod (mount_table).
     other_root: bool,
+    k8s: crate::k8s::Snapshot,
 }
 
 impl LocalHost {
@@ -195,7 +196,7 @@ impl LocalHost {
             journal: journalctl.map(|journalctl| Journal { journalctl }),
             bpf_tools,
             users: HashMap::new(), groups: HashMap::new(), notes: RefCell::new(Vec::new()), prepared: OnceCell::new(),
-            pruned: RefCell::new(HashMap::new()), pruned_hit: RefCell::new(Vec::new()), other_root,
+            pruned: RefCell::new(HashMap::new()), pruned_hit: RefCell::new(Vec::new()), other_root, k8s: Default::default(),
         };
         h.users = h.id_names("/etc/passwd");
         h.groups = h.id_names("/etc/group");
@@ -758,6 +759,10 @@ impl Host for LocalHost {
             _ => HostError::Io(format!("{path}: {e}")),
         })?;
         Ok(crate::environ::parse(&bytes))
+    }
+
+    fn k8s(&self, q: &crate::k8s::Query) -> HostResult<Vec<serde_json::Value>> {
+        self.k8s.query(q, |n| self.note(n))
     }
 
     fn secrets(&self) -> HostResult<Vec<Secret>> {

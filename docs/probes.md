@@ -155,6 +155,7 @@ journal(kernel: bool = False, unit: str | None = None, since: str | None = None,
 secrets() -> list[Secret]           # .path, .kind, .mode, .uid, .gid, .size, .mtime
 environ(pid: int) -> list[EnvVar]   # .name; .value (known-safe names, passwords masked) or .hash (a token: docs/security.md)
 sample(patterns: list[str], seconds: float = 1.0) -> Sample   # .seconds .before .after ({path: content})
+k8s(kind: str, namespace: str | None = None, name: str | None = None, selector: str | None = None) -> list[dict]
 ```
 
 - **[B10]** `osq` is osquery's SQL (its SQLite dialect, joins included), straight to osquery: no other engine
@@ -169,6 +170,13 @@ sample(patterns: list[str], seconds: float = 1.0) -> Sample   # .seconds .before
 - **[B11b]** `sample` reads the files matching `patterns` (globs), then reads them again `seconds` later (at most
   60): counters in /proc and /sys, for rates. `seconds` is measured, not the one asked for. A file gone by the second
   read (a process that exited) is missing from `after` only; a secret path is a failure "denied", as for `read`.
+- **[B11c]** `k8s` answers on the cluster sensor only (`packaging/kubernetes/beat-cluster.yaml`): the objects of a
+  kind (`Pod`, `Event`, `Node`, `Deployment`, ...; `sensor/src/kube.rs` lists them) as the API gives them, from the
+  sensor's list-and-watch, less `managedFields` and `last-applied-configuration`; filtered by namespace, name and a
+  label selector as `kubectl -l` takes it. Every container env entry's `value` is as `environ` gives it, the other
+  values a `hash` token, equal to `environ`'s for an equal value. The question has no network and no API token: the
+  sensor hands it the snapshot as files already open. A kind not listed yet fails (kind `source`); a watch that has
+  failed since its last list leaves a note that the objects may be stale. Other sensors fail it (kind `source`).
 - **[B12]** Like every builtin, these are read-only and bounded (a timeout and an output limit, §8). They read
   the live host, not the file mapping: osquery sees all processes and sockets as the sensor's user does.
 - Later sources (tcpdump, eBPF summaries) are added the same way: a builtin, native code behind `Host`.
