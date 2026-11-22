@@ -1,11 +1,16 @@
 # Why beat
 
-Everyone wants an agent on their production now, including the people who built the system. Today there are two ways
-to get one there. You can give it the logs, which are not enough: logs hold only what someone thought to log. Or you
-can give it your own production credentials, which works and is not safe, and engineers do it anyway, because they
-need the help.
+Monitoring answers the questions someone thought of in advance. Incidents are the ones nobody did: why three nodes
+of a thousand, why this pod and not that one. Answering them takes a debugger, used on the right hosts and compared
+across all of them: tracing, packets, logs, the kernel's own counters. That is skilled work, rarely automated,
+because the tools need root, and root on production is not something you hand an agent. Engineers give their agents
+their own production credentials anyway, because they need the help, or settle for logs, which hold only what
+someone thought to log.
 
-beat is the third way. Your agent reads your Linux hosts as deep as root can, across the whole fleet at once, without your production credentials, and with no way to run anything but read-only questions.
+beat is a debugger for your whole Linux fleet, and your agent drives it. One question goes to every host at once:
+processes, sockets, logs, kernel state, eBPF traces, packet captures, a Kubernetes cluster's API. The answers come
+back as one, grouped by what differs. Every question is read-only by construction, so your agent gets root's view of
+production without your production credentials.
 
 Then comes the part that is hard to explain until you see it. You say "see what you can figure out", and it comes back
 with things you never thought to ask about. On our own production, it found that our certificate reload had never
@@ -17,7 +22,9 @@ We run beat against scenarios in our labs and on our own hosts: faults we inject
 there. In a simulated 1000-node Slurm cluster, it tied 47 failing nodes to one user's new build in about 5 minutes. A
 plain discovery of a fresh 16-node cluster found three nodes running every job from `/tmp`, and traced it to a race
 in our own provisioning that nobody had planted. When a job hung on hosts that looked fine, it followed the hang down
-to a paused cloud volume, and said the trigger was not identified rather than make one up.
+to a paused cloud volume, and said the trigger was not identified rather than make one up. On a two-node Kubernetes
+cluster where four new workloads never started, it named four different causes from the cluster's API in about a
+minute, and a crash loop nobody had asked about from the node's own logs.
 
 ## What it is
 
