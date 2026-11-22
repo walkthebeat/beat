@@ -61,7 +61,8 @@ jobs:
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/beat-sensor
           subject-digest: ${{ env.IMAGE_DIGEST }}
-          push-to-registry: true
+          # Kept in GitHub's attestations, not pushed beside the image: the action reads only Docker's credentials,
+          # and skopeo logged in with its own. gh attestation verify oci://IMAGE -R walkthebeat/beat checks it.
       - name: attest the files
         if: github.event.repository.visibility == 'public'
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2
