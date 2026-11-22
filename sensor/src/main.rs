@@ -626,7 +626,7 @@ async fn heartbeat(cfg: Arc<Config>, client: async_nats::Client) {
         let root_keys: serde_json::Map<String, serde_json::Value> = seal::read_keys(&cfg.roots).unwrap_or_default().iter()
             .map(|c| (c.name.clone(), STANDARD.encode(c.key.as_bytes()).into())).collect();
         let entry = json!({"name": cfg.name, "sensor": cfg.version, "labels": cfg.labels, "started": started,
-                           "guide": guide, "sandbox": cfg.runner.sandbox_mode(),
+                           "guide": guide, "sandbox": cfg.runner.sandbox_mode(), "cluster_api": cfg.runner.kube.is_some(),
                            "question_user": cfg.runner.question_user_name(), "secret_walk": cfg.runner.walk_state(),
                            "at": iso_now(),
                            "roots": roots, "collectors": collectors, "root_keys": root_keys,

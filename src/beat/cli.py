@@ -44,7 +44,8 @@ def _main() -> None:
                     "print the slowest: where a slow run's time went. Not written to the facts")
     pr = sub.add_parser("probes", help="the probes this estate runs: its own (probes/) and beat's default pack; "
                         "`fork NAME`: copy the pack's into probes/ to change it; `run [HOSTS]`: every probe at once on "
-                        "the hosts (default: every trusted live sensor), facts committed as `beat run` does")
+                        "the hosts (default: every trusted live sensor; probes that call k8s() on the cluster sensors, the others "
+                        "on the rest), facts committed as `beat run` does")
     pr.add_argument("action", nargs="?", choices=["list", "fork", "run"], default="list")
     pr.add_argument("args", nargs="*", help="fork: the probe's name; run: the hosts")
     pr.add_argument("--no-commit", action="store_true", help="run: write the facts, commit nothing")
@@ -298,11 +299,13 @@ def _probes(a) -> None:
             print(f"{path.relative_to(repo)}: the estate's now (the pack's upgrades no longer reach it); commit it "
                   "when you have changed it")
             return
-        hosts = a.args or sorted(h for h, e in asyncio.run(ask.sensors()).items() if "untrusted" not in e)
+        live = asyncio.run(ask.sensors())
+        hosts = a.args or sorted(h for h, e in live.items() if "untrusted" not in e)
         if not hosts:
             raise SystemExit("error: no trusted live sensor (`beat sensors`)")
+        cluster = {h for h in hosts if live.get(h, {}).get("cluster_api")}
         failed = False
-        for name, survey, results in estate.run_every(hosts, commit=not a.no_commit):
+        for name, survey, results in estate.run_every(hosts, cluster, commit=not a.no_commit):
             for host, r in results.items():
                 if isinstance(r, Exception):
                     print(f"{name}\t{host}\terror: {r}")
@@ -333,6 +336,7 @@ def _service(a) -> None:
         for name, e in sorted(asyncio.run(ask.sensors(untrusted=True)).items()):
             labels = " ".join(f"{k}={v}" for k, v in sorted((e.get("labels") or {}).items()))
             sandbox = "" if e.get("sandbox", "full") == "full" else f"\tsandbox: {e['sandbox']}"
+            sandbox += "\tthe cluster's API" if e.get("cluster_api") else ""
             bad = f"\tUNTRUSTED: {e['untrusted']} (not asked)" if "untrusted" in e else ""
             walk = ask.secret_walk_note(e.get("secret_walk"))
             walk = f"\tsecret files: {walk}" if walk else ""

@@ -109,10 +109,10 @@ def test_fork_makes_the_packs_probe_the_estates(repo):
 
 
 def test_run_every_asks_every_probe_and_writes_each_hosts_facts(repo, monkeypatch):
-    asked = []
+    asked = {}
 
     async def fake_ask(name, source, hosts=None, timeout=120, via="", profile=False):
-        asked.append(name)
+        asked[name] = hosts
         return {"survey": f"s-{name}", "question": "q", "expected": hosts, "down": [], "answers": {h: {
             "answer_hash": "h", "outcome": "ok", "answer": {"v": 1, "outcome": "ok", "diag": "", "notes": [],
             "error": None, "failures": [],
@@ -126,13 +126,24 @@ def test_run_every_asks_every_probe_and_writes_each_hosts_facts(repo, monkeypatc
     monkeypatch.setattr(ask, "whoami", fake_whoami)
     from beat import seal
     monkeypatch.setattr(seal, "member", lambda: ("key", "cred"))
-    out = estate.run_every(["web-1", "web-2"])
+    out = estate.run_every(["web-1", "web-2", "prod_api"], cluster={"prod_api"})
     names = [p["name"] for p in estate.probes(repo)]
     assert sorted(asked) == sorted(f"{n}.star" for n in names) and [n for n, _, _ in out] == names
+    # The cluster's API probes on the cluster sensor only, the host probes on the nodes only.
+    assert asked["k8s-pending.star"] == ["prod_api"] and asked["hello.star"] == ["web-1", "web-2"]
     for name, survey, results in out:
-        assert survey == f"s-{name}.star" and set(results) == {"web-1", "web-2"}
-        assert results["web-1"]["probe"] == f"pack:{name}.star" and results["web-1"]["commit"]
+        assert survey == f"s-{name}.star" and set(results) == set(asked[f"{name}.star"])
+        h = next(iter(results))
+        assert results[h]["probe"] == f"pack:{name}.star" and results[h]["commit"]
     assert (repo / "hosts/web-2/facts/hello.jsonl").exists()
+
+
+def test_asks_api_reads_the_code_not_the_docstring_or_comments(tmp_path):
+    p = tmp_path / "p.star"
+    p.write_text('"""Uses k8s() somewhere.\n"""\n# k8s("Pod") is not called here\ndef main():\n    emit("a", "b", "c", "d")\n')
+    assert not estate.asks_api(p)
+    p.write_text('"""A probe."""\ndef main():\n    for x in k8s ("Pod"):\n        pass\n')
+    assert estate.asks_api(p)
 
 
 def test_init_and_commit_without_a_git_identity(tmp_path, monkeypatch):
