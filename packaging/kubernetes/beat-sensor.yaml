@@ -24,7 +24,7 @@ metadata: {name: beat-sensor, namespace: beat}
 data:
   BEAT_API: "https://api.walkthebeat.ai/o/ORG"      # `beat sensors add` prints yours
   BEAT_ORG_ROOT: "NAME=KEY"                          # the org root the sensor obeys, as `beat sensors add` prints it
-  BEAT_CLUSTER: "my-cluster"                         # a label on every sensor: ask one cluster with --label cluster=...
+  BEAT_CLUSTER: "my-cluster"                         # a label on every sensor of this cluster (beat sensors shows it)
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -43,7 +43,7 @@ spec:
       tolerations: [{operator: Exists}]               # every node, control plane included
       containers:
       - name: sensor
-        image: walkthebeat/beat-sensor:VERSION
+        image: ghcr.io/walkthebeat/beat-sensor:VERSION
         imagePullPolicy: IfNotPresent
         envFrom: [{configMapRef: {name: beat-sensor}}]
         securityContext: {privileged: true}

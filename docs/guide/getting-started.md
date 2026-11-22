@@ -2,6 +2,8 @@
 
 You need: a laptop (Linux or macOS) with [Claude Code](https://claude.com/claude-code), and one or more Linux hosts
 (x86_64, systemd) you have root on.
+On a Kubernetes cluster, follow steps 1-4 here, then [`kubernetes.md`](kubernetes.md) instead of steps 5-6
+(experimental).
 
 ```
  laptop (no root)                          walkthebeat                       your hosts (root)

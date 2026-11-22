@@ -61,7 +61,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
       - name: sensor
-        image: walkthebeat/beat-sensor:VERSION
+        image: ghcr.io/walkthebeat/beat-sensor:VERSION
         imagePullPolicy: IfNotPresent
         command: ["/bin/beat-cluster"]
         envFrom: [{configMapRef: {name: beat-sensor}}]

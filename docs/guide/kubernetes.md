@@ -1,90 +1,137 @@
-# The sensor on Kubernetes (experimental)
+# beat on Kubernetes (experimental)
 
-On a Kubernetes cluster the sensor runs as a DaemonSet: one pod per node, which answers for that node and every
-container on it. It enrols with its pod's own token, so there is no secret to hand out, and each sensor is named
-after its node. What the pod is allowed and how questions stay read-only inside it: `docs/security.md`, "A sensor in
-a Kubernetes pod".
+On a cluster, beat is two kinds of sensor, both from one image, `ghcr.io/walkthebeat/beat-sensor`:
 
-Experimental: tried on k3s with Debian 12 and AlmaLinux 9 nodes (SELinux enforcing). The image is not published yet:
-you build it.
+```
+ your laptop: beat, your agent            the beat service            the cluster
+ ─────────────────────────────            ────────────────            ───────────
+ signs each question ──── HTTPS ────────►  countersigns, carries ◄──── every sensor connects out (wss, 443);
+ reads the answers   ◄───────────────────  keeps the answers            nothing listens, nothing is exposed
+
+                                                                       node 1          node 2          node N
+                                                                      ┌───────────┐   ┌───────────┐   ┌───────────┐
+                         node sensors (DaemonSet beat-sensor) ──────► │ beat-sensor│   │ beat-sensor│   │ beat-sensor│
+                         <cluster>_<node>: the node and every         └───────────┘   └───────────┘   └───────────┘
+                         container on it, as root sees them               │ one of the nodes
+                                                                     ┌────▼──────────┐   watch, get, list   ┌──────────┐
+                         the cluster sensor (Deployment beat-cluster)│ beat-cluster  │ ───────────────────► │ the API  │
+                         <cluster>_api: what only the API knows      └───────────────┘   (read-only role)   └──────────┘
+```
+
+- **A node sensor** per node (DaemonSet `beat-sensor`) answers for that node and every container on it: processes and
+  their cgroups, files (a container's through `/proc/<pid>/root`), logs under `/var/log/pods`, sockets, kernel state,
+  eBPF traces (`trace()`), packet captures (`capture()`). It is privileged, which is root on the node, as the host
+  install is, so it can sandbox each question itself; the question runs unprivileged, read-only, with no network.
+- **The cluster sensor**, one per cluster (Deployment `beat-cluster`), answers what only the API knows: why a pod is
+  Pending, Events, rollouts, quotas, Services and their endpoints. It is an ordinary pod (Pod Security "restricted": not
+  root, no capabilities, no host access) that watches the API with a read-only ClusterRole, and questions read its
+  snapshot with `k8s()`.
+
+Both enrol with their pods' own service-account tokens, which the beat service checks against your cluster's issuer:
+no secret to create or hand out. They run only questions signed by a member of your org. The full model, with each
+claim's place in the code: [`docs/security.md`](https://github.com/walkthebeat/beat/blob/main/docs/security.md), "A
+sensor in a Kubernetes pod" and "The cluster sensor".
+
+Experimental: tried on k3s with Debian 12 and AlmaLinux 9 nodes (SELinux enforcing), and in our labs
+([walkthebeat/labs](https://github.com/walkthebeat/labs), scenario `k8s`).
 
 ## What the cluster needs
 
+- Kubernetes 1.30 or later: a pod's token then names its node, which names the node sensor.
 - Linux nodes on x86_64 with cgroup v2 (every current distribution; not Windows nodes, not EKS Fargate).
-- A namespace that allows privileged pods (the manifest makes `beat`, labelled for Pod Security Admission).
-- Kubernetes 1.30 or later: the pod's token then names its node, which names the sensor.
+- A namespace that allows privileged pods, for the node sensors: the manifest makes `beat`, labelled for Pod Security
+  Admission.
+- For the cluster sensor, a node kernel with Landlock (Linux 5.13 or later, enabled: the default on current
+  distributions).
+- Nodes that can pull from `ghcr.io`, or a registry of yours you copy the image to.
 - Sandboxed runtimes (gVisor, Kata) hide their containers' processes from the node: a sensor cannot see inside them.
 
-## 1. The image
+And on your laptop: beat 0.4 or later, signed in to your org (getting started, steps 1-4), and `kubectl` for the
+cluster.
+
+## Install
+
+### 1. The manifests
+
+Each release carries them with its image already named: `beat-sensor.yaml` (the namespace, the node sensors) and
+`beat-cluster.yaml` (the cluster sensor and its read-only ClusterRole).
 
 ```
-nix build github:walkthebeat/beat#beat-sensor-oci
-./result | docker load            # or: ./result | sudo k3s ctr images import -   (on each node)
+v=$(beat --version | awk '{print $2}')     # the manifests of your client's release
+curl -fsSLO https://github.com/walkthebeat/beat/releases/download/v$v/beat-sensor.yaml
+curl -fsSLO https://github.com/walkthebeat/beat/releases/download/v$v/beat-cluster.yaml
 ```
 
-Push it to a registry your nodes pull from, or import it on each node.
+Read them before you apply them: each starts with what it is given, and why.
 
-## 2. A trust policy for the cluster
+### 2. Trust the cluster
 
-The service admits the cluster's sensors by their tokens, checked against the cluster's service-account issuer. Its
-issuer and keys:
+The service admits the cluster's sensors by their tokens, checked against the cluster's service-account issuer. Get
+the issuer and its keys:
 
 ```
-kubectl get --raw /.well-known/openid-configuration      # "issuer"
+kubectl get --raw /.well-known/openid-configuration      # its "issuer"
 kubectl get --raw /openid/v1/jwks > cluster-jwks.json
 ```
 
-Then, signed in as a member of your org:
+Then add two trust policies to your org, one for each kind of sensor, here for a cluster you call `my-cluster`:
 
 ```
 beat org trust add my-cluster --issuer ISSUER --jwks cluster-jwks.json \
   --claim kubernetes.io/namespace=beat --claim kubernetes.io/serviceaccount/name=beat-sensor \
   --sensor-name '{policy}_{kubernetes.io/node/name}'
+beat org trust add my-cluster-api --issuer ISSUER --jwks cluster-jwks.json \
+  --claim kubernetes.io/namespace=beat --claim kubernetes.io/serviceaccount/name=beat-cluster \
+  --sensor-name my-cluster_api
 ```
 
-`--jwks` pins the keys, for an issuer the service cannot reach (most clusters); an issuer on the internet (EKS, GKE,
-AKS) can leave it out. The two claims say which workload may be a sensor: any pod can get a token for itself, and
-only the `beat-sensor` service account in `beat` is one. Each sensor is named after its cluster and its node,
-`my-cluster_ip-10-0-1-17`: node names repeat across clusters, and a node name never holds `_`. When the cluster rotates its signing keys, run the command
-again with the new keys.
+- The two claims say which workload may be a sensor: any pod can get a token for itself, and only the `beat-sensor` and
+  `beat-cluster` service accounts in `beat` are sensors.
+- Node sensors are named after the cluster and the node, `my-cluster_ip-10-0-1-17`: node names repeat across clusters,
+  and never hold `_`. The cluster sensor is `my-cluster_api`.
+- `--jwks` pins the keys, for an issuer the service cannot reach (most clusters). An issuer on the internet (EKS, GKE,
+  AKS) can leave it out. When the cluster rotates its signing keys, run both commands again with the new keys.
 
-## 3. Apply
+### 3. Your org's values, then apply
 
-In `packaging/kubernetes/beat-sensor.yaml`, set the ConfigMap's `BEAT_API` and `BEAT_ORG_ROOT` to the two values
-`beat sensors add` prints (`--api` and `--org-root`), `BEAT_CLUSTER` to a name for the cluster, and the image to
-yours. Then:
+`beat sensors add` prints the two values a sensor needs: `--api` and `--org-root`. Put them in `beat-sensor.yaml`'s
+ConfigMap (`beat-cluster.yaml` uses the same one), with the cluster's name:
+
+```yaml
+data:
+  BEAT_API: "https://api.walkthebeat.ai/o/..."   # --api
+  BEAT_ORG_ROOT: "...=..."                         # --org-root
+  BEAT_CLUSTER: "my-cluster"                       # a label on every sensor of this cluster
+```
+
+Then:
 
 ```
 kubectl apply -f beat-sensor.yaml
-kubectl -n beat logs ds/beat-sensor     # "Enrolled by trust policy my-cluster: my-cluster_<node> is enrolled"
-beat sensors                            # one per node, labelled cluster=my-cluster platform=kubernetes
+kubectl apply -f beat-cluster.yaml                     # after beat-sensor.yaml: it uses its namespace and ConfigMap
+kubectl -n beat logs ds/beat-sensor | grep -i enrolled  # "Enrolled by trust policy my-cluster: my-cluster_<node> ..."
+beat sensors
 ```
 
-Questions then see the node and its containers: their processes and cgroups, their files through `/proc/<pid>/root`,
-their logs under `/var/log/pods`, their traffic with `capture()`. Pods' Secrets and service-account tokens are secret
-files: a question sees that they exist, never their contents.
+`beat sensors` lists one sensor per node, labelled `cluster=my-cluster platform=kubernetes`, and `my-cluster_api`,
+labelled `role=cluster` and shown as "the cluster's API".
 
-## The cluster sensor
+## Asking
 
-The node sensors see the nodes. What only the API knows, such as why a pod is Pending, its Events, a rollout or a
-quota, comes from one more sensor, `<cluster>_api`: an ordinary pod (not privileged) that watches the API with a
-read-only ClusterRole and gives questions `k8s()` (`docs/probes.md` [B11c]). Its trust policy names it by its service
-account:
+In an estate (getting started, step 8), your agent asks the cluster's sensors like any others, by name. Or from a
+shell:
 
 ```
-beat org trust add my-cluster-api --issuer ISSUER [--jwks cluster-jwks.json] \
-  --claim kubernetes.io/namespace=beat --claim kubernetes.io/serviceaccount/name=beat-cluster \
-  --sensor-name my-cluster_api
-kubectl apply -f beat-cluster.yaml      # after beat-sensor.yaml: it uses its namespace and ConfigMap
-beat sensors                            # my-cluster_api, labelled role=cluster, "the cluster's API"
+beat run k8s-pending my-cluster_api      # every Pending pod, and why; every workload short of pods
+beat probes run                          # the pack: API probes go to cluster sensors, the others to the nodes
 ```
 
-beat's pack has `k8s-pending` for it: every Pending pod with the scheduler's reason and the evidence it points to
-(requests, node selectors, taints, each node's free capacity, claims and StorageClasses), and every workload whose pods
-are not being created (a quota, admission): `beat run k8s-pending my-cluster_api` in an estate. `beat probes run` asks
-probes that call `k8s()` of cluster sensors only, and the others of the node sensors.
+`k8s-pending`, in beat's pack, gives every Pending pod with the scheduler's own reason and the evidence it points to
+(requests, node selectors and affinity, taints and tolerations, each node's free capacity, volume claims and
+StorageClasses, quotas), and every workload whose pods are not being created at all (a quota, admission). It collects
+the evidence; the agent reasons over it.
 
-A question for it, `web.star`, then `beat ask web.star --host my-cluster_api --show`:
+A question of your own for the cluster sensor, `web.star`, then `beat ask web.star --host my-cluster_api --show`:
 
 ```python
 def main() -> None:
@@ -92,20 +139,35 @@ def main() -> None:
         emit(p["metadata"]["name"], "phase", p["status"]["phase"], "k8s.pod")
 ```
 
-Its node needs Landlock (Linux 5.13 or later, enabled: the default on current distributions).
+The useful questions often take both kinds: the API says a pod restarts and on which node, the node sensor reads its
+log and its sockets there. An agent does that on its own.
+
+## What a question can and cannot see
+
+| | Node sensor | Cluster sensor |
+| --- | --- | --- |
+| Reads | the node and its containers, as root reads them: processes, files, logs, sockets, cgroups, kernel state; eBPF tools and packet captures | a snapshot of 20 kinds from the API: pods, nodes, events, workloads, Services and endpoints, claims and StorageClasses, quotas, HPAs, PDBs, ... (`sensor/src/kube.rs`) |
+| Never | the contents of secret files: pods' mounted Secrets and service-account tokens, the kubelet's and k3s's keys, `/etc/shadow`, ... (a question sees that they exist, and their metadata) | Secrets and ConfigMaps (not in its role); an env value other than a short list of safe names (a token, compared across pods as a keyed hash); `managedFields` |
+| Writes | nothing: read-only file system, no network | nothing: no verb that writes, no socket |
 
 ## Known limits
 
+- No way yet to ask "every sensor of this cluster" or "the nodes running app=web" in one flag: name the sensors, or
+  let the agent pick them from `beat sensors` and `k8s("pod")`. Asking by label is next.
 - `trace()` is refused on kernels with `kernel.perf_event_paranoid` 3 (Debian's default): the eBPF tools need
   `CAP_SYS_ADMIN` there, which questions do not get.
 - On a node sensor, no pod-aware built-ins yet: a question finds a pod from its cgroup path or its log directory's
-  name, and the cluster sensor's `k8s("pod")` gives the pod's node and container IDs.
+  name, and the cluster sensor's `k8s("pod")` gives a pod's node and container IDs.
+- Who changed an object, and when, is not kept yet (the API's `managedFields` are dropped).
+- `k8s-pending` covers Pending pods and missing ones, not pods that run and fail (a crash loop): an agent finds those
+  with a question of its own.
 
 ## Remove
 
 ```
 kubectl delete -f beat-cluster.yaml -f beat-sensor.yaml
-beat sensors remove NODE                # each node's sensor, and my-cluster_api, at the service
+beat sensors remove NAME                # each node's sensor, and my-cluster_api, at the service
+beat org trust remove my-cluster; beat org trust remove my-cluster-api
 ```
 
-The node keeps `/var/lib/beat-sensor` (the sensor's key and state): remove it to forget the sensor there.
+Each node keeps `/var/lib/beat-sensor` (the sensor's key and state): remove it to forget the sensor there.

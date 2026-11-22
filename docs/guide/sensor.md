@@ -12,6 +12,13 @@ has the full model, with each claim's place in the code.
   unit with a read-only file system, no network and limits on memory, tasks and time.
 - Answers are encrypted to the survey that asked and go to your beat service, which keeps them for your org.
 
+## On Kubernetes
+
+The same sensor runs as a pod on each node (a privileged DaemonSet, root on the node as the host install is), and one
+more, unprivileged, reads the cluster's API with a read-only role. Each question is sandboxed by the sensor itself:
+read-only, no network, limits on memory and time. What each can see, and how to install them:
+[`kubernetes.md`](kubernetes.md) (experimental).
+
 ## Remove
 
 ```
