@@ -1,5 +1,6 @@
 # A tag v<release> (pyproject.toml `version`, which flake.nix reads as `release`: one version for the client and the
-# sensor) publishes the sensor's image and installer as a GitHub release, then the client on PyPI. The image is meant to be reproducible
+# sensor) publishes the sensor's image and installer as a GitHub release, the container image for Kubernetes to
+# ghcr.io/walkthebeat/beat-sensor (tags <release> and <version>) with the manifests that name it, then the client on PyPI. The image is meant to be reproducible
 # (anyone builds `.#beat-sensor-image` at the tag and compares beat-sensor.roothash); not yet: docs/reproducibility.md.
 name: release
 on:
@@ -7,6 +8,7 @@ on:
     tags: ["v*"]
 permissions:
   contents: write      # the release
+  packages: write      # the container image
   id-token: write      # build attestations (public repos only, below)
   attestations: write
 jobs:
@@ -34,6 +36,32 @@ jobs:
           case "$release" in "${GITHUB_REF_NAME#v}+g"*) ;; *) echo "tag $GITHUB_REF_NAME, flake $release" >&2; exit 1 ;; esac
           mkdir dist && cp -L result/* dist/
           echo "RELEASE=$release" >> "$GITHUB_ENV"
+      - name: the container image, and the manifests that name it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          nix build .#beat-sensor-oci -o oci -L
+          ./oci > beat-sensor-oci.tar
+          repo=ghcr.io/${{ github.repository_owner }}/beat-sensor
+          version="${GITHUB_REF_NAME#v}"
+          # --insecure-policy: no signature policy to check (a runner has no policy.json); the archive is this build.
+          skopeo() { nix run --inputs-from . nixpkgs#skopeo -- --insecure-policy "$@"; }
+          echo "$GH_TOKEN" | skopeo login ghcr.io -u "${{ github.actor }}" --password-stdin
+          for tag in "${RELEASE//+/-}" "$version"; do
+            skopeo copy --digestfile digest "docker-archive:beat-sensor-oci.tar" "docker://$repo:$tag"
+          done
+          echo "IMAGE_DIGEST=$(cat digest)" >> "$GITHUB_ENV"
+          for f in beat-sensor beat-cluster; do
+            sed "s|ghcr.io/walkthebeat/beat-sensor:VERSION|$repo:$version|" packaging/kubernetes/$f.yaml > dist/$f.yaml
+            grep -qF "$repo:$version" dist/$f.yaml
+          done
+      - name: attest the image
+        if: github.event.repository.visibility == 'public'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/beat-sensor
+          subject-digest: ${{ env.IMAGE_DIGEST }}
+          push-to-registry: true
       - name: attest the files
         if: github.event.repository.visibility == 'public'
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2
@@ -47,6 +75,9 @@ jobs:
           beat-sensor $RELEASE. Install on a host (x86_64, systemd 247 or later):
 
               curl -fsSL https://github.com/${{ github.repository }}/releases/download/$GITHUB_REF_NAME/install.sh | sudo sh
+
+          On Kubernetes (experimental): \`ghcr.io/${{ github.repository_owner }}/beat-sensor:${GITHUB_REF_NAME#v}\`, and
+          beat-sensor.yaml and beat-cluster.yaml below, which name it (docs/guide/kubernetes.md).
 
           The image's root hash: \`$(cat dist/beat-sensor.roothash)\`. Not yet reproducible bit for bit: a rebuild
           at this tag can differ in a few eBPF tools' type order (docs/reproducibility.md).

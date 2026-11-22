@@ -29,7 +29,7 @@ let
   '';
 in
 pkgs.dockerTools.streamLayeredImage {
-  name = "walkthebeat/beat-sensor";
+  name = "ghcr.io/walkthebeat/beat-sensor";
   tag = builtins.replaceStrings [ "+" ] [ "-" ] version;  # a tag cannot hold "+"
   contents = [ pkgs.cacert clusterEntrypoint ];
   # bwrap makes each question's root on a tmpfs at /tmp; configure writes /etc/beat-sensor.env and /etc/beat-sensor/.

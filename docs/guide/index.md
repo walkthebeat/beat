@@ -69,4 +69,4 @@ We want to hear what broke, what confused you, and what your agent could not see
 
 - [Getting started](getting-started.md): from sign-up to a first question, on one host or many.
 - [The sensor](sensor.md): what it does on a host, what it sends, and how to remove it.
-- [The sensor on Kubernetes](kubernetes.md) (experimental): a DaemonSet, enrolled by its pods' tokens.
+- [beat on Kubernetes](kubernetes.md) (experimental): a sensor on every node, and one for the cluster's API.
