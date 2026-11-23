@@ -218,12 +218,17 @@ struct Exit {
 impl Runner {
     /// Runs the question; Ok is beat-probe's run result (docs/probes.md §9), Err why there is none.
     /// `profile`: the person asked for each host call's time (Beat-Profile): beat-probe --profile.
-    pub async fn run(&self, name: &str, source: &str, timeout_s: u64, phases: &Phases, profile: bool) -> Result<Value, Failed> {
+    /// `subjects`: what the question was asked about (Beat-Subjects, JSON as admit() checked it): beat-probe --subjects.
+    pub async fn run(&self, name: &str, source: &str, timeout_s: u64, phases: &Phases, profile: bool,
+                     subjects: Option<&str>) -> Result<Value, Failed> {
         let mut probe = vec![self.probe.display().to_string(), "run".into(), "-".into(), "--name".into(), name.into(),
                              "--map".into(), "/".into(), "--tools".into(), self.tools.display().to_string(),
                              "--cache".into(), self.cache.display().to_string()];
         if profile {
             probe.push("--profile".into());
+        }
+        if let Some(s) = subjects {
+            probe.extend(["--subjects".into(), s.into()]);
         }
         for (flag, path) in [("--osqueryi", &self.osqueryi), ("--journalctl", &self.journalctl), ("--bpf-tools", &self.bpf_tools)] {
             if let Some(p) = path {
@@ -971,7 +976,7 @@ mod tests {
                               ..runner_with(var("BEAT_TEST_PROBE").into()) };
         assert_eq!(runner.sandbox_mode(), "landlock");
         let ask = |src: &'static str| { let r = &runner; async move {
-            r.run("t.star", src, 60, &Phases::default(), false).await.unwrap_or_else(|e| panic!("{}: {}", e.kind, e.message)) } };
+            r.run("t.star", src, 60, &Phases::default(), false, None).await.unwrap_or_else(|e| panic!("{}: {}", e.kind, e.message)) } };
         let v = ask("def main() -> None:\n    emit(\"a\", \"b\", \"c\", \"test\")\n").await;
         assert_eq!(v["outcome"], "ok", "{v}");
         // Outside its paths a question reads nothing: the host's files, the sensor's key, the pod's token.
@@ -992,6 +997,11 @@ mod tests {
         println!("k8s(): {}", &text[..text.len().min(400)]);
         assert_eq!(v["outcome"], "ok", "{text}");
         assert!(text.contains("1 beat-env-value:") && !text.contains("hunter2"), "{text}");
+        // What a question is about (Beat-Subjects) reaches it as subjects(), through beat-probe's argument.
+        let v = runner.run("s.star", "def main() -> None:\n    emit(\"a\", \"uid\", subjects()[0][\"uid\"], \"test\")\n", 60,
+                           &Phases::default(), false, Some(r#"[{"namespace":"shop","name":"web-1","uid":"u-1"}]"#)).await
+            .unwrap_or_else(|e| panic!("{}: {}", e.kind, e.message));
+        assert!(v.to_string().contains("\"value\":\"u-1\""), "{v}");
         let src: &'static str = Box::leak(format!("def main() -> None:\n    emit(\"a\", \"b\", \"c\", read({:?}))\n",
                                                   snap.join("Pod.json").display().to_string()).into_boxed_str());
         let v = ask(src).await;
@@ -1036,7 +1046,7 @@ mod tests {
         let n: usize = std::env::var("BEAT_TEST_N").ok().and_then(|n| n.parse().ok()).unwrap_or(3);
         for _ in 0..n {
             let (begun, phases) = (Instant::now(), Phases::default());
-            let r = runner.run("trivial.star", trivial, 120, &phases, false).await;
+            let r = runner.run("trivial.star", trivial, 120, &phases, false, None).await;
             match r {
                 Ok(v) => println!("trivial: {} in {:?}; {}", v["outcome"], begun.elapsed(), phases.text()),
                 Err(e) => panic!("{}: {}", e.kind, e.message),
@@ -1045,13 +1055,13 @@ mod tests {
         // A file gone since the walk: a bind over it would make systemd create it on the host.
         if let Ok(gone) = std::env::var("BEAT_TEST_GONE") {
             std::fs::remove_file(&gone).unwrap();
-            let v = runner.run("trivial.star", trivial, 120, &Phases::default(), false).await.map_err(|e| e.message).unwrap();
+            let v = runner.run("trivial.star", trivial, 120, &Phases::default(), false, None).await.map_err(|e| e.message).unwrap();
             assert_eq!(v["outcome"], "ok");
             assert!(!Path::new(&gone).exists(), "the question created {gone}");
             println!("{gone} stayed gone");
         }
         let list = "def main() -> None:\n    for s in secrets():\n        emit(\"secret:\" + s.path, \"mode\", s.mode, \"secrets\")\n";
-        let v = runner.run("list.star", list, 120, &Phases::default(), false).await.map_err(|e| e.message).unwrap();
+        let v = runner.run("list.star", list, 120, &Phases::default(), false, None).await.map_err(|e| e.message).unwrap();
         println!("secrets(): {} records; notes {}", v["records"].as_array().map_or(0, Vec::len), v["notes"]);
         for r in v["records"].as_array().into_iter().flatten() {
             println!("  {}", r["subject"]);
@@ -1117,7 +1127,7 @@ mod tests {
             v["records"].as_array().into_iter().flatten().find(|r| r["key"] == k)
                 .and_then(|r| serde_json::from_str(r["value"].as_str()?).ok()).unwrap_or(Value::Null)
         };
-        let v = runner.run("flows.star", &probe(", seconds=8"), 60, &Phases::default(), false).await
+        let v = runner.run("flows.star", &probe(", seconds=8"), 60, &Phases::default(), false, None).await
             .map_err(|e| e.message).unwrap();
         let (groups, cap) = (field(&v, "groups"), field(&v, "capture"));
         println!("groups {groups}\ncapture {cap}\nnotes {}", v["notes"]);
@@ -1131,7 +1141,7 @@ mod tests {
         // Refused by the broker: a free-form host, and more seconds than the question has.
         for (extra, why) in [(", host=\"127.0.0.1 or port 22\"", "not an IP address"), (", seconds=55", "left")] {
             let src = probe(extra).replace("host=\"127.0.0.1\", host=", "host=");
-            let v = runner.run("refused.star", &src, 30, &Phases::default(), false).await.map_err(|e| e.message).unwrap();
+            let v = runner.run("refused.star", &src, 30, &Phases::default(), false, None).await.map_err(|e| e.message).unwrap();
             let text = v.to_string();
             assert!(text.contains(why), "{extra}: {text}");
             println!("refused ({why}): {}", v["error"]);
@@ -1140,9 +1150,9 @@ mod tests {
         // Two at once on one host: the second is refused.
         let (a, b) = (runner.clone(), runner.clone());
         let (src_a, src_b) = (probe(", seconds=6"), probe(", seconds=6"));
-        let one = tokio::spawn(async move { a.run("a.star", &src_a, 60, &Phases::default(), false).await.map_err(|e| e.message) });
+        let one = tokio::spawn(async move { a.run("a.star", &src_a, 60, &Phases::default(), false, None).await.map_err(|e| e.message) });
         tokio::time::sleep(Duration::from_secs(2)).await;
-        let two = b.run("b.star", &src_b, 60, &Phases::default(), false).await.map_err(|e| e.message).unwrap();
+        let two = b.run("b.star", &src_b, 60, &Phases::default(), false, None).await.map_err(|e| e.message).unwrap();
         let one = one.await.unwrap().unwrap();
         assert!(two.to_string().contains("one at a time"), "{two}");
         assert_eq!(field(&one, "capture")["tcpdump"]["end"], "time");
@@ -1404,7 +1414,7 @@ print("nic", "{nic}:" in open("/proc/net/dev").read())
         // 11-17), and its speed is not what this test is about.
         tokio::time::timeout(Duration::from_secs(600), runner.walk.subscribe().wait_for(Option::is_some)).await
             .expect("the first walk for secret files within 10 min").unwrap();
-        let v = runner.run("debugging.star", &q, 120, &Phases::default(), false).await.map_err(|e| e.message).unwrap();
+        let v = runner.run("debugging.star", &q, 120, &Phases::default(), false, None).await.map_err(|e| e.message).unwrap();
         let rec = |s: &str, k: &str| v["records"].as_array().unwrap().iter().find(|r| r["subject"] == s && r["key"] == k).map(|r| r["value"].as_str().unwrap().to_string());
         let mut bad = Vec::new();
         for (p, want) in &ok_reads {
@@ -1449,10 +1459,11 @@ print("nic", "{nic}:" in open("/proc/net/dev").read())
             let (p, name) = (f.path(), f.file_name().to_string_lossy().into_owned());
             if !name.ends_with(".star") { continue; }
             let src = std::fs::read_to_string(&p).unwrap();
-            // The cluster's API probes are the cluster sensor's (estate.asks_api); landlock_questions asks k8s().
-            if src.lines().any(|l| !l.trim_start().starts_with('#') && l.contains("k8s(")) { continue; }
+            // The cluster's API probes are the cluster sensor's (estate.asks_api); landlock_questions asks k8s(). Probes of
+            // pods asked by selector (estate.asks_subjects) answer nothing without them.
+            if src.lines().any(|l| !l.trim_start().starts_with('#') && (l.contains("k8s(") || l.contains("subjects("))) { continue; }
             names += 1;
-            match runner.run(&name, &src, 120, &Phases::default(), false).await {
+            match runner.run(&name, &src, 120, &Phases::default(), false, None).await {
                 Ok(a) => {
                     let n = a["records"].as_array().map_or(0, Vec::len);
                     println!("pack {name}: {} {n} records, {} failures", a["outcome"], a["failures"].as_array().map_or(0, Vec::len));

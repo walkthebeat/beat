@@ -396,7 +396,7 @@ fn timings_and_profile() {
     let plain: Vec<_> = records(&r);
     assert!(plain.iter().all(|x| !x.0.starts_with("beat:profile")));
 
-    let p = run_timed("journal.star", &source("journal.star"), Box::new(fixture()), true, &[("tools", 7)]);
+    let p = run_timed("journal.star", &source("journal.star"), Box::new(fixture()), true, &[("tools", 7)], Vec::new());
     assert_eq!(p["timings"]["tools"], 7);
     let profiled: Vec<&Value> = p["records"].as_array().unwrap().iter()
         .filter(|x| x["subject"].as_str().unwrap().starts_with("beat:profile")).collect();
@@ -441,4 +441,16 @@ fn tools_load_from_the_cache_index() {
     hello(&reloaded);
     let _ = std::fs::set_permissions(dir.join("strings.wasm"), std::os::unix::fs::PermissionsExt::from_mode(0o644));
     std::fs::remove_dir_all(&base).unwrap();
+}
+
+/// What a question was asked about (Beat-Subjects, `beat ask --selector`) reaches the probe as `subjects()`: dicts as
+/// given, an empty list when asked by host.
+#[test]
+fn subjects_as_given() {
+    let src = "def main():\n    for s in subjects():\n        emit(s[\"namespace\"] + \"/\" + s[\"name\"], \"uid\", s[\"uid\"], \"test\")\n    emit(\"all\", \"count\", str(len(subjects())), \"test\")\n";
+    let pods = vec![serde_json::json!({"namespace": "shop", "name": "web-1", "uid": "u-1", "containers": [{"name": "web", "id": "c1"}]})];
+    let r = run_timed("s.star", src, Box::new(fixture()), false, &[], pods);
+    assert!(has(&r, "shop/web-1", "uid", "u-1") && has(&r, "all", "count", "1"), "{r:#}");
+    let none = run("s.star", src, Box::new(fixture()));
+    assert!(has(&none, "all", "count", "0"), "{none:#}");
 }

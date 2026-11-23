@@ -156,6 +156,7 @@ secrets() -> list[Secret]           # .path, .kind, .mode, .uid, .gid, .size, .m
 environ(pid: int) -> list[EnvVar]   # .name; .value (known-safe names, passwords masked) or .hash (a token: docs/security.md)
 sample(patterns: list[str], seconds: float = 1.0) -> Sample   # .seconds .before .after ({path: content})
 k8s(kind: str, namespace: str | None = None, name: str | None = None, selector: str | None = None) -> list[dict]
+subjects() -> list[dict]            # what the question was asked about (Beat-Subjects): [B11d]
 ```
 
 - **[B10]** `osq` is osquery's SQL (its SQLite dialect, joins included), straight to osquery: no other engine
@@ -177,6 +178,13 @@ k8s(kind: str, namespace: str | None = None, name: str | None = None, selector: 
   values a `hash` token, equal to `environ`'s for an equal value. The question has no network and no API token: the
   sensor hands it the snapshot as files already open. A kind not listed yet fails (kind `source`); a watch that has
   failed since its last list leaves a note that the objects may be stale. Other sensors fail it (kind `source`).
+- **[B11d]** `subjects` is what the question was asked about, as the member signed it (`Beat-Subjects`,
+  `docs/protocol.md`; beat-probe `--subjects`); an empty list when asked by host. `beat ask --cluster C --selector S`
+  first asks `C_api` which pods match (one record per pod, `src/beat/kube.py`), then asks the nodes that run them with
+  every matched pod as a subject: namespace, name, uid, node, phase, owner (the Deployment over a ReplicaSet), labels,
+  containers (name, id). A probe keeps the pods it finds on its node: a pod's cgroup is named by its uid, its logs
+  are under `/var/log/pods/<namespace>_<name>_<uid>/`. Subjects are not part of the question's hash: the same probe
+  asked after a rollout is the same question.
 - **[B12]** Like every builtin, these are read-only and bounded (a timeout and an output limit, §8). They read
   the live host, not the file mapping: osquery sees all processes and sockets as the sensor's user does.
 - Later sources (tcpdump, eBPF summaries) are added the same way: a builtin, native code behind `Host`.

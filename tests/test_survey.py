@@ -17,7 +17,7 @@ def _survey(hosts):
 def test_report_returns_the_comparison_not_the_records(monkeypatch):
     calls = []
 
-    async def fake_ask(name, source, hosts=None, timeout=120, via="", profile=False):
+    async def fake_ask(name, source, hosts=None, timeout=120, via="", profile=False, **target):
         return _survey(hosts or ["a", "b"])
 
     async def fake_api(method, params=None, timeout=10):
@@ -43,7 +43,7 @@ def test_beat_run_asks_all_hosts_in_one_survey(tmp_path, monkeypatch):
     monkeypatch.setattr(estate, "root", lambda: repo)
     asked = []
 
-    async def fake_ask(name, source, hosts=None, timeout=120, via="", profile=False):
+    async def fake_ask(name, source, hosts=None, timeout=120, via="", profile=False, **target):
         asked.append(list(hosts))
         s = _survey([h for h in hosts if h != "gone"])
         s["expected"], s["not_live"] = hosts, [h for h in hosts if h == "gone"]
@@ -199,3 +199,51 @@ def test_the_client_signs_beat_profile_only_when_it_asked():
             assert "Beat-Profile" in str(e)
         else:
             raise AssertionError("signed what was not asked")
+
+
+def test_the_client_signs_the_subjects_it_asked_about():
+    """Beat-Subjects is signed as the member gave it: a collector cannot add, change or drop the pods a question is
+    about. It is not part of the question's hash (Beat-Question stays the probe's)."""
+    from beat import seal, wire
+    key = seal.ed25519.Ed25519PrivateKey.generate()
+    q = wire.question("p.star", "def main():\n    pass\n")
+    base = {"Beat-Survey": "S1", "Beat-Question": wire.sha256_hex(q), "Beat-Timeout": "60", "Beat-Key": "k",
+            "Beat-Issued": "2026-11-08T00:00:00Z", "Beat-Deadline": "2026-11-08T00:02:00Z"}
+    pods = [{"namespace": "shop", "name": "web-1", "uid": "u1"}]
+    with_pods = {**base, "Beat-Subjects": wire.subjects_header(pods)}
+    assert ask.sign_envelope(key, with_pods, q, "S1", 60, None, "cred", subjects=pods)
+    other = {**base, "Beat-Subjects": wire.subjects_header([{**pods[0], "uid": "u2"}])}
+    for headers, subjects in ((with_pods, None), (base, pods), (other, pods)):
+        try:
+            ask.sign_envelope(key, headers, q, "S1", 60, None, "cred", subjects=subjects)
+        except RuntimeError as e:
+            assert "Beat-Subjects" in str(e)
+        else:
+            raise AssertionError("signed what was not asked")
+
+
+def test_select_asks_the_cluster_sensor_then_names_the_nodes(monkeypatch):
+    """kube.select: the cluster sensor's records become the pods, the nodes' sensors to ask (C_<node>) and those on
+    no node yet; the selector reaches the cluster sensor as its subject, not in the source."""
+    import json
+    from beat import kube
+    asked = []
+
+    def pod(name, node, uid):
+        return {"subject": f"shop/{name}", "key": "pod", "value": json.dumps(
+            {"namespace": "shop", "name": name, "uid": uid, "node": node, "owner": "Deployment/web",
+             "labels": {"app": "web"}, "containers": [{"name": "web", "id": "c" + uid}]})}
+
+    async def fake_ask(name, source, hosts=None, timeout=120, via="", profile=False, **target):
+        asked.append((hosts, target))
+        return {"survey": "R1", "expected": hosts, "answers": {"lab_api": {"answer": {
+            "records": [pod("web-b", "n2", "2"), pod("web-a", "n1", "1"), pod("web-c", None, "3")]}}}}
+
+    monkeypatch.setattr(ask, "ask", fake_ask)
+    sel = asyncio.run(kube.select("lab", "app=web", "shop"))
+    assert asked == [(["lab_api"], {"subjects": [{"selector": "app=web", "namespace": "shop"}],
+                                    "selector": "cluster:lab resolve"})]
+    assert sel["hosts"] == ["lab_n1", "lab_n2"] and sel["unscheduled"] == ["shop/web-c"]
+    assert [p["name"] for p in sel["subjects"]] == ["web-a", "web-b"]
+    assert "app=web" in sel["selector"] and "R1" in sel["selector"]
+    assert "2 pods on 2 nodes" in kube.summary(sel) and "web-c" in kube.summary(sel)

@@ -80,6 +80,11 @@ Kubernetes, on the cluster sensor (<cluster>_api; node sensors answer for their 
                                       environ() gives them (.value or .hash). No Secrets, no ConfigMaps. For a
                                       Pending pod, start from its PodScheduled condition and its Events: the cluster's
                                       own message says where to look (nodes, requests, taints, the PVC, the quota)
+  subjects() -> list[dict]            on a node asked by selector (beat ask --cluster C --selector S): the pods it
+                                      matched, .namespace .name .uid .node .owner .labels .containers[{name id}],
+                                      every one on every node asked: keep those found here (a pod's cgroup name
+                                      holds its uid; its logs are /var/log/pods/<namespace>_<name>_<uid>/). Empty
+                                      when asked by host
 
 Performance, Gregg's 60-second checklist and the USE method (utilization, saturation, errors per resource):
   checklist(seconds=5, top=10, cgroup_depth=4) -> dict   one interval, as uptime, vmstat, mpstat, pidstat, iostat

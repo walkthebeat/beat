@@ -53,6 +53,11 @@ def _main() -> None:
                         "answers grouped by answer hash")
     ak.add_argument("question", help="a .star file")
     ak.add_argument("--host", action="append", default=[], help="only this sensor (repeatable)")
+    ak.add_argument("--cluster", metavar="C", help="Kubernetes: ask the nodes running the pods --selector matches "
+                    "(C_api says which; the probe gets them as subjects())")
+    ak.add_argument("--selector", "-l", metavar="S", help="with --cluster: a label selector as kubectl -l takes it "
+                    "(none: every pod)")
+    ak.add_argument("--namespace", "-n", metavar="NS", help="with --cluster: only this namespace")
     ak.add_argument("--timeout", type=int, default=120, help="the question's time limit on each sensor, seconds")
     ak.add_argument("--show", action="store_true", help="print each distinct answer")
     ak.add_argument("--profile", action="store_true", help="also time each host call on each host, and print where "
@@ -356,16 +361,17 @@ def _service(a) -> None:
         return _dataset(a)
 
     src = Path(a.question).read_text()
+    target = _target(a)
     if a.dataset:
         try:
-            return _print_dataset(asyncio.run(ask.dataset(Path(a.question).name, src, a.host or None, a.timeout)),
-                                  a.json)
+            return _print_dataset(asyncio.run(ask.dataset(Path(a.question).name, src, a.host or None, a.timeout,
+                                                          **target)), a.json)
         except RuntimeError as e:
             raise SystemExit(f"error: {e}")
     if a.analyze:
-        return _ask_analyze(a, src)
+        return _ask_analyze(a, src, target)
     try:
-        s = asyncio.run(ask.ask(Path(a.question).name, src, a.host or None, a.timeout, profile=a.profile))
+        s = asyncio.run(ask.ask(Path(a.question).name, src, a.host or None, a.timeout, profile=a.profile, **target))
     except RuntimeError as e:
         raise SystemExit(f"error: {e}")
     if a.json:
@@ -393,6 +399,30 @@ def _service(a) -> None:
             _print_profile(host, s["answers"][host])
     missing = s["down"] or s["no_answer"] or s["running"]
     raise SystemExit(0 if not missing and all(x["outcome"] == "ok" for x in s["answers"].values()) else 1)
+
+
+def _target(a) -> dict:
+    """`beat ask --cluster C --selector S`: the pods resolved by C's cluster sensor (kube.select), as ask() takes them;
+    a.host becomes the nodes that run them. {} when asked by host."""
+    import asyncio
+    from . import kube
+
+    if not a.cluster:
+        if a.selector or a.namespace:
+            raise SystemExit("error: --selector and --namespace need --cluster")
+        return {}
+    if a.host:
+        raise SystemExit("error: --cluster asks the nodes its pods run on: not with --host")
+    try:
+        sel = asyncio.run(kube.select(a.cluster, a.selector, a.namespace))
+    except RuntimeError as e:
+        raise SystemExit(f"error: {e}")
+    if not a.json:
+        print(kube.summary(sel))
+    if not sel["subjects"]:
+        raise SystemExit(1)
+    a.host = sel["hosts"]
+    return {"subjects": sel["subjects"], "selector": sel["selector"]}
 
 
 def _print_profile(host: str, answer: dict, top: int = 10) -> None:
@@ -472,7 +502,7 @@ def _print_dataset(p: dict, as_json: bool = False) -> None:
     print(p["next"])
 
 
-def _ask_analyze(a, src: str) -> None:
+def _ask_analyze(a, src: str, target: dict) -> None:
     """`beat ask --analyze`: ask.report (the MCP `survey` tool's answer) for a person: categories, the analysis as
     `beat analyze` prints it, and the logs it has."""
     import argparse
@@ -481,7 +511,7 @@ def _ask_analyze(a, src: str) -> None:
     from . import ask
 
     try:
-        r = asyncio.run(ask.report(Path(a.question).name, src, a.host or None, a.timeout))
+        r = asyncio.run(ask.report(Path(a.question).name, src, a.host or None, a.timeout, **target))
     except RuntimeError as e:
         raise SystemExit(f"error: {e}")
     if a.json:

@@ -17,7 +17,7 @@ the relations (survey, target, times).
 
 | Subject | Transport | Payload | From | Headers |
 | --- | --- | --- | --- | --- |
-| `beat.ask.all`, `beat.ask.host.<name>` | core NATS | question | member, countersigned by the collector | Beat-Survey, Beat-Question, Beat-Key, Beat-Timeout, Beat-Issued, Beat-Deadline, Beat-Cred, Beat-Targets (optional), Beat-Profile (optional) |
+| `beat.ask.all`, `beat.ask.host.<name>` | core NATS | question | member, countersigned by the collector | Beat-Survey, Beat-Question, Beat-Key, Beat-Timeout, Beat-Issued, Beat-Deadline, Beat-Cred, Beat-Targets (optional), Beat-Profile (optional), Beat-Subjects (optional) |
 | `beat.ack.<survey>` | core NATS | none | sensor | Beat-Survey, Beat-Question, Beat-Target, Beat-Answer-By, Beat-Sensor |
 | `beat.answer.<survey>` | request | sealed answer | sensor | Beat-Survey, Beat-Question, Beat-Target, Beat-Outcome, Beat-Started, Beat-Finished, Beat-Phases, Beat-Sensor; reply `{"stored": true}` or `{"refused": why}` |
 | `beat.heartbeat.<name>` | core NATS | heartbeat | sensor | (the entry is signed JSON) |
@@ -36,7 +36,15 @@ names it, and equal answers must stay equal. `Beat-Started` and `Beat-Finished` 
 
 `Beat-Profile: 1` on a question (prepared by the collector when the member asks, signed by the member with the rest:
 a client refuses to sign it unasked, or to sign without it when it asked): beat-probe `--profile`, each host call
-timed, the slowest as records of the answer (docs/probes.md §9). An older sensor ignores it. A heartbeat's `secret_walk` says when secret files were last walked for
+timed, the slowest as records of the answer (docs/probes.md §9). An older sensor ignores it.
+
+`Beat-Subjects` on a question: what it is about, a JSON list of objects on one line of ASCII (`wire.subjects_header`),
+at most 64 KiB; with `beat ask --cluster --selector`, the pods the selector matched. Prepared by the collector from
+the member's `survey.prepare`, signed by the member with the rest (a client refuses to sign subjects it did not give);
+the sensor refuses a question whose subjects are not a list of objects or too large, and hands them to the probe
+(`subjects()`, docs/probes.md [B11d]). Not part of the question's hash: like Beat-Targets, it says where to look, so
+the same probe stays the same question when the pods change. An older sensor ignores it (its probe has no
+`subjects()`, so such a question fails there as an unknown name). A heartbeat's `secret_walk` says when secret files were last walked for
 and what was left out (`docs/security.md`).
 
 - A sensor acks only when its answer is not out within a second, with the time it will answer by.

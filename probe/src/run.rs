@@ -30,12 +30,14 @@ fn now() -> i64 {
 
 /// One run, its host calls timed in `timings` (crate::timed).
 pub fn run(name: &str, source: &str, host: Box<dyn Host>) -> Json {
-    run_timed(name, source, host, false, &[])
+    run_timed(name, source, host, false, &[], Vec::new())
 }
 
 /// One run. `profile`: time each host call on its own too, and report the slowest as records (crate::timed).
 /// `before`: what the caller spent before this run, in ms by step (beat-probe: loading the tools), for `timings`.
-pub fn run_timed(name: &str, source: &str, host: Box<dyn Host>, profile: bool, before: &[(&str, u64)]) -> Json {
+/// `subjects`: what the question was asked about (Beat-Subjects: the pods a selector matched), for `subjects()`.
+pub fn run_timed(name: &str, source: &str, host: Box<dyn Host>, profile: bool, before: &[(&str, u64)],
+                 subjects: Vec<Json>) -> Json {
     let started = now();
     let t0 = Instant::now();
     let id = probe_id(source);
@@ -78,7 +80,7 @@ pub fn run_timed(name: &str, source: &str, host: Box<dyn Host>, profile: bool, b
     let globals = globals(&tools);
     step("compile", compiling);
     let evaluating = Instant::now();
-    let ctx = Ctx { host, state: RefCell::new(RunState::default()) };
+    let ctx = Ctx { host, state: RefCell::new(RunState::default()), subjects };
     let print = DiagPrint(&ctx.state);
     let outcome: Result<(), starlark::Error> = Module::with_temp_heap(|module| {
         let mut eval = Evaluator::new(&module);

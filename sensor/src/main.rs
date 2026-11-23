@@ -66,7 +66,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::{bail, Context};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use futures::StreamExt;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use runner::Runner;
 
@@ -334,6 +334,23 @@ struct Ask {
     deadline: i64,
     /// Beat-Profile: 1, signed with the rest: each host call timed, the slowest reported as records (beat-probe --profile)
     profile: bool,
+    /// Beat-Subjects, signed with the rest: what the question is about (the pods a selector matched), a JSON list of
+    /// objects for the probe's subjects(); not part of the question's hash, so a rollout does not make it a new question.
+    subjects: Option<String>,
+}
+
+/// Beat-Subjects past this is refused: it travels as one argument to beat-probe (a Linux argument's limit is 128 KiB).
+const MAX_SUBJECTS_BYTES: usize = 64 * 1024;
+
+/// Beat-Subjects as admit() takes it: a JSON list of objects, within MAX_SUBJECTS_BYTES.
+fn subjects_of(text: &str) -> Result<String, String> {
+    if text.len() > MAX_SUBJECTS_BYTES {
+        return Err(format!("Beat-Subjects is {} bytes, more than {MAX_SUBJECTS_BYTES}", text.len()));
+    }
+    match serde_json::from_str::<Vec<Value>>(text) {
+        Ok(list) if list.iter().all(Value::is_object) => Ok(text.to_string()),
+        _ => Err("Beat-Subjects is not a JSON list of objects".into()),
+    }
 }
 
 /// Checks a question before anything runs: signed by a member of the org (Beat-Cred, H16) and countersigned by a collector key, for this payload, for this sensor, issued since
@@ -391,7 +408,9 @@ fn admit(cfg: &Config, seen: &Seen, msg: &async_nats::Message) -> Result<Ask, Op
         return Err(Some(format!("survey {survey}: asked again (a replay)")));
     }
     let profile = seal::get(&h, "Beat-Profile") == Some("1");
-    Ok(Ask { survey, question_hash, key, timeout, deadline, profile })
+    let subjects = seal::get(&h, "Beat-Subjects").map(subjects_of).transpose()
+        .map_err(|e| Some(format!("survey {survey}: {e}")))?;
+    Ok(Ask { survey, question_hash, key, timeout, deadline, profile, subjects })
 }
 
 /// Handles one message on an ask subject: answer it, or drop it (admit). `slots` bounds how many questions run at
@@ -399,7 +418,7 @@ fn admit(cfg: &Config, seen: &Seen, msg: &async_nats::Message) -> Result<Ask, Op
 async fn handle(cfg: Arc<Config>, client: async_nats::Client, slots: Arc<tokio::sync::Semaphore>, seen: Seen,
                 msg: async_nats::Message) {
     let arrived = std::time::Instant::now();
-    let Ask { survey, question_hash, key, timeout, deadline, profile } = match admit(&cfg, &seen, &msg) {
+    let Ask { survey, question_hash, key, timeout, deadline, profile, subjects } = match admit(&cfg, &seen, &msg) {
         Ok(a) => a,
         Err(None) => return,
         Err(Some(why)) => {
@@ -424,7 +443,7 @@ async fn handle(cfg: Arc<Config>, client: async_nats::Client, slots: Arc<tokio::
             return wire::answer_error("busy", &format!("waited {waited} s for a free slot: the {timeout} s time limit \
                                                          was used up before the question could start"));
         }
-        match cfg.runner.run(&q.name, &q.source, left.as_secs(), &phases, profile).await {
+        match cfg.runner.run(&q.name, &q.source, left.as_secs(), &phases, profile, subjects.as_deref()).await {
             Ok(result) => wire::answer_from_result(&result),
             // The runner had what was left of the limit; the caller knows the limit they set.
             Err(e) if e.kind == "timeout" => wire::answer_error("timeout", &format!(
@@ -709,6 +728,18 @@ async fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Beat-Subjects: a JSON list of objects within its size, else the question is refused.
+    #[test]
+    fn subjects_checked() {
+        assert!(subjects_of(r#"[{"uid":"u1"}]"#).is_ok());
+        assert!(subjects_of("[]").is_ok());
+        for bad in [r#"{"uid":"u1"}"#, r#"["u1"]"#, "not json"] {
+            assert!(subjects_of(bad).is_err(), "{bad}");
+        }
+        let big = format!("[{}]", vec![r#"{"a":"0123456789"}"#; 4000].join(","));
+        assert!(subjects_of(&big).unwrap_err().contains("more than"));
+    }
 
     /// A nats-server of the test's own, on free ports (NATS, and WebSocket without TLS: the load balancer's side of
     /// it); None (the test is skipped) when there is none on PATH (`nix shell nixpkgs#nats-server` gives one).

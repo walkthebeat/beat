@@ -7,7 +7,8 @@
 //!
 //!   beat.ask.all, beat.ask.host.<name>   core NATS   payload: question   Beat-Survey, Beat-Question, Beat-Key,
 //!                                                                         Beat-Timeout, Beat-Issued, Beat-Deadline,
-//!                                                                         Beat-Targets (optional: only these answer)
+//!                                                                         Beat-Targets (optional: only these answer),
+//!                                                                         Beat-Subjects (optional: what it is about)
 //!   beat.answer.<survey>                 request     payload: sealed     Beat-Survey, Beat-Question, Beat-Target,
 //!                                                    answer              Beat-Outcome, Beat-Started, Beat-Finished,
 //!                                                                         Beat-Sensor; reply {"stored": true} or
