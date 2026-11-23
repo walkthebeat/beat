@@ -161,11 +161,22 @@ def _summary(text: str) -> str:
     return ""
 
 
-def asks_api(path: Path) -> bool:
-    """Whether a probe reads the cluster's API (calls k8s()): it is for cluster sensors, and the others are not."""
+def calls(path: Path, builtin: str) -> bool:
+    """Whether a probe's code (not its docstring or comments) calls `builtin`."""
     import re
     text = re.sub(r'^\s*"""(.|\n)*?"""', "", path.read_text())   # the docstring
-    return any(re.search(r"\bk8s\s*\(", line.split("#")[0]) for line in text.splitlines())
+    return any(re.search(rf"\b{builtin}\s*\(", line.split("#")[0]) for line in text.splitlines())
+
+
+def asks_api(path: Path) -> bool:
+    """Whether a probe reads the cluster's API (calls k8s()): it is for cluster sensors, and the others are not."""
+    return calls(path, "k8s")
+
+
+def asks_subjects(path: Path) -> bool:
+    """Whether a probe is about the pods it is asked about (calls subjects()): asked by selector (beat ask --cluster
+    --selector), not by host, so `run_every` leaves it out."""
+    return calls(path, "subjects")
 
 
 def probes(repo: Path) -> list[dict]:
@@ -203,7 +214,7 @@ def run_every(hosts: list[str], cluster: set[str] = frozenset(), commit: bool = 
     """Every probe a name finds (`probes`), asked of the hosts at once: one survey per probe, all of them in
     flight together, then each host's facts written and committed as `run_probe` does. A probe that reads the
     cluster's API (`asks_api`) is asked of the `cluster` sensors among them, every other probe of the rest; a probe
-    with no host left is skipped. [(probe, survey id or None, {host: run_probe's result, or an EstateError})], by
+    with no host left is skipped, and so is one asked by selector (`asks_subjects`). [(probe, survey id or None, {host: run_probe's result, or an EstateError})], by
     probe."""
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
@@ -214,7 +225,7 @@ def run_every(hosts: list[str], cluster: set[str] = frozenset(), commit: bool = 
     # thread at once would race, and could leave one thread's key with another's credential).
     asyncio.run(ask.whoami())
     seal.member()
-    names = [p["name"] for p in probes(repo)]
+    names = [p["name"] for p in probes(repo) if not asks_subjects(probe_path(repo, p["name"]))]
     api = {n: asks_api(probe_path(repo, n)) for n in names}
     asked = {n: [h for h in hosts if (h in cluster) == api[n]] for n in names}
     names = [n for n in names if asked[n]]

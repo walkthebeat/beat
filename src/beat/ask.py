@@ -58,23 +58,29 @@ def not_live_reason(host: str, live: list[str]) -> str:
 
 
 async def ask(name: str, source: str, hosts: list[str] | None = None, timeout: int = 120,
-              via: str = "beat ask", wait: float | None = None, profile: bool = False) -> dict:
+              via: str = "beat ask", wait: float | None = None, profile: bool = False,
+              subjects: list[dict] | None = None, selector: str | None = None) -> dict:
     """Asks every live sensor, or only `hosts`, through the collector, and waits until the survey is sealed (or
     `wait` seconds; without `wait`, past the deadline for as long as the collector is catching up, up to LATE_S).
     Returns the survey: id, question hash, expected, answers {target: {answer_hash, outcome, started, finished,
     sensor, answer}}, down, no_answer, running (not decided when the wait ended), not_live (expected hosts with no
     directory entry when asked: down from the start), live, sealed, behind (the collector's backlog, messages) and
     standing (what it all says, ask.standing). `profile`: each host times every host call (Beat-Profile, signed
-    with the question); an answer's profiled calls are taken out of its records into its `profile` (split_profile)."""
+    with the question); an answer's profiled calls are taken out of its records into its `profile` (split_profile).
+    `subjects`: what the question is about (Beat-Subjects: kube.select's pods), for the probe's subjects();
+    `selector`: how the targets were chosen, in words, as the survey records it."""
     estate.pin_on_first_use()
     try:
         key, cred = seal.member()
     except seal.Refused as e:  # no credential here, or expired (no root on this machine): `beat creds init`
         raise RuntimeError(str(e)) from None
     r = await api("survey.prepare", {"name": name, "source": source, "targets": hosts or None,
-                                     "timeout": timeout, **({"profile": True} if profile else {}), **asker(via)}, 30)
+                                     "timeout": timeout, **({"profile": True} if profile else {}),
+                                     **({"subjects": subjects} if subjects is not None else {}),
+                                     **({"selector": selector} if selector else {}), **asker(via)}, 30)
     survey = r["survey"]
-    signature = sign_envelope(key, r["headers"], wire.question(name, source), survey, timeout, hosts, cred, profile)
+    signature = sign_envelope(key, r["headers"], wire.question(name, source), survey, timeout, hosts, cred, profile,
+                              subjects)
     await api("survey.start", {"survey": survey, "signature": signature, "credential": cred}, 30)
     until = time.time() + (wait if wait is not None else
                            max(0.0, wire_time(r["deadline"]) - time.time()) + 5)
@@ -129,12 +135,13 @@ async def ask(name: str, source: str, hosts: list[str] | None = None, timeout: i
 
 
 def sign_envelope(key, headers: dict, q: bytes, survey: str, timeout: int, hosts: list[str] | None,
-                  cred: str, profile: bool = False) -> str:
+                  cred: str, profile: bool = False, subjects: list[dict] | None = None) -> str:
     """The member's signature over a prepared envelope with its credential added (Beat-Cred, H16), once it says what
-    was asked: this question (by its hash), these targets (none: every sensor), this time limit. The collector picks
-    the rest (id, key, times). Beat-Profile only when the member asked for it."""
+    was asked: this question (by its hash), these targets (none: every sensor), this time limit, these subjects. The
+    collector picks the rest (id, key, times). Beat-Profile only when the member asked for it."""
     want = {"Beat-Survey": survey, "Beat-Question": wire.sha256_hex(q), "Beat-Timeout": str(timeout),
-            "Beat-Targets": ",".join(sorted(set(hosts))) if hosts else None, "Beat-Profile": "1" if profile else None}
+            "Beat-Targets": ",".join(sorted(set(hosts))) if hosts else None, "Beat-Profile": "1" if profile else None,
+            "Beat-Subjects": wire.subjects_header(subjects) if subjects is not None else None}
     for k, v in want.items():
         if headers.get(k) != v:
             raise RuntimeError(f"the collector prepared {k} {headers.get(k)!r}, not {v!r}: not signed")
@@ -357,10 +364,10 @@ def _http(path: str, body: bytes | None, timeout: float, method: str | None = No
 
 
 async def dataset(name: str, source: str, hosts: list[str] | None = None, timeout: int = 120,
-                  via: str = "beat ask") -> dict:
+                  via: str = "beat ask", subjects: list[dict] | None = None, selector: str | None = None) -> dict:
     """A question asked of the fleet, answered as a pointer to its dataset (the service's dataset.get): where
     the survey's tables are and their shape, the outcomes counted; never the answers themselves."""
-    s = await ask(name, source, hosts, timeout, via=via)
+    s = await ask(name, source, hosts, timeout, via=via, subjects=subjects, selector=selector)
     if not s["answers"]:
         return {"survey": s["survey"], "asked": len(s["expected"]), "note": "no host answered"}
     return await with_live(await fetch(await api("dataset.get", {"survey": s["survey"]}, timeout=120)))
@@ -476,13 +483,14 @@ async def with_live(p: dict) -> dict:
 
 
 async def report(name: str, source: str, hosts: list[str] | None = None, timeout: int = 120, history: int = 3,
-                 records: bool = False, via: str = "beat ask") -> dict:
+                 records: bool = False, via: str = "beat ask", subjects: list[dict] | None = None,
+                 selector: str | None = None) -> dict:
     """A question asked of the fleet, answered as the comparison rather than the raw answers (MCP `survey`,
     `beat ask --analyze`): who answered what (categories by answer hash, with record counts and errors), the
     analysis across the hosts (analysis.get: groups, dimensions, rare values, inconsistencies, drift since this
     question's previous survey) and, when the probe emitted log summaries, the logs compared across hosts with a
     proposed curated template set (logs.get). Raw records only with `records`."""
-    s = await ask(name, source, hosts, timeout, via=via)
+    s = await ask(name, source, hosts, timeout, via=via, subjects=subjects, selector=selector)
     out: dict = {"survey": s["survey"], "asked": s["expected"], "answers": []}
     if s.get("standing"):
         out["standing"] = s["standing"]

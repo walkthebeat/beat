@@ -70,6 +70,8 @@ pub struct RunState {
 pub struct Ctx {
     pub host: Box<dyn Host>,
     pub state: RefCell<RunState>,
+    /// What the question was asked about, signed with it (Beat-Subjects): `subjects()`.
+    pub subjects: Vec<serde_json::Value>,
 }
 
 /// `print()` goes to the run's diagnostic text, not to the records.
@@ -361,6 +363,13 @@ fn beat_builtins(builder: &mut GlobalsBuilder) {
             ])));
         }
         Ok(heap.alloc(items))
+    }
+
+    /// What this question was asked about, as dicts: with `beat ask --cluster C --selector S`, the pods the selector
+    /// matched (namespace, name, uid, node, owner, labels, containers[{name, id}]), every one of them on every node
+    /// asked, so a probe keeps those it finds here (their cgroup is named by the uid). Empty when asked by host.
+    fn subjects<'v>(eval: &mut Evaluator<'v, '_, '_>) -> starlark::Result<Value<'v>> {
+        Ok(eval.heap().alloc(ctx(eval).subjects.clone()))
     }
 
     /// Kubernetes objects of `kind` (Pod, Event, Node, Deployment, ... case aside), on the cluster sensor: dicts as

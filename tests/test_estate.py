@@ -32,7 +32,7 @@ def test_run_starlark_probe(repo, monkeypatch):
     (repo / "probes" / "web.star").write_text('def main() -> None:\n    emit("a", "b", "c", "d")\n')
     seen = {}
 
-    async def fake_ask(name, source, hosts=None, timeout=120, via="", profile=False):
+    async def fake_ask(name, source, hosts=None, timeout=120, via="", profile=False, **target):
         seen.update(host=hosts[0], name=name, source=source)
         return {"survey": "s", "question": "q", "expected": hosts, "down": [], "answers": {hosts[0]: {
             "answer_hash": "h", "outcome": "partial", "answer": {
@@ -64,7 +64,7 @@ def test_run_on_a_host_with_no_live_sensor_says_so(repo, monkeypatch):
     """A mistyped or absent host fails at once with a reason and close live names, not after the deadline."""
     (repo / "probes" / "web.star").write_text('def main() -> None:\n    emit("a", "b", "c", "d")\n')
 
-    async def fake_ask(name, source, hosts=None, timeout=120, via="", profile=False):
+    async def fake_ask(name, source, hosts=None, timeout=120, via="", profile=False, **target):
         return {"survey": "s", "question": "q", "expected": hosts, "answers": {}, "down": hosts,
                 "not_live": hosts, "live": ["beat-dev", "legacy-web-1"]}
     from beat import ask
@@ -111,7 +111,7 @@ def test_fork_makes_the_packs_probe_the_estates(repo):
 def test_run_every_asks_every_probe_and_writes_each_hosts_facts(repo, monkeypatch):
     asked = {}
 
-    async def fake_ask(name, source, hosts=None, timeout=120, via="", profile=False):
+    async def fake_ask(name, source, hosts=None, timeout=120, via="", profile=False, **target):
         asked[name] = hosts
         return {"survey": f"s-{name}", "question": "q", "expected": hosts, "down": [], "answers": {h: {
             "answer_hash": "h", "outcome": "ok", "answer": {"v": 1, "outcome": "ok", "diag": "", "notes": [],
@@ -127,7 +127,7 @@ def test_run_every_asks_every_probe_and_writes_each_hosts_facts(repo, monkeypatc
     from beat import seal
     monkeypatch.setattr(seal, "member", lambda: ("key", "cred"))
     out = estate.run_every(["web-1", "web-2", "prod_api"], cluster={"prod_api"})
-    names = [p["name"] for p in estate.probes(repo)]
+    names = [p["name"] for p in estate.probes(repo) if p["name"] != "k8s-pod"]  # asked by selector only
     assert sorted(asked) == sorted(f"{n}.star" for n in names) and [n for n, _, _ in out] == names
     # The cluster's API probes on the cluster sensor only, the host probes on the nodes only.
     assert asked["k8s-pending.star"] == ["prod_api"] and asked["hello.star"] == ["web-1", "web-2"]
@@ -144,6 +144,8 @@ def test_asks_api_reads_the_code_not_the_docstring_or_comments(tmp_path):
     assert not estate.asks_api(p)
     p.write_text('"""A probe."""\ndef main():\n    for x in k8s ("Pod"):\n        pass\n')
     assert estate.asks_api(p)
+    assert not estate.asks_subjects(p) and not estate.asks_subjects(estate.PACK / "k8s-pending.star")
+    assert estate.asks_subjects(estate.PACK / "k8s-pod.star") and not estate.asks_api(estate.PACK / "k8s-pod.star")
 
 
 def test_init_and_commit_without_a_git_identity(tmp_path, monkeypatch):

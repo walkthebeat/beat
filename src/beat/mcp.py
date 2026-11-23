@@ -26,7 +26,7 @@ import mcp.types as types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
-from . import ask, estate, login
+from . import ask, estate, kube, login
 
 HOST = {"type": "string", "description": "Target host: a live sensor's name (see `inventory`)."}
 
@@ -83,7 +83,10 @@ SURVEY = (
     "emit_log_summary, `logs`: each log's templates with per-host counts, parameters and examples, and a proposed "
     "curated template set. Prefer this to calling `run` host by host or to collecting raw answers and comparing them "
     "yourself (jq, grep, regexes): it is faster, and it remembers earlier surveys of the same question. If it cannot "
-    "show what you need, say what is missing. records=true adds the raw records. Probe language and builtins: `run`.")
+    "show what you need, say what is missing. records=true adds the raw records. Probe language and builtins: `run`. "
+    "Kubernetes: give `cluster` and `selector` instead of `hosts` to ask the nodes that run the matching pods (the "
+    "cluster sensor says which); the probe gets those pods from subjects() (the pack's `k8s-pod`: each pod's "
+    "processes, throttling, memory, OOM kills, pressure and log files on its node).")
 
 QUERY = (
     "Read-only SQL (DuckDB) over everything beat has recorded: every survey and run, each host's answer, over time. "
@@ -129,6 +132,11 @@ def tool_defs(guide: str | None, hosts: list[str]) -> list[types.Tool]:
                 "hosts": {"type": "array", "items": {"type": "string"},
                           "description": "Only these hosts (default: every live sensor)." + (
                               f" Live now: {', '.join(hosts)}." if hosts else "")},
+                "cluster": {"type": "string", "description": "Kubernetes: the cluster (its sensors are <cluster>_api "
+                            "and <cluster>_<node>); asks the nodes running the pods `selector` matches, not `hosts`."},
+                "selector": {"type": "string", "description": "With `cluster`: a label selector as kubectl -l takes "
+                             "it (none: every pod)."},
+                "namespace": {"type": "string", "description": "With `cluster`: only this namespace."},
                 "timeout": {"type": "integer", "description": "Seconds per host (default 120, max 300)."},
                 "history": {"type": "integer", "description": "Earlier surveys of this question to learn from and "
                             "compare with (default 3)."},
@@ -320,10 +328,21 @@ async def _call(name: str, args: dict) -> dict:
             qname, source = path.name, path.read_text()
         if not source:
             return {"ok": False, "error": "give `probe` (a saved probe's name) or `source`"}
-        return {"ok": True, **await ask.report(qname, source, hosts,
-                                               min(int(args.get("timeout") or 120), 300),
-                                               int(args.get("history") or 3), bool(args.get("records")),
-                                               via="beat-mcp")}
+        target = {}
+        if args.get("cluster"):
+            if hosts:
+                return {"ok": False, "error": "`cluster` asks the nodes its pods run on: not with `hosts`"}
+            try:
+                sel = await kube.select(args["cluster"], args.get("selector") or None, args.get("namespace") or None,
+                                        via="beat-mcp")
+            except RuntimeError as e:
+                return {"ok": False, "error": str(e)}
+            if not sel["subjects"]:
+                return {"ok": False, "error": kube.summary(sel)}
+            hosts, target = sel["hosts"], {"subjects": sel["subjects"], "selector": sel["selector"]}
+        r = await ask.report(qname, source, hosts, min(int(args.get("timeout") or 120), 300),
+                             int(args.get("history") or 3), bool(args.get("records")), via="beat-mcp", **target)
+        return {"ok": True, **({"selected": kube.summary(sel)} if target else {}), **r}
     if name == "run":
         return _cap_log_summaries(await _ask_one(host, args.get("name") or "probe.star", args.get("source", ""),
                                                  int(args.get("timeout") or 120), bool(args.get("profile"))))

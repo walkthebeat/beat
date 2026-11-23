@@ -11,7 +11,8 @@ sensor.
   beat.ask.all, beat.ask.host.<name>   core NATS   payload: question   Beat-Survey, Beat-Question, Beat-Key (the
                                                                         survey's public key), Beat-Timeout,
                                                                         Beat-Issued, Beat-Deadline, Beat-Targets
-                                                                        (optional: only these answer)
+                                                                        (optional: only these answer), Beat-Subjects
+                                                                        (optional: what it is about, subjects_header)
   beat.ack.<survey>                    core NATS   no payload         Beat-Survey, Beat-Question, Beat-Target,
                                                                         Beat-Answer-By, Beat-Sensor (only when the
                                                                         answer is not out within a second)
@@ -116,6 +117,16 @@ def canonical(value) -> bytes:
 
 def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+MAX_SUBJECTS_BYTES = 64 * 1024  # the sensor's: Beat-Subjects travels as one argument to beat-probe
+
+
+def subjects_header(subjects: list[dict]) -> str:
+    """Beat-Subjects: what a question is about (the pods a selector matched), as one line of ASCII JSON. Signed with
+    the rest of the envelope, but not part of the question's hash: it says where to look, as Beat-Targets does, so a
+    rollout's new pods do not make the same probe a new question (C17's params, which are hashed, are not this)."""
+    return json.dumps(subjects, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
 def question(name: str, source: str, libraries: dict | None = None, params: dict | None = None) -> bytes:
