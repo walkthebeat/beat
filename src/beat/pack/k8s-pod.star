@@ -106,6 +106,8 @@ def main():
         emit(s, "here", "yes", SRC)
         emit(s, "uid", pod["uid"], SRC, kind="identity")
         emit(s, "owner", pod.get("owner") or "", SRC)
+        if pod.get("terminating"):
+            emit(s, "terminating", "yes", SRC)
         emit(s, "cgroup", cg, SRC, kind="identity")
         resources(s, cg)
         pressure(s, cg)
