@@ -12,7 +12,7 @@ from . import ask
 # Asked of the cluster sensor with what to select as its subject: {selector, namespace}. One question whatever is
 # selected, so its surveys are the history of what selectors matched.
 SELECT = '''"""Which pods a label selector matches, and where they run (beat ask --cluster --selector): one record per pod,
-its value JSON: namespace, name, uid, node, phase, owner (a Deployment over its ReplicaSet), labels, containers."""
+its value JSON: namespace, name, uid, node, phase, terminating, owner (a Deployment over its ReplicaSet), labels, containers."""
 
 def controller(o):
     for r in o["metadata"].get("ownerReferences") or []:
@@ -22,13 +22,15 @@ def controller(o):
 
 def main():
     for want in subjects():
-        ns = want.get("namespace")
+        # k8s() takes a namespace or a selector only when there is one: None is not a string to it.
+        ns = {"namespace": want["namespace"]} if want.get("namespace") else {}
+        sel = {"selector": want["selector"]} if want.get("selector") else {}
         over = {}
-        for rs in k8s("ReplicaSet", namespace=ns):
+        for rs in k8s("ReplicaSet", **ns):
             c = controller(rs)
             if c:
                 over[rs["metadata"]["namespace"] + "/" + rs["metadata"]["name"]] = c["kind"] + "/" + c["name"]
-        for p in k8s("Pod", namespace=ns, selector=want.get("selector")):
+        for p in k8s("Pod", **dict(ns, **sel)):
             m, spec, st = p["metadata"], p.get("spec") or {}, p.get("status") or {}
             c = controller(p)
             owner = None
@@ -39,7 +41,7 @@ def main():
                 containers.append({"name": s["name"], "id": (s.get("containerID") or "").partition("://")[2] or None})
             emit(m["namespace"] + "/" + m["name"], "pod", json.encode({
                 "namespace": m["namespace"], "name": m["name"], "uid": m["uid"], "node": spec.get("nodeName"),
-                "phase": st.get("phase"), "owner": owner, "labels": m.get("labels") or {}, "containers": containers,
+                "phase": st.get("phase"), "terminating": bool(m.get("deletionTimestamp")), "owner": owner, "labels": m.get("labels") or {}, "containers": containers,
             }), "k8s.Pod", kind="identity")
 '''
 
@@ -82,6 +84,9 @@ def summary(sel: dict) -> str:
     """One line for people: how many pods on how many nodes, and those on none."""
     n, h = len(sel["subjects"]), len(sel["hosts"])
     line = f"{sel['selector']}: {n} pod{'s' * (n != 1)} on {h} node{'s' * (h != 1)}"
+    ending = sum(1 for p in sel["subjects"] if p.get("terminating"))
+    if ending:
+        line += f" ({ending} terminating)"
     if sel["unscheduled"]:
         line += f"; not on a node yet (not asked): {', '.join(sel['unscheduled'])}"
     return line
