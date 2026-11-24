@@ -14,7 +14,10 @@
 //!    in the crate, because Rust's regex has no lookaround and some masks need checks a regex cannot make.
 //! 2. Templates, one of two ways:
 //!    - mined (no --templates): Drain over the window (the `drain3` crate, checked against Python Drain3),
-//!      then every line matched against the final templates, so its parameters are read against them;
+//!      then every line matched against the final templates, so its parameters are read against them. A mined
+//!      template's literal tokens that hold a digit are parameters too (`[1497]`, `8.140s`, `2026/11/06`): Drain
+//!      keeps a token literal until it has seen it vary, so one message's text, and its id, would otherwise depend
+//!      on the window (a pid seen once, a date before midnight). The literal is the parameter's value: nothing lost;
 //!    - curated (--templates '["template", ...]'): the given templates only, matched exactly (`<*>` matches one
 //!      token), so answers from different hosts name the same templates; lines that match none are mined
 //!      separately and reported as `"new": true`.
@@ -22,10 +25,11 @@
 //!    per parameter (`<*>`) its distinct values with counts (the `cap` most frequent) and min/max when all are
 //!    numbers, the first `examples` lines (masked unless --raw-examples), and `minutes`: its lines per minute,
 //!    `[[minute, count], ...]`, so a template is a time series and a window is a sum over minutes (decision L17).
-//!    A parameter with 2 to --levels (12) distinct values is categorical (a status, a method, a level): all its
-//!    values are reported, `"categorical": true`, and `minutes` counts each value per minute,
-//!    `[[minute, [[value, count], ...]], ...]` (503s per minute). Wider parameters (ids, pids, sizes) only have their
-//!    `cap` most frequent values: counting them per minute would mostly repeat each line.
+//!    A parameter with 2 to --levels (12) distinct values, every one a label (no digit, a bare number of at most 3
+//!    digits, or a word with short digit runs: GET, ERROR, 503, eth0, IPv4; `label`), is categorical (a status, a method, a level): all its values are reported,
+//!    `"categorical": true`, and `minutes` counts each value per minute, `[[minute, [[value, count], ...]], ...]`
+//!    (503s per minute). Other parameters (ids, pids, sizes, durations; however few a short window shows) only have
+//!    their `cap` most frequent values: counting them per value would make each value a series of its own.
 //!
 //! Minutes: a line's minute is its time (the first <TIME> mask match) cut after the minutes, normalized where the
 //! line says enough: `2026-10-11T13:49` from ISO times and from `2026/10/11 13:49:04` (nginx error log) or
@@ -132,6 +136,47 @@ fn template_id(text: &str) -> String {
     format!("{h:016x}")
 }
 
+/// A mined template's text with every literal token that holds a digit made a parameter, and per parameter of that
+/// text where its value comes from: None, the line's next argument; Some(token), the literal itself.
+fn generalize(t: &drain3::Template) -> (String, Vec<Option<String>>) {
+    let mut lit = t.tokens().iter();
+    let (mut text, mut slots) = (Vec::new(), Vec::new());
+    for i in 0..t.token_count() {
+        if t.is_param(i) {
+            text.push("<*>".to_string());
+            slots.push(None);
+        } else {
+            let tok = lit.next().unwrap().to_string();
+            if tok.bytes().any(|b| b.is_ascii_digit()) {
+                text.push("<*>".to_string());
+                slots.push(Some(tok));
+            } else {
+                text.push(tok);
+            }
+        }
+    }
+    (text.join(" "), slots)
+}
+
+/// A value that can name a category: no digit (GET, ERROR, primary); a bare number of at most 3 digits (200, 503); a
+/// word whose digit runs are short (eth0, IPv4, x86-64, AVX-512). Not a number with punctuation, a unit or a `name=`
+/// in front (`[5021]`, `8.140s`, `rt=0.007`, `647#647:`), nor a word with a long digit run (`C-0023`, an order id).
+fn label(v: &str) -> bool {
+    let digit = |c: char| c.is_ascii_digit();
+    if !v.contains(digit) || (v.len() <= 3 && v.chars().all(digit)) {
+        return true;
+    }
+    let core = match v.split_once('=') {
+        Some((k, rest)) if !k.is_empty() && k.chars().all(|c| c.is_ascii_alphabetic() || c == '_') => rest,
+        _ => v,
+    };
+    let core = core.trim_matches(|c: char| !c.is_ascii_alphanumeric());
+    // a unit after a number is not a word: 8.140s, 2028K, 12ms
+    let unit = core.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+    let core = if unit.ends_with(digit) && core.len() - unit.len() <= 2 { unit } else { core };
+    core.contains(|c: char| c.is_ascii_alphabetic()) && core.split(|c: char| !digit(c)).all(|run| run.len() <= 3)
+}
+
 fn render(t: &drain3::Template) -> String {
     // tokens() holds only the literal tokens; parameter positions come from is_param
     let mut lit = t.tokens().iter();
@@ -211,7 +256,7 @@ impl Acc {
                 let mut top: Vec<(&String, &u64)> = vals.iter().collect();
                 top.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
                 let nums: Vec<f64> = vals.keys().filter_map(|v| v.parse::<f64>().ok()).collect();
-                let categorical = (2..=s.levels).contains(&vals.len());
+                let categorical = (2..=s.levels).contains(&vals.len()) && vals.keys().all(|v| label(v));
                 let mut p = json!({
                     "distinct": vals.len(),
                     "values": top.iter().take(if categorical { vals.len() } else { s.cap }).map(|(v, c)| json!([v, c])).collect::<Vec<_>>(),
@@ -257,14 +302,20 @@ fn mine(lines: &[Line], s: &Settings, new: bool, acc: &mut BTreeMap<String, Acc>
     }
     let masked: Vec<String> = lines.iter().map(|(m, _, _)| m.clone()).collect();
     let m = drain3::train(&masked, config(s, s.sim)).map_err(|e| e.to_string())?;
-    let text: BTreeMap<usize, String> = m.templates().iter().map(|t| (t.id(), render(t))).collect();
+    let text: BTreeMap<usize, (String, Vec<Option<String>>)> = m.templates().iter().map(|t| (t.id(), generalize(t))).collect();
     for (masked, raw, minute) in lines {
         let (id, args, ok) = m.match_line(masked);
         // a mined line always matches its own final template; this is a guard, not a path
-        let key = if ok { text[&id].clone() } else { masked.clone() };
+        let (key, args) = if ok {
+            let (key, slots) = &text[&id];
+            let mut args = args.into_iter();
+            (key.clone(), slots.iter().map(|s| s.clone().unwrap_or_else(|| args.next().unwrap_or_default())).collect())
+        } else {
+            (masked.clone(), vec![])
+        };
         let a = acc.entry(key).or_default();
         a.new |= new;
-        a.add(if ok { args } else { vec![] }, if s.raw_examples { raw } else { masked }, minute.as_ref(), s);
+        a.add(args, if s.raw_examples { raw } else { masked }, minute.as_ref(), s);
     }
     Ok(())
 }
@@ -654,6 +705,39 @@ mod tests {
             assert_eq!(v["span"]["last_time"], "2026-10-07 15:35:44,4");
         }
         assert_eq!(run("no time\n", &[])["span"]["first_time"], Value::Null);
+    }
+
+    #[test]
+    fn one_message_one_id_whatever_the_window() {
+        // one pid seen: Drain keeps `[1497]` literal; two: a parameter. The template and its id must not differ.
+        let a = run("worker [1497] took 8.140s\n", &[]);
+        let b = run("worker [1497] took 8.140s\nworker [1502] took 0.2s\n", &[]);
+        assert_eq!(templates(&a), vec!["worker <*> took <*>"]);
+        assert_eq!(templates(&a), templates(&b));
+        assert_eq!(a["templates"][0]["id"], b["templates"][0]["id"]);
+        assert_eq!(a["templates"][0]["params"][0]["values"], json!([["[1497]", 1]]));  // the literal is the value
+        assert_eq!(b["templates"][0]["params"][1]["values"], json!([["0.2s", 1], ["8.140s", 1]]));
+        // curated templates are the asker's text, as given
+        let v = run("GET 200\n", &["--templates", r#"["GET 200"]"#]);
+        assert_eq!(templates(&v), vec!["GET 200"]);
+    }
+
+    #[test]
+    fn only_labels_are_categorical() {
+        let log = "2026-10-11 15:16:01 GET 200 [1497] took 0.004\n2026-10-11 15:16:02 POST 503 [1502] took 0.010\n";
+        let v = run(log, &["--templates", r#"["<*> <*> <*> <*> took <*>"]"#]);
+        let p = &v["templates"][0]["params"];
+        assert_eq!(p[1]["categorical"], true);  // GET, POST
+        assert_eq!(p[2]["categorical"], true);  // 200, 503
+        assert!(p[3].get("categorical").is_none());  // pids, however few
+        assert!(p[4].get("categorical").is_none());  // durations
+        for v in ["GET", "503", "eth0", "(eth0):", "IPv4", "x86-64.", "'AVX-512", "NFSv4.1", "/api/orders/4/cancel"] {
+            assert!(label(v), "{v} is a label");
+        }
+        for v in ["[5021]", "8.140s", "2028K", "rt=0.007", "urt=2.000,", "647#647:", "*3", "(0.2%);", "C-0023",
+                  "/api/orders/8704095", "1795495467.7475", "000038", "1024"] {
+            assert!(!label(v), "{v} is not a label");
+        }
     }
 
     #[test]
