@@ -167,7 +167,7 @@ Logs (when drain is among the tools; input: path= a file, tail= its last N lines
               minutes=60, levels=12)  -> dict: .lines, .templates: [{id, template, count, params: [{distinct,
                                       values: [[v, n]], min?, max?, categorical?, minutes?}], examples, new?,
                                       minutes: [[minute, n]]}]. A parameter with 2..levels values, all labels
-                                      (no digit, or a number of <= 3 digits: GET, 503), is categorical: counted
+                                      (GET, 503, eth0: not pids, ids or durations), is categorical: counted
                                       per value per minute. Lines are grouped into templates (Drain): variables
                                       become <*>, so does any mined token holding a digit (a template's id is then
                                       the same in every window), and <TIME> <IP> <UUID> <HEX> <PID> are masked. Pass the host's names in self_names (they become <SELF>, so

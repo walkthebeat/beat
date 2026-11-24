@@ -25,8 +25,8 @@
 //!    per parameter (`<*>`) its distinct values with counts (the `cap` most frequent) and min/max when all are
 //!    numbers, the first `examples` lines (masked unless --raw-examples), and `minutes`: its lines per minute,
 //!    `[[minute, count], ...]`, so a template is a time series and a window is a sum over minutes (decision L17).
-//!    A parameter with 2 to --levels (12) distinct values, every one a label (no digit, or a bare number of at most
-//!    3 digits: GET, ERROR, 503), is categorical (a status, a method, a level): all its values are reported,
+//!    A parameter with 2 to --levels (12) distinct values, every one a label (no digit, a bare number of at most 3
+//!    digits, or a word with short digit runs: GET, ERROR, 503, eth0, IPv4; `label`), is categorical (a status, a method, a level): all its values are reported,
 //!    `"categorical": true`, and `minutes` counts each value per minute, `[[minute, [[value, count], ...]], ...]`
 //!    (503s per minute). Other parameters (ids, pids, sizes, durations; however few a short window shows) only have
 //!    their `cap` most frequent values: counting them per value would make each value a series of its own.
@@ -158,9 +158,23 @@ fn generalize(t: &drain3::Template) -> (String, Vec<Option<String>>) {
     (text.join(" "), slots)
 }
 
-/// A value that can name a category: no digit (GET, ERROR, primary), or a bare number of at most 3 digits (200, 503).
+/// A value that can name a category: no digit (GET, ERROR, primary); a bare number of at most 3 digits (200, 503); a
+/// word whose digit runs are short (eth0, IPv4, x86-64, AVX-512). Not a number with punctuation, a unit or a `name=`
+/// in front (`[5021]`, `8.140s`, `rt=0.007`, `647#647:`), nor a word with a long digit run (`C-0023`, an order id).
 fn label(v: &str) -> bool {
-    !v.bytes().any(|b| b.is_ascii_digit()) || (v.len() <= 3 && v.bytes().all(|b| b.is_ascii_digit()))
+    let digit = |c: char| c.is_ascii_digit();
+    if !v.contains(digit) || (v.len() <= 3 && v.chars().all(digit)) {
+        return true;
+    }
+    let core = match v.split_once('=') {
+        Some((k, rest)) if !k.is_empty() && k.chars().all(|c| c.is_ascii_alphabetic() || c == '_') => rest,
+        _ => v,
+    };
+    let core = core.trim_matches(|c: char| !c.is_ascii_alphanumeric());
+    // a unit after a number is not a word: 8.140s, 2028K, 12ms
+    let unit = core.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+    let core = if unit.ends_with(digit) && core.len() - unit.len() <= 2 { unit } else { core };
+    core.contains(|c: char| c.is_ascii_alphabetic()) && core.split(|c: char| !digit(c)).all(|run| run.len() <= 3)
 }
 
 fn render(t: &drain3::Template) -> String {
@@ -717,6 +731,13 @@ mod tests {
         assert_eq!(p[2]["categorical"], true);  // 200, 503
         assert!(p[3].get("categorical").is_none());  // pids, however few
         assert!(p[4].get("categorical").is_none());  // durations
+        for v in ["GET", "503", "eth0", "(eth0):", "IPv4", "x86-64.", "'AVX-512", "NFSv4.1", "/api/orders/4/cancel"] {
+            assert!(label(v), "{v} is a label");
+        }
+        for v in ["[5021]", "8.140s", "2028K", "rt=0.007", "urt=2.000,", "647#647:", "*3", "(0.2%);", "C-0023",
+                  "/api/orders/8704095", "1795495467.7475", "000038", "1024"] {
+            assert!(!label(v), "{v} is not a label");
+        }
     }
 
     #[test]

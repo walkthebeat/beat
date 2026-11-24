@@ -208,8 +208,12 @@ emit_log_summary(name, summary, source="drain")        # records: log:<name>#<te
   it vary, so a pid or a duration seen once stayed in a mined template's text, and the same message got another id
   per question (most of what the analysis failed to match across questions in the lab org's store). In a mined
   template every token holding a digit is a parameter, its literal the value; curated templates stay as given. And
-  only labels are categorical (no digit, or a number of at most 3 digits: GET, ERROR, 503): a pid or a latency with
-  few values in a short window was counted per value, as keys `p<i>=<value>`, a key per pid. Turned down: digits
+  only labels are categorical (no digit; a number of at most 3 digits; a word whose digit runs are short: GET, 503,
+  eth0, IPv4): a pid or a latency with few values in a short window was counted per value, as keys `p<i>=<value>`, a
+  key per pid. Checked on the three-tier lab's own logs (nginx, orders-api, postgres, a journal; 2026-11-24): lines
+  and values all kept, templates only merged; what stopped being categorical is pids, durations, connection numbers,
+  ids, and `pool=1-5`/`pool=1-1`, `ed25519` (read as numbers: their values stay, their per-minute split goes).
+  `wasm/drain/compare.py` runs these checks for the next such change. Turned down: digits
   masked before mining (Drain3's `<NUM>`: the values are lost); leaving both to the analysis (every consumer would
   redo it, and the records would still carry values in keys).
 - **[B13]** The working loop (C21): `log_summary` to explore; the person or agent picks templates; the next
