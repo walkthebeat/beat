@@ -166,10 +166,11 @@ Logs (when drain is among the tools; input: path= a file, tail= its last N lines
   log_summary(path=, lines=, tail=0, self_names=[], header=0, templates=None, masks={}, examples=3, top=200,
               minutes=60, levels=12)  -> dict: .lines, .templates: [{id, template, count, params: [{distinct,
                                       values: [[v, n]], min?, max?, categorical?, minutes?}], examples, new?,
-                                      minutes: [[minute, n]]}]. A parameter with 2..levels values (a status, a
-                                      method) is categorical: counted per value per minute. Lines are grouped into
-                                      templates (Drain): variables become <*>, and <TIME> <IP> <UUID> <HEX> <PID>
-                                      are masked. Pass the host's names in self_names (they become <SELF>, so
+                                      minutes: [[minute, n]]}]. A parameter with 2..levels values, all labels
+                                      (no digit, or a number of <= 3 digits: GET, 503), is categorical: counted
+                                      per value per minute. Lines are grouped into templates (Drain): variables
+                                      become <*>, so does any mined token holding a digit (a template's id is then
+                                      the same in every window), and <TIME> <IP> <UUID> <HEX> <PID> are masked. Pass the host's names in self_names (they become <SELF>, so
                                       templates compare across hosts) and header=3 for syslog-style files.
                                       templates=[...] (from an earlier summary): match exactly those, so hosts
                                       report the same ones; other lines come back mined, with new=True.

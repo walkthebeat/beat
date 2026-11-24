@@ -95,7 +95,8 @@ def emit_log_summary(name: str, summary: dict[str, typing.Any], source: str = "d
                                for a categorical parameter: p<i>=<value>, how many lines had that value, and
                                p<i>@<minute>: "<value>=<lines> ..." in that minute (one record per minute: the index
                                expands it to p<i>=<value> per minute; answers stay small)
-    The template id depends on the template's text only, so subjects compare across hosts. Counts are declared
+    The template id depends on the template's text only, and a mined template's text not on the window (tokens
+    holding a digit are parameters, docs/probes.md [B13a]), so subjects compare across hosts and questions. Counts are declared
     metrics, times times; parameter values are left to the analysis, which sees all hosts. The per-minute and
     per-value counts are for the record index (series), not the survey's comparison."""
     log = "log:" + name
