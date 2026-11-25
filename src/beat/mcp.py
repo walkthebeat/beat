@@ -50,8 +50,9 @@ INSTRUCTIONS = """beat reaches this estate's hosts read-only, through sensors th
 the question, and load it first if your client defers tools (e.g. ToolSearch select:mcp__beat__survey):
 - About more than one host (what differs, which host is the odd one out, what normal looks like across a tier, what \
 changed since last time, whether a deploy changed anything): `survey`. One call; the reply is the comparison: hosts \
-grouped by identical answer, the differences with their hosts, rare values, inconsistencies, drift since the same \
-question was last asked, and log templates per host. Give a saved probe by name (`probe`) so repeated surveys are \
+grouped by identical answer, the differences with their hosts, rare values, inconsistencies, what was seen before \
+(each fact against earlier surveys of any question and host), drift since the same question was last asked, and log \
+templates per host. Give a saved probe by name (`probe`) so repeated surveys are \
 the same question and show drift.
 - One host, exploring or trying a probe before saving it: `run`.
 - Logs: in the probe, `log_summary(...)` groups lines into templates on the host (restrict to a time window by \
@@ -59,8 +60,8 @@ passing the selected `lines=`), and `emit_log_summary(name, summary)` records it
 across hosts, `logs` (by survey id) proposes a curated template set, `log_extract` fetches the lines behind one.
 - An earlier survey again (more history, other settings): `analyze` by survey id; its logs: `logs`.
 - Everything recorded so far, across hosts, probes and time (every survey and run is kept): `query`, read-only SQL \
-over the datasets `changes` (an event log), `series` (time series), `log_minutes` (log lines per minute), `log_values` (per value: 503s per minute) and \
-`observations` (every record).
+over the datasets `changes` (an event log), `series` (time series), `log_minutes` (log lines per minute), `log_values` (per value: 503s per minute), \
+`facts` (every record as a fact, comparable across questions and instances) and `observations` (every record).
 - Which hosts are live: `inventory`. osquery tables: `catalog`, `describe_osquery_table`.
 Before asking every host, think about what the probe takes to collect and to analyse at that size: its answer's \
 size and its time on a host (try it on one first), times the number of hosts. A probe returns what the question \
@@ -79,7 +80,10 @@ SURVEY = (
     "is the comparison, not the raw records: `answers` (hosts grouped by identical answer, with record counts and "
     "errors); `analysis` (exact groups of hosts; the differences that explain them, each value with its hosts, rare "
     "values marked; inconsistencies: facts that agree on every host but a few, usually the finding; slot kinds, "
-    "declared with emit(kind=) or inferred); `drift` since this question's previous survey; and, when the probe calls "
+    "declared with emit(kind=) or inferred; `seen_before`: each fact against the same fact in earlier surveys of any "
+    "question and host, instances and versions recognised from the org's history, with findings: unlike its peers, "
+    "above or below what was seen, a value not seen before, new); `drift` since this question's previous survey; "
+    "and, when the probe calls "
     "emit_log_summary, `logs`: each log's templates with per-host counts, parameters and examples, and a proposed "
     "curated template set. Prefer this to calling `run` host by host or to collecting raw answers and comparing them "
     "yourself (jq, grep, regexes): it is faster, and it remembers earlier surveys of the same question. If it cannot "
@@ -107,6 +111,10 @@ QUERY = (
     "template, minute, lines, surveys (how many surveys covered that minute; lines is the most any of them saw).\n"
     "- `log_values`: the same per value of a categorical log parameter (a status, a method, a level): host, log, "
     "template_id, template, param (p3: the template's 4th <*>), value, minute, lines, surveys.\n"
+    "- `facts`: every record as a fact (seen before): survey_id, host, key, value, value_kind (numeric, categorical, "
+    "or the class of an instance name), sig (the record with the parts that name an instance erased to <*>), "
+    "sig_version (and those naming a version), sig_kind (every varying part of the subject), context; the same sig in "
+    "two surveys is the same fact. `fact_shapes`: how the org's history classed each part (no values).\n"
     "- `runs` (host, probe, survey_id, asked_at, previous run), `surveys` (survey_id, question_hash, selector, "
     "asked_by, asked_at, deadline), `survey_answers` (survey_id, target: the host, answer_hash, outcome, started, "
     "finished, sensor_version, phases: milliseconds as queue=N,secrets=N,run=N).\n"
@@ -182,7 +190,9 @@ def tool_defs(guide: str | None, hosts: list[str]) -> list[types.Tool]:
             "identity, time, metric; declared by emit(kind=) or inferred), exact groups of hosts with the same "
             "configuration, the independent differences that explain them (dimensions, each with its values and "
             "host counts; rare values marked with their hosts), inconsistencies (two facts that agree on every host "
-            "but a few: the strongest findings), and drift since the same question's previous survey. Earlier "
+            "but a few: the strongest findings), seen_before (each fact against the same fact in earlier surveys of "
+            "any question and host: the level matched, the prior's range, and findings), and drift since the same "
+            "question's previous survey. Earlier "
             "surveys of the question teach it what changes (measurements) and what does not (configuration)."),
             inputSchema={"type": "object", "required": ["survey"], "properties": {
                 "survey": {"type": "string", "description": "Survey id (from `run`'s reply) or a unique prefix."},

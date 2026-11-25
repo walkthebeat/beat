@@ -29,7 +29,8 @@ hosts and interpret the answer. Load the MCP tools you need first if they are de
 | Only a time window of a log | select the lines in the probe (by their timestamp) and pass `log_summary(lines = selected)`; `journal(since = ...)` for the journal (no `until` yet: filter the entries by their time) |
 | What was asked before, and what did a host answer? | `@BEAT@ survey list [--host H]`, `@BEAT@ survey show <id>`, `@BEAT@ survey answer <id> <host>` |
 | An earlier survey again (more history) | `analyze <survey id>`; its logs: `logs <survey id>` |
-| What has been recorded so far, across hosts, probes and time | `query`: read-only SQL over `changes` (an event log), `series` (time series), `log_minutes` (log lines per minute), `log_values` (per value: 503s per minute) and `observations` (every record); every survey and run is kept |
+| Was this seen before? Same thing, different numbers? | `survey` / `analyze`: `analysis.seen_before` compares each fact with the same fact in earlier surveys of any question and host (instances and versions recognised from history); `query` over `facts` for more |
+| What has been recorded so far, across hosts, probes and time | `query`: read-only SQL over `changes` (an event log), `series` (time series), `log_minutes` (log lines per minute), `log_values` (per value: 503s per minute), `facts` (every record as a fact, comparable across questions and instances) and `observations` (every record); every survey and run is kept |
 | "Remember that ..." | an annotation (below) |
 | What would a reboot or restart change? | the checklist at the end |
 
