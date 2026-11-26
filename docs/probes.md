@@ -157,6 +157,7 @@ environ(pid: int) -> list[EnvVar]   # .name; .value (known-safe names, passwords
 sample(patterns: list[str], seconds: float = 1.0) -> Sample   # .seconds .before .after ({path: content})
 k8s(kind: str, namespace: str | None = None, name: str | None = None, selector: str | None = None) -> list[dict]
 subjects() -> list[dict]            # what the question was asked about (Beat-Subjects): [B11d]
+params() -> dict                    # the question's arguments (its `params`, inside its hash): [B11e]
 ```
 
 - **[B10]** `osq` is osquery's SQL (its SQLite dialect, joins included), straight to osquery: no other engine
@@ -185,6 +186,13 @@ subjects() -> list[dict]            # what the question was asked about (Beat-Su
   containers (name, id). A probe keeps the pods it finds on its node: a pod's cgroup is named by its uid, its logs
   are under `/var/log/pods/<namespace>_<name>_<uid>/`. Subjects are not part of the question's hash: the same probe
   asked after a rollout is the same question.
+- **[B11e]** `params` is the question's arguments: its blob's `params` (`docs/protocol.md` C17), a JSON object
+  inside the question's hash, at most 64 KiB, given with `beat ask --param KEY=VALUE` or the MCP's `params`; the
+  sensor passes it to beat-probe as `--params`. The values a probe works on (paths, units, ports, thresholds) belong
+  here rather than in its source: one code asked of different things is one probe with different arguments, which
+  is how its surveys are grouped and compared, and an argument can be checked as a field rather than found in
+  source text. Arguments are data, never code ([P4]). Empty when the question has none. Libraries (`load()`) stay
+  refused by the sensor until built.
 - **[B12]** Like every builtin, these are read-only and bounded (a timeout and an output limit, §8). They read
   the live host, not the file mapping: osquery sees all processes and sockets as the sensor's user does.
 - Later sources (tcpdump, eBPF summaries) are added the same way: a builtin, native code behind `Host`.

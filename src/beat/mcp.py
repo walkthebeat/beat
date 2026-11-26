@@ -28,6 +28,10 @@ from mcp.server.stdio import stdio_server
 
 from . import ask, estate, kube, login
 
+PARAMS = {"type": "object", "description": "The probe's arguments, read with params(): the paths, units, "
+                           "ports, thresholds it works on. Keep such values out of `source` and pass them here: the same "
+                           "code asked of another log or port is then the same probe, and its surveys compare."}
+
 HOST = {"type": "string", "description": "Target host: a live sensor's name (see `inventory`)."}
 
 NO_GUIDE = ("Run a Starlark probe on one host: constants, functions and main(); emit() records. No sensor was live "
@@ -134,7 +138,8 @@ def tool_defs(guide: str | None, hosts: list[str]) -> list[types.Tool]:
             "properties": {
                 "probe": {"type": "string", "description": "A saved probe, by name: this estate's probes/<name>.star, else beat's default pack's (`beat probes`): "
                           "the same question as `beat run <name>`, so surveys of it show drift. Or give `source`."},
-                "source": {"type": "string", "description": "A Starlark probe: constants, functions and main()."},
+                "source": {"type": "string", "description": "A Starlark probe: functions and main(); the values it "
+                           "works on (paths, units, ports, thresholds) from params(), not written in."},
                 "name": {"type": "string", "description": "File name, e.g. nginx.star: the same name and source "
                          "make it the same question, so later surveys show drift against earlier ones."},
                 "hosts": {"type": "array", "items": {"type": "string"},
@@ -145,6 +150,7 @@ def tool_defs(guide: str | None, hosts: list[str]) -> list[types.Tool]:
                 "selector": {"type": "string", "description": "With `cluster`: a label selector as kubectl -l takes "
                              "it (none: every pod)."},
                 "namespace": {"type": "string", "description": "With `cluster`: only this namespace."},
+                "params": PARAMS,
                 "timeout": {"type": "integer", "description": "Seconds per host (default 120, max 300)."},
                 "history": {"type": "integer", "description": "Earlier surveys of this question to learn from and "
                             "compare with (default 3)."},
@@ -154,8 +160,10 @@ def tool_defs(guide: str | None, hosts: list[str]) -> list[types.Tool]:
             "type": "object", "required": ["host", "source"],
             "properties": {
                 "host": host,
-                "source": {"type": "string", "description": "A Starlark probe: constants, functions and main()."},
+                "source": {"type": "string", "description": "A Starlark probe: functions and main(); the values it "
+                           "works on (paths, units, ports, thresholds) from params(), not written in."},
                 "name": {"type": "string", "description": "File name for spans and errors, e.g. nginx.star."},
+                "params": PARAMS,
                 "timeout": {"type": "integer", "description": "Seconds (default 120, max 300)."},
                 "profile": {"type": "boolean", "description": "Also time each host call (osq, journal, read, ...) "
                             "and return the slowest as `profile`, beside `phases` (where the run's time went). For a "
@@ -212,8 +220,9 @@ def tool_defs(guide: str | None, hosts: list[str]) -> list[types.Tool]:
 RUN_MAX_BYTES = 40_000
 
 
-async def _ask_one(host: str, name: str, source: str, timeout: int = 120, profile: bool = False) -> dict:
-    s = await ask.ask(name, source, [host], timeout, via="beat-mcp", profile=profile)
+async def _ask_one(host: str, name: str, source: str, timeout: int = 120, profile: bool = False,
+                   params: dict | None = None) -> dict:
+    s = await ask.ask(name, source, [host], timeout, via="beat-mcp", profile=profile, params=params)
     a = s["answers"].get(host)
     if a is None:
         why = ask.why_not(s, host)
@@ -338,7 +347,7 @@ async def _call(name: str, args: dict) -> dict:
             qname, source = path.name, path.read_text()
         if not source:
             return {"ok": False, "error": "give `probe` (a saved probe's name) or `source`"}
-        target = {}
+        target = {"params": args["params"]} if args.get("params") else {}
         if args.get("cluster"):
             if hosts:
                 return {"ok": False, "error": "`cluster` asks the nodes its pods run on: not with `hosts`"}
@@ -349,13 +358,14 @@ async def _call(name: str, args: dict) -> dict:
                 return {"ok": False, "error": str(e)}
             if not sel["subjects"]:
                 return {"ok": False, "error": kube.summary(sel)}
-            hosts, target = sel["hosts"], {"subjects": sel["subjects"], "selector": sel["selector"]}
+            hosts, target = sel["hosts"], {**target, "subjects": sel["subjects"], "selector": sel["selector"]}
         r = await ask.report(qname, source, hosts, min(int(args.get("timeout") or 120), 300),
                              int(args.get("history") or 3), bool(args.get("records")), via="beat-mcp", **target)
-        return {"ok": True, **({"selected": kube.summary(sel)} if target else {}), **r}
+        return {"ok": True, **({"selected": kube.summary(sel)} if "subjects" in target else {}), **r}
     if name == "run":
         return _cap_log_summaries(await _ask_one(host, args.get("name") or "probe.star", args.get("source", ""),
-                                                 int(args.get("timeout") or 120), bool(args.get("profile"))))
+                                                 int(args.get("timeout") or 120), bool(args.get("profile")),
+                                                 args.get("params") or None))
     if name == "analyze":
         params = {k: args[k] for k in ("survey", "history") if args.get(k) is not None}
         try:

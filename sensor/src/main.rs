@@ -443,7 +443,7 @@ async fn handle(cfg: Arc<Config>, client: async_nats::Client, slots: Arc<tokio::
             return wire::answer_error("busy", &format!("waited {waited} s for a free slot: the {timeout} s time limit \
                                                          was used up before the question could start"));
         }
-        match cfg.runner.run(&q.name, &q.source, left.as_secs(), &phases, profile, subjects.as_deref()).await {
+        match cfg.runner.run(&q.name, &q.source, left.as_secs(), &phases, profile, subjects.as_deref(), q.params.as_deref()).await {
             Ok(result) => wire::answer_from_result(&result),
             // The runner had what was left of the limit; the caller knows the limit they set.
             Err(e) if e.kind == "timeout" => wire::answer_error("timeout", &format!(

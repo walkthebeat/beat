@@ -74,6 +74,10 @@ the guide and the deny list are not retried: the next heartbeat (every 10 s) sen
 - **C17. A question's hash covers exactly what it asks:** `{v: 1, name, source, libraries, params}`. An answer's hash
   covers only what the sensor said: its records or its error, and gate 1's report when it found something. Who
   answered, when, and with which version are headers, so identical answers from many hosts are one blob.
+  `params` is a JSON object (at most 64 KiB) the probe reads with `params()` (`docs/probes.md` B11e): the same
+  source with other params is another question of the same code. A sensor refuses a question with `libraries`
+  (not built yet), and one whose `params` is not an object; older sensors refuse any `params` ("not supported by
+  this sensor yet").
 
 ## Signatures
 

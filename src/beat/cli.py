@@ -4,6 +4,7 @@ signing keys (keys), signing in (login, whoami, logout), the org's trust policie
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -58,6 +59,9 @@ def _main() -> None:
     ak.add_argument("--selector", "-l", metavar="S", help="with --cluster: a label selector as kubectl -l takes it "
                     "(none: every pod)")
     ak.add_argument("--namespace", "-n", metavar="NS", help="with --cluster: only this namespace")
+    ak.add_argument("--param", action="append", default=[], metavar="KEY=VALUE", help="an argument for the probe's "
+                    "params() (repeatable): the value as JSON if it parses (200, true, [\"a\"]), else as text. Part of "
+                    "the question: the same probe with other arguments is the same code, asked of something else")
     ak.add_argument("--timeout", type=int, default=120, help="the question's time limit on each sensor, seconds")
     ak.add_argument("--show", action="store_true", help="print each distinct answer")
     ak.add_argument("--profile", action="store_true", help="also time each host call on each host, and print where "
@@ -401,9 +405,28 @@ def _service(a) -> None:
     raise SystemExit(0 if not missing and all(x["outcome"] == "ok" for x in s["answers"].values()) else 1)
 
 
+def _params(pairs: list[str]) -> dict:
+    """`--param KEY=VALUE`s as params(): each value as JSON if it parses, else as text."""
+    out = {}
+    for p in pairs:
+        k, eq, v = p.partition("=")
+        if not eq or not k:
+            raise SystemExit(f"error: --param {p!r}: KEY=VALUE")
+        try:
+            out[k] = json.loads(v)
+        except ValueError:
+            out[k] = v
+    return out
+
+
 def _target(a) -> dict:
     """`beat ask --cluster C --selector S`: the pods resolved by C's cluster sensor (kube.select), as ask() takes them;
-    a.host becomes the nodes that run them. {} when asked by host."""
+    a.host becomes the nodes that run them. {} when asked by host. With `--param`s, their `params` too."""
+    params = {"params": _params(a.param)} if a.param else {}
+    return {**_selected(a), **params}
+
+
+def _selected(a) -> dict:
     import asyncio
     from . import kube
 
