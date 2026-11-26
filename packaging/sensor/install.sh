@@ -66,6 +66,10 @@ systemd-run --quiet --wait --collect --pipe -p "MountImages=$dir/beat-sensor.raw
 prev="$(readlink "$top/current" 2>/dev/null || true)"
 ln -sfn "$version" "$top/current.new" && mv -T "$top/current.new" "$top/current"
 install -m 0644 "$dir/beat-sensor.service" /etc/systemd/system/beat-sensor.service
+# The modules loaded above, loaded at every boot too: systemd does not load them for MountImages=, and a kernel that
+# has them as modules may not otherwise (AlmaLinux 9: no dm-verity after a reboot, the sensor failing at NAMESPACE).
+printf '%s\n' "# beat-sensor's image (MountImages=): loop devices, squashfs, dm-verity" loop squashfs dm_verity \
+  > /etc/modules-load.d/beat-sensor.conf
 systemctl daemon-reload
 systemctl enable --quiet beat-sensor.service
 # Keeps this version and the one before it (a rollback: point current back, install its unit).
