@@ -66,7 +66,13 @@ pub fn canonical(v: &Value) -> Vec<u8> {
 pub struct Question {
     pub name: String,
     pub source: String,
+    /// The question's arguments (an object, inside its hash), as canonical JSON for beat-probe's --params; None
+    /// when it has none.
+    pub params: Option<String>,
 }
+
+/// More than this as JSON and a question's params are refused (one argument to beat-probe, as Beat-Subjects).
+pub const MAX_PARAMS_BYTES: usize = 64 * 1024;
 
 pub fn parse_question(payload: &[u8]) -> Result<Question, String> {
     let v: Value = serde_json::from_slice(payload).map_err(|e| format!("question is not JSON: {e}"))?;
@@ -75,14 +81,24 @@ pub fn parse_question(payload: &[u8]) -> Result<Question, String> {
     }
     let source = v["source"].as_str().ok_or("question has no source")?.to_string();
     let name = v["name"].as_str().unwrap_or("question.star").to_string();
-    // Libraries (load(), docs/probes.md D5) and parameters are part of the question's hash already; beat-probe does
-    // not take them yet, so a question that has them is refused rather than answered without them.
-    for k in ["libraries", "params"] {
-        if v[k].as_object().is_some_and(|m| !m.is_empty()) {
-            return Err(format!("question {k} are not supported by this sensor yet"));
-        }
+    // Libraries (load(), docs/probes.md D5) are part of the question's hash already; beat-probe does not take them
+    // yet, so a question that has them is refused rather than answered without them.
+    if v["libraries"].as_object().is_some_and(|m| !m.is_empty()) {
+        return Err("question libraries are not supported by this sensor yet".into());
     }
-    Ok(Question { name, source })
+    let params = match &v["params"] {
+        Value::Null => None,
+        Value::Object(m) if m.is_empty() => None,
+        p @ Value::Object(_) => {
+            let text = String::from_utf8(canonical(p)).expect("JSON is UTF-8");
+            if text.len() > MAX_PARAMS_BYTES {
+                return Err(format!("question params are {} bytes as JSON, more than {MAX_PARAMS_BYTES}", text.len()));
+            }
+            Some(text)
+        }
+        _ => return Err("question params must be an object".into()),
+    };
+    Ok(Question { name, source, params })
 }
 
 /// The answer blob: what the sensor said, nothing about who or when (C17). From beat-probe's run result
@@ -159,11 +175,15 @@ mod tests {
     }
 
     #[test]
-    fn question_with_params_is_refused() {
-        let q = br#"{"v":1,"name":"a.star","source":"def main(): pass","libraries":{},"params":{"x":1}}"#;
-        assert!(parse_question(q).is_err());
+    fn question_params_are_an_object() {
+        let q = br#"{"v":1,"name":"a.star","source":"def main(): pass","libraries":{},"params":{"x":1,"log":"/var/log/a"}}"#;
+        assert_eq!(parse_question(q).unwrap().params.as_deref(), Some(r#"{"log":"/var/log/a","x":1}"#));
         let q = br#"{"v":1,"name":"a.star","source":"def main(): pass","libraries":{},"params":{}}"#;
-        assert_eq!(parse_question(q).unwrap().name, "a.star");
+        assert_eq!(parse_question(q).unwrap().params, None);
+        let q = br#"{"v":1,"name":"a.star","source":"def main(): pass","libraries":{},"params":[1]}"#;
+        assert!(parse_question(q).is_err());
+        let q = br#"{"v":1,"name":"a.star","source":"def main(): pass","libraries":{"l.star":"x"},"params":{}}"#;
+        assert!(parse_question(q).is_err());
     }
 
     #[test]

@@ -50,6 +50,8 @@ struct Args {
     profile: bool,
     /// --subjects JSON: a list of dicts, for `subjects()` (the sensor passes Beat-Subjects).
     subjects: Vec<serde_json::Value>,
+    /// --params JSON: an object, for `params()` (the sensor passes the question's params).
+    params: serde_json::Map<String, serde_json::Value>,
     scope: Option<Scope>,
     budget: Budget,
 }
@@ -63,7 +65,7 @@ enum Scope {
 
 fn parse(argv: &[String]) -> anyhow::Result<Args> {
     let mut a = Args { files: Vec::new(), root: PathBuf::from("/"), maps: Vec::new(), tools: None, cache: None,
-                        osqueryi: None, journalctl: None, bpf_tools: None, name: None, profile: false, subjects: Vec::new(), scope: None, budget: Budget::default() };
+                        osqueryi: None, journalctl: None, bpf_tools: None, name: None, profile: false, subjects: Vec::new(), params: Default::default(), scope: None, budget: Budget::default() };
     let mut it = argv.iter();
     while let Some(x) = it.next() {
         let mut val = || it.next().cloned().ok_or_else(|| anyhow::anyhow!("{x} needs a value"));
@@ -79,6 +81,8 @@ fn parse(argv: &[String]) -> anyhow::Result<Args> {
             "--profile" => a.profile = true,
             "--subjects" => a.subjects = serde_json::from_str(&val()?)
                 .map_err(|e| anyhow::anyhow!("--subjects: not a JSON list: {e}"))?,
+            "--params" => a.params = serde_json::from_str(&val()?)
+                .map_err(|e| anyhow::anyhow!("--params: not a JSON object: {e}"))?,
             "--live" => a.scope = Some(Scope::Live),
             "--walk" => a.scope = Some(Scope::Walk),
             "--budget-s" => a.budget.seconds = val()?.parse()?,
@@ -157,7 +161,7 @@ fn real_main(argv: &[String]) -> anyhow::Result<ExitCode> {
                 journalctl: a.journalctl.clone(),
                 bpf_tools: a.bpf_tools.clone(),
             })?;
-            let r = run::run_timed(f, &src, Box::new(host), a.profile, &[("tools", tools_ms)], a.subjects.clone());
+            let r = run::run_timed(f, &src, Box::new(host), a.profile, &[("tools", tools_ms)], a.subjects.clone(), a.params.clone());
             println!("{}", serde_json::to_string_pretty(&r)?);
             Ok(match r["outcome"].as_str() {
                 Some("ok") => ExitCode::SUCCESS,

@@ -72,6 +72,8 @@ pub struct Ctx {
     pub state: RefCell<RunState>,
     /// What the question was asked about, signed with it (Beat-Subjects): `subjects()`.
     pub subjects: Vec<serde_json::Value>,
+    /// The question's arguments, inside its hash (the question blob's `params`): `params()`.
+    pub params: serde_json::Map<String, serde_json::Value>,
 }
 
 /// `print()` goes to the run's diagnostic text, not to the records.
@@ -370,6 +372,13 @@ fn beat_builtins(builder: &mut GlobalsBuilder) {
     /// asked, so a probe keeps those it finds here (their cgroup is named by the uid). Empty when asked by host.
     fn subjects<'v>(eval: &mut Evaluator<'v, '_, '_>) -> starlark::Result<Value<'v>> {
         Ok(eval.heap().alloc(ctx(eval).subjects.clone()))
+    }
+
+    /// The question's arguments, as a dict: the values a probe works on (paths, units, ports, thresholds), given
+    /// with the question (`beat ask --param k=v`, the MCP's `params`) rather than written into its source, so one
+    /// probe asked of another log is the same code. Part of the question's hash. Empty when it has none.
+    fn params<'v>(eval: &mut Evaluator<'v, '_, '_>) -> starlark::Result<Value<'v>> {
+        Ok(eval.heap().alloc(serde_json::Value::Object(ctx(eval).params.clone())))
     }
 
     /// Kubernetes objects of `kind` (Pod, Event, Node, Deployment, ... case aside), on the cluster sensor: dicts as

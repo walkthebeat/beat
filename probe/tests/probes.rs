@@ -396,7 +396,7 @@ fn timings_and_profile() {
     let plain: Vec<_> = records(&r);
     assert!(plain.iter().all(|x| !x.0.starts_with("beat:profile")));
 
-    let p = run_timed("journal.star", &source("journal.star"), Box::new(fixture()), true, &[("tools", 7)], Vec::new());
+    let p = run_timed("journal.star", &source("journal.star"), Box::new(fixture()), true, &[("tools", 7)], Vec::new(), Default::default());
     assert_eq!(p["timings"]["tools"], 7);
     let profiled: Vec<&Value> = p["records"].as_array().unwrap().iter()
         .filter(|x| x["subject"].as_str().unwrap().starts_with("beat:profile")).collect();
@@ -449,8 +449,20 @@ fn tools_load_from_the_cache_index() {
 fn subjects_as_given() {
     let src = "def main():\n    for s in subjects():\n        emit(s[\"namespace\"] + \"/\" + s[\"name\"], \"uid\", s[\"uid\"], \"test\")\n    emit(\"all\", \"count\", str(len(subjects())), \"test\")\n";
     let pods = vec![serde_json::json!({"namespace": "shop", "name": "web-1", "uid": "u-1", "containers": [{"name": "web", "id": "c1"}]})];
-    let r = run_timed("s.star", src, Box::new(fixture()), false, &[], pods);
+    let r = run_timed("s.star", src, Box::new(fixture()), false, &[], pods, Default::default());
     assert!(has(&r, "shop/web-1", "uid", "u-1") && has(&r, "all", "count", "1"), "{r:#}");
     let none = run("s.star", src, Box::new(fixture()));
     assert!(has(&none, "all", "count", "0"), "{none:#}");
+}
+
+/// A question's arguments (its blob's `params`, `beat ask --param`) reach the probe as `params()`: a dict as given,
+/// empty when it has none.
+#[test]
+fn params_as_given() {
+    let src = "def main():\n    p = params()\n    emit(\"log\", \"path\", p.get(\"log\", \"none\"), \"test\")\n    emit(\"all\", \"count\", str(len(p)), \"test\")\n";
+    let given = serde_json::json!({"log": "/var/log/a.log", "lines": 200}).as_object().unwrap().clone();
+    let r = run_timed("p.star", src, Box::new(fixture()), false, &[], Vec::new(), given);
+    assert!(has(&r, "log", "path", "/var/log/a.log") && has(&r, "all", "count", "2"), "{r:#}");
+    let none = run("p.star", src, Box::new(fixture()));
+    assert!(has(&none, "log", "path", "none") && has(&none, "all", "count", "0"), "{none:#}");
 }

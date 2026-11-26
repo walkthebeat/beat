@@ -133,7 +133,7 @@ def test_mcp_run_caps_but_catalog_does_not(monkeypatch):
     from beat import mcp
     big = _summary_records("app", 400, 30)
 
-    async def ask_one(host, name, source, timeout=120, profile=False):
+    async def ask_one(host, name, source, timeout=120, profile=False, params=None):
         return {"ok": True, "survey": "s1", "records": big}
     monkeypatch.setattr(mcp, "_ask_one", ask_one)
     r = asyncio.run(mcp._call("run", {"host": "a", "source": "x"}))
@@ -247,3 +247,34 @@ def test_select_asks_the_cluster_sensor_then_names_the_nodes(monkeypatch):
     assert [p["name"] for p in sel["subjects"]] == ["web-a", "web-b"]
     assert "app=web" in sel["selector"] and "R1" in sel["selector"]
     assert "2 pods on 2 nodes" in kube.summary(sel) and "web-c" in kube.summary(sel)
+
+
+def test_params_are_part_of_the_question_the_client_signs():
+    """A question's params are inside its hash: the same code with other arguments is another question, and a
+    collector that prepared the question without them (or with others) gets no signature."""
+    from beat import seal, wire
+    key = seal.ed25519.Ed25519PrivateKey.generate()
+    src = "def main():\n    emit('log', 'path', params()['log'], 'test')\n"
+    plain, a = wire.question("p.star", src), wire.question("p.star", src, params={"log": "/var/log/a.log"})
+    assert len({wire.sha256_hex(x) for x in (plain, a, wire.question("p.star", src, params={"log": "/b"}))}) == 3
+    base = {"Beat-Survey": "S1", "Beat-Timeout": "60", "Beat-Key": "k",
+            "Beat-Issued": "2026-11-08T00:00:00Z", "Beat-Deadline": "2026-11-08T00:02:00Z"}
+    assert ask.sign_envelope(key, {**base, "Beat-Question": wire.sha256_hex(a)}, a, "S1", 60, None, "cred")
+    try:
+        ask.sign_envelope(key, {**base, "Beat-Question": wire.sha256_hex(plain)}, a, "S1", 60, None, "cred")
+    except RuntimeError as e:
+        assert "Beat-Question" in str(e)
+    else:
+        raise AssertionError("signed another question")
+
+
+def test_param_flags_are_json_else_text():
+    from beat import cli
+    assert cli._params(["log=/var/log/a.log", "lines=200", "units=[\"a\",\"b\"]", "on=true", "x=a=b"]) == {
+        "log": "/var/log/a.log", "lines": 200, "units": ["a", "b"], "on": True, "x": "a=b"}
+    try:
+        cli._params(["nokey"])
+    except SystemExit as e:
+        assert "KEY=VALUE" in str(e)
+    else:
+        raise AssertionError("took a param with no value")

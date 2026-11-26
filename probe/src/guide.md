@@ -6,11 +6,17 @@ Shape of a probe:
 
     Applies to: <which hosts>.  Assumes: <what must hold>.  Cannot see: <blind spots>.
     """
-    UNIT = "nginx.service"                     # top level: constants and functions only
+    def main() -> None:                        # the sensor calls main(); top level: constants and functions only
+        unit = params().get("unit", "nginx.service")
+        u = one(osq("select active_state from systemd_units where id = ?", unit), "expected one %s" % unit)
+        emit("unit:" + unit, "active_state", u["active_state"], "osq.systemd_units")
 
-    def main() -> None:                        # the sensor calls main()
-        u = one(osq("select active_state from systemd_units where id = ?", UNIT), "expected one %s" % UNIT)
-        emit("unit:" + UNIT, "active_state", u["active_state"], "osq.systemd_units")
+Arguments: the values a probe works on (a path, a unit, a port, a threshold) come from params(), given with the
+question (`params`), not written into the source. The same code asked of another log is then the same probe: its
+surveys compare, and what it was asked about is a field anyone can read. Constants are for what never changes
+between asks (a query, a pattern).
+  params() -> dict                    the question's arguments as given (JSON values); part of its hash. Empty
+                                      when it has none: give defaults with .get()
 
 Records and checks:
   emit(subject, key, value, source, kind="")   one observation; all four are strings (str(n) for numbers);
