@@ -133,7 +133,7 @@ def test_mcp_run_caps_but_catalog_does_not(monkeypatch):
     from beat import mcp
     big = _summary_records("app", 400, 30)
 
-    async def ask_one(host, name, source, timeout=120, profile=False, params=None):
+    async def ask_one(host, name, source, timeout=120, profile=False, params=None, intent=None):
         return {"ok": True, "survey": "s1", "records": big}
     monkeypatch.setattr(mcp, "_ask_one", ask_one)
     r = asyncio.run(mcp._call("run", {"host": "a", "source": "x"}))

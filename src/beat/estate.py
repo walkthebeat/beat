@@ -253,10 +253,11 @@ def ask_star(probe: str, hosts: list[str], profile: bool = False) -> tuple[str, 
     analysis.get / logs.get. (survey id, {host: answer with "seconds" and "phases", or an EstateError for that host}).
     `profile`: each answer also has "profile", its host calls (ask.split_profile), which never reach the facts."""
     import asyncio
-    from . import ask
+    from . import ask, investigation
     path = probe_path(root(), probe)
     t0 = time.monotonic()
-    s = asyncio.run(ask.ask(path.name, path.read_text(), hosts, via="beat run", profile=profile))
+    s = asyncio.run(ask.ask(path.name, path.read_text(), hosts, via="beat run", profile=profile,
+                            intent=investigation.intent()))
     secs = round(time.monotonic() - t0, 2)
     out: dict = {}
     for host in hosts:

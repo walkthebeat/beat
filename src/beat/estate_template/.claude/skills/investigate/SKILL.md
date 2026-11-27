@@ -38,6 +38,13 @@ You are not done when you can name a busy process. You are done only when all of
 
 ## Steps
 
+0. **History first, then open the investigation.** `investigations` (search by the symptom's words, the hosts, the
+   probes you expect to need; `@BEAT@ investigate ls`): someone may have looked into this, or something like it,
+   already; read what they asked and concluded, and `analyze` their surveys, before asking hosts again. Then
+   `investigate` open, kind incident, the symptom as a question. Investigations are IBIS issues: each hypothesis you
+   test is an issue under it (open it with `parents`), each `survey` and `run` is asked for one with its `why` (a
+   W3C PROV activity), and each concludes: the cause, or ruled out with what ruled it out. Dead ends are history
+   too. The estate's names (services, tiers, what is called what) are yours to choose, in what you conclude.
 1. **Frame and get normal.** Restate the symptom as something measurable ("order batches: none completed since
    14:00"). Read the tier's `model.md` (its expectations: cadence, log pairs, what normal looks like) and the
    annotations that apply — that is your baseline. Never judge "slow" without "slow versus what".
@@ -69,7 +76,8 @@ You are not done when you can name a busy process. You are done only when all of
    resolution); the root cause as a named mechanism with the hosts it hit; the evidence (probe records, survey ids,
    `trace()` output — cite them); alternatives ruled out; and what would catch it next time (a probe or a beat
    check). Tag every line observed / stated / inferred. It belongs with the estate — committed and queryable later
-   ("has this happened on these hosts before?").
+   ("has this happened on these hosts before?"). Name the investigation's id in it, and `investigate` conclude
+   the investigation with the cause in a sentence (kind cause): the next search finds it there.
 8. **Show and ask.** Lead with the cause and its evidence, then the RCA and `git status`. Commit only when the SRE
    agrees. End with what your checks did **not** cover: "nothing else" is a claim about the checks you ran.
 
