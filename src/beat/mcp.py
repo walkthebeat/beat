@@ -37,7 +37,8 @@ PARAMS = {"type": "object", "description": "The probe's arguments, read with par
 HOST = {"type": "string", "description": "Target host: a live sensor's name (see `inventory`)."}
 
 INVESTIGATION = {"type": "string", "description": "The investigation this is asked for (`investigate` open's id): "
-                 "recorded with the survey, so whoever looks into this later finds what was asked, why, and what it "
+                 "the most specific one it serves, the hypothesis it tests rather than the question above it. "
+                 "Recorded with the survey, so whoever looks into this later finds what was asked, why, and what it "
                  "showed."}
 WHY = {"type": "string", "description": "The hypothesis this survey tests, in a sentence (\"is the db pool "
        "exhausted on the api hosts?\")."}
@@ -54,8 +55,9 @@ INVESTIGATE = (
     "parents: the investigations it is part of) returns its id, which `survey` and `run` take as `investigation`, "
     "each with its `why`; `conclude` (investigation, text: the answer; kind: cause, ruled-out, finding, or model for "
     "a discovery) when the answer is known; `link` (child, parent) to make one part of another as well. Open one "
-    "at the start of every question you work on, and one under it for each hypothesis you test; conclude each, "
-    "ruled-out ones too: a dead end is history.")
+    "at the start of every question you work on, and one under it for each hypothesis you test; ask each survey "
+    "for the hypothesis it tests; conclude each, ruled-out ones too: a dead end is history. `beat run` and `beat "
+    "probes run` from a shell know only the ids they are given: `--investigation ID --why \"...\"`.")
 
 INVESTIGATIONS = (
     "Earlier investigations in this org: what was asked about something before, why, and what it concluded. Call "
