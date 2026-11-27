@@ -42,9 +42,12 @@ You are not done when you can name a busy process. You are done only when all of
    probes you expect to need; `@BEAT@ investigate ls`): someone may have looked into this, or something like it,
    already; read what they asked and concluded, and `analyze` their surveys, before asking hosts again. Then
    `investigate` open, kind incident, the symptom as a question. Investigations are IBIS issues: each hypothesis you
-   test is an issue under it (open it with `parents`), each `survey` and `run` is asked for one with its `why` (a
-   W3C PROV activity), and each concludes: the cause, or ruled out with what ruled it out. Dead ends are history
-   too. The estate's names (services, tiers, what is called what) are yours to choose, in what you conclude.
+   test is an issue under it (open it with `parents`), and each `survey` and `run` is asked for the most specific
+   one it serves, the hypothesis it tests rather than the incident above it, with its `why` (a W3C PROV activity;
+   `@BEAT@ run --investigation ID --why "..."` from the CLI, which does not know ids opened through `investigate`).
+   Each concludes: the cause, or ruled out with what ruled it out. Dead ends are history too. An earlier
+   investigation's conclusion is a lead to check on the hosts now, never the answer. The estate's names (services,
+   tiers, what is called what) are yours to choose, in what you conclude.
 1. **Frame and get normal.** Restate the symptom as something measurable ("order batches: none completed since
    14:00"). Read the tier's `model.md` (its expectations: cadence, log pairs, what normal looks like) and the
    annotations that apply — that is your baseline. Never judge "slow" without "slow versus what".
