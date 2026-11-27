@@ -228,6 +228,24 @@ failed systemd unit, and why?", or `/discover` to have it map what runs where.
 To use beat from Claude in any directory instead, add the server once for your user:
 `claude mcp add -s user beat -- beat-mcp`.
 
+**Investigations.** What you or Claude set out to find out is kept with the surveys asked for it, so the next look
+starts from what the last one found. Claude opens one per question (a hypothesis under it for each thing it tests),
+asks each survey for one with a sentence on why, and concludes it, dead ends too; it searches them before asking
+hosts. Without Claude:
+
+```
+beat investigate start "why are orders slow?" --kind incident
+beat ask db.star --why "is the db pool exhausted?"      # asked for the current investigation
+beat investigate start "is it one replica?"             # a hypothesis under it, now current
+beat investigate end --conclusion "no: all three" --kind ruled-out
+beat investigate end --conclusion "db-2's pool, since 14:02" --kind cause
+beat investigate ls pool                                # later, anyone in the org
+```
+
+The current investigation is per directory; `beat run` and `beat probes run` are asked for it too (`--investigation`,
+`--why` name one). Investigations and the why are kept by the service only: the sensors never see them, and they are
+not part of the question, so the same probe asked for two reasons is the same question.
+
 ## 9. Remove
 
 A host: see [the sensor](sensor.md), "Remove". `beat sensors remove NAME` unenrols it at the service.

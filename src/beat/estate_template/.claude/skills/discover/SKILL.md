@@ -19,6 +19,12 @@ Outputs:
 
 ## Steps
 
+0. **History, then open the discovery.** `investigations` (roots, kind discovery; `@BEAT@ investigate ls --roots`):
+   an earlier discovery's conclusion is the model as of its date; start from it and say what changed. Then
+   `investigate` open, kind discovery ("what runs in this estate?", or on these hosts), and one under it per tier or
+   concern you explore; ask every `survey` and `run` for one, with its `why`. Conclude each with what you found (kind
+   model: a sentence, pointing to the `model.md` you wrote). The names you give the estate's things are claims, not
+   types: say what they rest on.
 1. **Context, at once.** Run every probe there is, on every host, in one go: `@BEAT@ probes run <hosts...>` (no
    hosts: every trusted live sensor). That is the estate's `probes/` and beat's default pack (`@BEAT@ probes` lists
    them), all in flight together, in about a minute, and their facts committed. **Tell the SRE what they show

@@ -53,7 +53,8 @@ def test_run_starlark_probe(repo, monkeypatch):
 def test_mcp_offers_starlark_run_without_query():
     from beat import mcp
     tools = {t.name: t for t in mcp.tool_defs("starlark guide", ["web-1"])}
-    assert set(tools) == {"survey", "run", "query", "inventory", "analyze", "logs", "catalog", "describe_osquery_table"}
+    assert set(tools) == {"survey", "run", "query", "inventory", "analyze", "logs", "catalog", "describe_osquery_table",
+                          "investigate", "investigations"}
     assert tools["run"].description == mcp.RUN_PREFIX + "starlark guide"
     assert "source" in tools["run"].inputSchema["required"] and "probe" in tools["survey"].inputSchema["properties"]
     # Each description starts with when to use the tool; the fleet tool is named where the agent would go instead.
