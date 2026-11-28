@@ -13,8 +13,6 @@ Tools (descriptions say first when to use each: in the agent's terms, not beat's
   drift): the read API's analysis.get, as `beat analyze` calls it.
 - `logs`: the log summaries in a survey's answers across its hosts, with a proposed curated template set: the read
   API's logs.get, as `beat logs` calls it (tool first, MCP second).
-- `investigate`, `investigations`: open, conclude and link investigations (what the agent set out to find out), and
-  find earlier ones: the service's investigation.* methods (investigation.py).
 The `run` description is the builtins guide a sensor published (guide.get); this server only relays.
 Env: BEAT_API (else the service `beat login URL` kept, else https://api.walkthebeat.ai).
 """
@@ -35,39 +33,6 @@ PARAMS = {"type": "object", "description": "The probe's arguments, read with par
                            "code asked of another log or port is then the same probe, and its surveys compare."}
 
 HOST = {"type": "string", "description": "Target host: a live sensor's name (see `inventory`)."}
-
-INVESTIGATION = {"type": "string", "description": "The investigation this is asked for (`investigate` open's id): "
-                 "the most specific one it serves, the hypothesis it tests rather than the question above it. "
-                 "Recorded with the survey, so whoever looks into this later finds what was asked, why, and what it "
-                 "showed."}
-WHY = {"type": "string", "description": "The hypothesis this survey tests, in a sentence (\"is the db pool "
-       "exhausted on the api hosts?\")."}
-
-INVESTIGATE = (
-    "Record what you set out to find out, and what you found, so the next investigation (yours or anyone's) starts "
-    "from it: the history an SRE who knows this estate carries in their head. Investigations are IBIS issues "
-    "(Kunz and Rittel's Issue-Based Information System): a question; its sub-questions and hypotheses are issues "
-    "under it; claims are its positions. Provenance is W3C PROV's: each survey is an activity asked for one "
-    "investigation. Where beat differs: nothing is edited (a newer conclusion replaces the last, the old one kept); "
-    "an issue may sit under several (a DAG; a cycle is refused); a survey's investigation is fixed when it is asked; "
-    "the estate's own things (services, tiers, what is called what) are yours to name, in claims, not types. "
-    "`action`: `open` (text: the question; kind: question, incident, or discovery for \"what runs here?\"; "
-    "parents: the investigations it is part of) returns its id, which `survey` and `run` take as `investigation`, "
-    "each with its `why`; `conclude` (investigation, text: the answer; kind: cause, ruled-out, finding, or model for "
-    "a discovery) when the answer is known; `link` (child, parent) to make one part of another as well. Open one "
-    "at the start of every question you work on, and one under it for each hypothesis you test; ask each survey "
-    "for the hypothesis it tests; conclude each, ruled-out ones too: a dead end is history. `beat run` and `beat "
-    "probes run` from a shell know only the ids they are given: `--investigation ID --why \"...\"`.")
-
-INVESTIGATIONS = (
-    "Earlier investigations in this org: what was asked about something before, why, and what it concluded. Call "
-    "it before asking hosts, at the start of a question, and again when a hypothesis forms: someone may have looked "
-    "into it, or something like it, already. With `id`: that investigation, its state (open, concluded, idle), "
-    "conclusion, the surveys asked for it with their why (survey ids for `analyze`), and what is under it to "
-    "`depth`. Without: a search, newest first, by `text` (words in an investigation, its surveys' why or its "
-    "claims), `host` (one its surveys asked), `probe` (a probe name, or a question or code hash prefix), `since`, "
-    "`state`, `roots` (top-level only). For anything else across them: `query` over `investigations`, "
-    "`investigation_parents`, `claims`, `investigation_state` and `surveys.investigation`/`why`.")
 
 NO_GUIDE = ("Run a Starlark probe on one host: constants, functions and main(); emit() records. No sensor was live "
             "when this server started, so the builtins guide is missing: call `inventory`, then restart the session.")
@@ -101,11 +66,6 @@ across hosts, `logs` (by survey id) proposes a curated template set, `log_extrac
 - Everything recorded so far, across hosts, probes and time (every survey and run is kept): `query`, read-only SQL \
 over the datasets `changes` (an event log), `series` (time series), `log_minutes` (log lines per minute), `log_values` (per value: 503s per minute), \
 `facts` (every record as a fact, comparable across questions and instances) and `observations` (every record).
-- What was looked into before, and what it found: `investigations` (search) at the start of a question, before \
-asking hosts. Record your own with `investigate`: open one per question (IBIS issues: sub-questions and hypotheses \
-under it; W3C PROV: each survey asked for one), pass its id and a why to `survey` and `run`, and conclude it, dead \
-ends too. The history of surveys is a dataset of its own: who asked what of which hosts, with which code and \
-arguments, for which investigation, concluding what; explore it with `query` on whatever dimension the problem needs.
 - Which hosts are live: `inventory`. osquery tables: `catalog`, `describe_osquery_table`.
 Before asking every host, think about what the probe takes to collect and to analyse at that size: its answer's \
 size and its time on a host (try it on one first), times the number of hosts. A probe returns what the question \
@@ -160,16 +120,8 @@ QUERY = (
     "sig_version (and those naming a version), sig_kind (every varying part of the subject), context; the same sig in "
     "two surveys is the same fact. `fact_shapes`: how the org's history classed each part (no values).\n"
     "- `runs` (host, probe, survey_id, asked_at, previous run), `surveys` (survey_id, question_hash, selector, "
-    "asked_by, asked_at, deadline, investigation, why), `survey_answers` (survey_id, target: the host, answer_hash, "
-    "outcome, started, finished, sensor_version, phases: milliseconds as queue=N,secrets=N,run=N).\n"
-    "- `questions`: every question asked: question_hash, name, source (the probe's code: search it, e.g. for a "
-    "path), params (JSON: `params->>'unit'`), code_hash (the code with comments, docstrings and literals erased: "
-    "the same probe with other constants), params_hash. Same code_hash, other params_hash: the same probe asked of "
-    "something else.\n"
-    "- Investigations (what someone set out to find out; `investigations` tool): `investigations` (id, kind, text, "
-    "opened_by, opened_at), `investigation_parents` (child, parent: part of), `claims` (id, investigation, kind, "
-    "text, concludes, claimed_by, claimed_at), `investigation_state` (id, kind, text, state, last_at, claim, "
-    "conclusion). Surveys join them by `surveys.investigation`.\n"
+    "asked_by, asked_at, deadline), `survey_answers` (survey_id, target: the host, answer_hash, outcome, started, "
+    "finished, sensor_version, phases: milliseconds as queue=N,secrets=N,run=N).\n"
     "Times are UTC timestamps. Some words are reserved as bare aliases or columns (`key`, `at`, `first`, `last`, "
     "`minutes`): write `as` and another name (`key as k`, `min(minute) as first_min`). Returns at most "
     "`limit` rows (default 200) and says when it cut.")
@@ -199,8 +151,6 @@ def tool_defs(guide: str | None, hosts: list[str]) -> list[types.Tool]:
                              "it (none: every pod)."},
                 "namespace": {"type": "string", "description": "With `cluster`: only this namespace."},
                 "params": PARAMS,
-                "investigation": INVESTIGATION,
-                "why": WHY,
                 "timeout": {"type": "integer", "description": "Seconds per host (default 120, max 300)."},
                 "history": {"type": "integer", "description": "Earlier surveys of this question to learn from and "
                             "compare with (default 3)."},
@@ -214,36 +164,10 @@ def tool_defs(guide: str | None, hosts: list[str]) -> list[types.Tool]:
                            "works on (paths, units, ports, thresholds) from params(), not written in."},
                 "name": {"type": "string", "description": "File name for spans and errors, e.g. nginx.star."},
                 "params": PARAMS,
-                "investigation": INVESTIGATION,
-                "why": WHY,
                 "timeout": {"type": "integer", "description": "Seconds (default 120, max 300)."},
                 "profile": {"type": "boolean", "description": "Also time each host call (osq, journal, read, ...) "
                             "and return the slowest as `profile`, beside `phases` (where the run's time went). For a "
                             "run that was slow: is it beat, or the host? Default false."},
-            }}),
-        types.Tool(name="investigate", description=INVESTIGATE, inputSchema={
-            "type": "object", "required": ["action"],
-            "properties": {
-                "action": {"type": "string", "enum": ["open", "conclude", "link"]},
-                "text": {"type": "string", "description": "open: the question; conclude: the answer."},
-                "kind": {"type": "string", "description": "open: question (default), incident, discovery; conclude: "
-                         "finding (default), cause, ruled-out, model."},
-                "parents": {"type": "array", "items": {"type": "string"},
-                            "description": "open: the investigations this is part of (none: a root)."},
-                "investigation": {"type": "string", "description": "conclude: which."},
-                "child": {"type": "string", "description": "link: the one that is part of `parent`."},
-                "parent": {"type": "string"},
-            }}),
-        types.Tool(name="investigations", description=INVESTIGATIONS, inputSchema={
-            "type": "object",
-            "properties": {
-                "id": {"type": "string", "description": "One investigation (else a search)."},
-                "depth": {"type": "integer", "description": "With id: levels below it (default 3)."},
-                "text": {"type": "string"}, "host": {"type": "string"}, "probe": {"type": "string"},
-                "since": {"type": "string", "description": "ISO time."},
-                "state": {"type": "string", "enum": ["open", "concluded", "idle"]},
-                "roots": {"type": "boolean"},
-                "limit": {"type": "integer", "description": "Default 20."},
             }}),
         types.Tool(name="query", description=QUERY, inputSchema={
             "type": "object", "required": ["sql"],
@@ -297,8 +221,8 @@ RUN_MAX_BYTES = 40_000
 
 
 async def _ask_one(host: str, name: str, source: str, timeout: int = 120, profile: bool = False,
-                   params: dict | None = None, intent: dict | None = None) -> dict:
-    s = await ask.ask(name, source, [host], timeout, via="beat-mcp", profile=profile, params=params, intent=intent)
+                   params: dict | None = None) -> dict:
+    s = await ask.ask(name, source, [host], timeout, via="beat-mcp", profile=profile, params=params)
     a = s["answers"].get(host)
     if a is None:
         why = ask.why_not(s, host)
@@ -306,31 +230,6 @@ async def _ask_one(host: str, name: str, source: str, timeout: int = 120, profil
     return {"ok": True, "survey": s["survey"], "answer_hash": a["answer_hash"], **a["answer"],
             **({"phases": a["phases"]} if a.get("phases") else {}),
             **({"profile": a["profile"]} if "profile" in a else {})}
-
-
-def _intent(args: dict) -> dict | None:
-    """A tool call's investigation and why, as ask.ask takes them."""
-    i = {k: args[k] for k in ("investigation", "why") if args.get(k)}
-    return i or None
-
-
-async def _investigate(args: dict) -> dict:
-    """`investigate`: open, conclude or link (the service's investigation.* methods)."""
-    action = args.get("action")
-    if action == "open":
-        method, params = "investigation.open", {"text": args.get("text"), "kind": args.get("kind") or "question",
-                                                "parents": args.get("parents") or []}
-    elif action == "conclude":
-        method, params = "investigation.conclude", {"investigation": args.get("investigation"),
-                                                    "text": args.get("text"), "kind": args.get("kind") or "finding"}
-    elif action == "link":
-        method, params = "investigation.link", {"child": args.get("child"), "parent": args.get("parent")}
-    else:
-        return {"ok": False, "error": f"action {action!r}: open, conclude or link"}
-    try:
-        return {"ok": True, **await ask.api(method, {**params, **ask.asker("beat-mcp")})}
-    except RuntimeError as e:
-        return {"ok": False, "error": str(e)}
 
 
 def _cap_log_summaries(out: dict, budget: int | None = None) -> dict:
@@ -449,8 +348,6 @@ async def _call(name: str, args: dict) -> dict:
         if not source:
             return {"ok": False, "error": "give `probe` (a saved probe's name) or `source`"}
         target = {"params": args["params"]} if args.get("params") else {}
-        if _intent(args):
-            target["intent"] = _intent(args)
         if args.get("cluster"):
             if hosts:
                 return {"ok": False, "error": "`cluster` asks the nodes its pods run on: not with `hosts`"}
@@ -468,17 +365,7 @@ async def _call(name: str, args: dict) -> dict:
     if name == "run":
         return _cap_log_summaries(await _ask_one(host, args.get("name") or "probe.star", args.get("source", ""),
                                                  int(args.get("timeout") or 120), bool(args.get("profile")),
-                                                 args.get("params") or None, _intent(args)))
-    if name == "investigate":
-        return await _investigate(args)
-    if name == "investigations":
-        method = "investigation.get" if args.get("id") else "investigation.search"
-        params = ({"investigation": args["id"], "depth": int(args.get("depth") or 3)} if args.get("id") else
-                  {k: args[k] for k in ("text", "host", "probe", "since", "state", "roots", "limit") if args.get(k)})
-        try:
-            return {"ok": True, **await ask.api(method, params)}
-        except RuntimeError as e:
-            return {"ok": False, "error": str(e)}
+                                                 args.get("params") or None))
     if name == "analyze":
         params = {k: args[k] for k in ("survey", "history") if args.get(k) is not None}
         try:
