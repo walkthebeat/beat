@@ -8,7 +8,6 @@
       "Bash(@BEAT@ survey:*)",
       "Bash(@BEAT@ analyze:*)",
       "Bash(@BEAT@ logs:*)",
-      "Bash(@BEAT@ investigate:*)",
       "Bash(@BEAT@ report draft:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",

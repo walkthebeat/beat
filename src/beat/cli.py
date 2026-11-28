@@ -43,7 +43,6 @@ def _main() -> None:
     er.add_argument("--stdout", action="store_true", help="also print the probe's text output (print())")
     er.add_argument("--profile", action="store_true", help="also time each host call (osq, journal, read, ...) and "
                     "print the slowest: where a slow run's time went. Not written to the facts")
-    _intent_args(er)
     pr = sub.add_parser("probes", help="the probes this estate runs: its own (probes/) and beat's default pack; "
                         "`fork NAME`: copy the pack's into probes/ to change it; `run [HOSTS]`: every probe at once on "
                         "the hosts (default: every trusted live sensor; probes that call k8s() on the cluster sensors, the others "
@@ -51,7 +50,6 @@ def _main() -> None:
     pr.add_argument("action", nargs="?", choices=["list", "fork", "run"], default="list")
     pr.add_argument("args", nargs="*", help="fork: the probe's name; run: the hosts")
     pr.add_argument("--no-commit", action="store_true", help="run: write the facts, commit nothing")
-    _intent_args(pr)
     ak = sub.add_parser("ask", help="ask a question (a .star file) of every live sensor, or of --host ones; "
                         "answers grouped by answer hash")
     ak.add_argument("question", help="a .star file")
@@ -64,10 +62,6 @@ def _main() -> None:
     ak.add_argument("--param", action="append", default=[], metavar="KEY=VALUE", help="an argument for the probe's "
                     "params() (repeatable): the value as JSON if it parses (200, true, [\"a\"]), else as text. Part of "
                     "the question: the same probe with other arguments is the same code, asked of something else")
-    ak.add_argument("--why", metavar="TEXT", help="the hypothesis this survey tests, recorded with it for the "
-                    "investigation it is asked for")
-    ak.add_argument("--investigation", metavar="ID", help="the investigation it is asked for (default: this "
-                    "directory's current one, `beat investigate start`; `none`: none)")
     ak.add_argument("--timeout", type=int, default=120, help="the question's time limit on each sensor, seconds")
     ak.add_argument("--show", action="store_true", help="print each distinct answer")
     ak.add_argument("--profile", action="store_true", help="also time each host call on each host, and print where "
@@ -147,40 +141,6 @@ def _main() -> None:
     rps.add_parser("list", help="the transcripts your org's service holds")
     rx = rps.add_parser("delete", help="delete a transcript your org sent")
     rx.add_argument("id")
-    iv = sub.add_parser("investigate", help="investigations: what you set out to find out, the surveys asked for it "
-                        "and what it concluded; they nest (a hypothesis under its question), and every `beat ask` in "
-                        "this directory joins the current one")
-    ivs = iv.add_subparsers(dest="what", required=True)
-    ist = ivs.add_parser("start", help="open an investigation (under the current one, or --under) and make it current")
-    ist.add_argument("text", help="what you are finding out, as a question")
-    ist.add_argument("--kind", choices=("question", "incident", "discovery"), default="question")
-    ist.add_argument("--under", action="append", metavar="ID", help="its parent (repeatable; default: the current "
-                     "one, if any)")
-    ist.add_argument("--root", action="store_true", help="a root: under nothing, even with a current one")
-    ien = ivs.add_parser("end", help="conclude the current investigation (or --investigation) and return to its parent")
-    ien.add_argument("--conclusion", metavar="TEXT", help="what it found (none: left open, and popped)")
-    ien.add_argument("--kind", choices=("finding", "cause", "ruled-out", "model"), default="finding",
-                     help="the conclusion's kind")
-    ien.add_argument("--investigation", metavar="ID")
-    ilk = ivs.add_parser("link", help="make CHILD part of PARENT as well (a sub-question serving two headings)")
-    ilk.add_argument("child")
-    ilk.add_argument("parent")
-    ish = ivs.add_parser("show", help="an investigation with its surveys, conclusion and sub-investigations")
-    ish.add_argument("id", nargs="?", help="default: the current one")
-    ish.add_argument("--depth", type=int, default=3)
-    ish.add_argument("--json", action="store_true")
-    ils = ivs.add_parser("ls", help="find investigations: by words (in their text, their surveys' why, their "
-                         "conclusions), a host they asked, a probe they ran; newest first")
-    ils.add_argument("text", nargs="?")
-    ils.add_argument("--host")
-    ils.add_argument("--probe", help="a probe name, or a question or code hash prefix")
-    ils.add_argument("--since", metavar="TIME", help="ISO time")
-    ils.add_argument("--state", choices=("open", "concluded", "idle"))
-    ils.add_argument("--roots", action="store_true", help="only the top-level ones")
-    ils.add_argument("--limit", type=int, default=20)
-    ils.add_argument("--json", action="store_true")
-    ivs.add_parser("current", help="this directory's stack of investigations, the current last")
-
     sv = sub.add_parser("survey", help="recorded surveys: list them, drill into one, its answers and question")
     svs = sv.add_subparsers(dest="survey_cmd", required=True)
     sl = svs.add_parser("list", help="recent surveys, newest first")
@@ -243,12 +203,6 @@ def _main() -> None:
     cr.add_argument("--name", help="init: the member's name (default: the login's subject, else user@host)")
     cr.add_argument("--days", type=int, default=30, help="init: how long it lasts (default 30, at most 90)")
     a = ap.parse_args()
-    if a.cmd in ("run", "probes"):  # estate.ask_star asks for them (investigation.intent)
-        from . import investigation
-        if a.investigation:
-            os.environ[investigation.ENV] = a.investigation
-        if a.why:
-            os.environ[investigation.WHY_ENV] = a.why
     said = a.say_org or getattr(a, "org", None)
     if a.say_org and getattr(a, "org", None) and a.say_org != a.org:
         raise SystemExit(f"error: two orgs given, {a.say_org} and {a.org}")
@@ -275,7 +229,7 @@ def _main() -> None:
     if a.cmd == "creds":
         return _creds(a)
 
-    if a.cmd in ("ask", "sensors", "survey", "logs", "analyze", "dataset", "investigate"):
+    if a.cmd in ("ask", "sensors", "survey", "logs", "analyze", "dataset"):
         return _service(a)
 
     if a.cmd == "report":
@@ -410,9 +364,6 @@ def _service(a) -> None:
     if a.cmd == "dataset":
         return _dataset(a)
 
-    if a.cmd == "investigate":
-        return _investigate(a)
-
     src = Path(a.question).read_text()
     target = _target(a)
     if a.dataset:
@@ -471,86 +422,8 @@ def _params(pairs: list[str]) -> dict:
 def _target(a) -> dict:
     """`beat ask --cluster C --selector S`: the pods resolved by C's cluster sensor (kube.select), as ask() takes them;
     a.host becomes the nodes that run them. {} when asked by host. With `--param`s, their `params` too."""
-    from . import investigation
     params = {"params": _params(a.param)} if a.param else {}
-    iid = a.investigation or investigation.current()
-    iid = None if iid == "none" else iid
-    intent = {"intent": {"investigation": iid, "why": a.why}} if iid or a.why else {}
-    return {**_selected(a), **params, **intent}
-
-
-def _intent_args(p) -> None:
-    """--investigation and --why for `beat run` and `beat probes run` (BEAT_INVESTIGATION and BEAT_WHY)."""
-    p.add_argument("--investigation", metavar="ID", help="the investigation it is asked for (default: this "
-                   "directory's current one, `beat investigate start`; `none`: none)")
-    p.add_argument("--why", metavar="TEXT", help="the hypothesis it tests, recorded with the survey")
-
-
-def _investigate(a) -> None:
-    """`beat investigate ...`: thin clients of the service's investigation.* methods (investigation.py)."""
-    import asyncio
-    import json
-    from . import ask, investigation as inv
-
-    def call(method: str, params: dict) -> dict:
-        try:
-            return asyncio.run(ask.api(method, {**params, **ask.asker("beat investigate")}, 30))
-        except RuntimeError as e:
-            raise SystemExit(f"error: {e}")
-
-    if a.what == "current":
-        ids = inv.stack()
-        if os.environ.get(inv.ENV):
-            print(f"{os.environ[inv.ENV]}  (from {inv.ENV})")
-        for i in ids:
-            print(i)
-        if not ids and not os.environ.get(inv.ENV):
-            print("no current investigation here (`beat investigate start \"...\"`)")
-        return
-    if a.what == "start":
-        parents = [] if a.root else (a.under or [p for p in [inv.current()] if p])
-        r = call("investigation.open", {"text": a.text, "kind": a.kind, "parents": parents})
-        inv.push(r["investigation"])
-        under = f" under {', '.join(parents)}" if parents else ""
-        return print(f"{r['investigation']}  {a.kind}{under}: every `beat ask` here is asked for it until "
-                     "`beat investigate end`")
-    if a.what == "end":
-        iid = a.investigation or inv.current()
-        if not iid:
-            raise SystemExit("error: no current investigation here; give --investigation")
-        if a.conclusion:
-            c = call("investigation.conclude", {"investigation": iid, "text": a.conclusion, "kind": a.kind})
-            print(f"{iid}  concluded ({a.kind}): {c['claim']}")
-        else:
-            print(f"{iid}  left open")
-        now = inv.pop(iid)
-        return print(f"current: {now}" if now else "no current investigation here")
-    if a.what == "link":
-        call("investigation.link", {"child": a.child, "parent": a.parent})
-        return print(f"{a.child} is part of {a.parent}")
-    if a.what == "show":
-        iid = a.id or inv.current()
-        if not iid:
-            raise SystemExit("error: no current investigation here; give its id (`beat investigate ls`)")
-        r = call("investigation.get", {"investigation": iid, "depth": a.depth})
-        if a.json:
-            return print(json.dumps(r, indent=1, ensure_ascii=False))
-        for p in r.get("parents") or []:
-            print(f"part of {p['id']}  {p['state']}  {p['text']}")
-        return print("\n".join(inv.lines(r)))
-    if a.what == "ls":
-        q = {k: v for k, v in (("text", a.text), ("host", a.host), ("probe", a.probe), ("since", a.since),
-                               ("state", a.state)) if v}
-        r = call("investigation.search", {**q, "roots": a.roots, "limit": a.limit})
-        if a.json:
-            return print(json.dumps(r, indent=1, ensure_ascii=False))
-        for n in r["investigations"]:
-            concl = f"\n    concluded: {n['claim_text']}" if n.get("claim_text") else ""
-            under = f"  under {n['parents']}" if n.get("parents") else ""
-            print(f"{n['id']}  {n['kind']}  {n['state']}  {n['surveys']} surveys{under}\n    {n['text']}{concl}")
-        if not r["investigations"]:
-            print("none")
-        return
+    return {**_selected(a), **params}
 
 
 def _selected(a) -> dict:

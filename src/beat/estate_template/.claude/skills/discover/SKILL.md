@@ -19,16 +19,6 @@ Outputs:
 
 ## Steps
 
-0. **History, then open the discovery.** `investigations` (roots, kind discovery; `@BEAT@ investigate ls --roots`).
-   **If an earlier discovery concluded, this is a rediscovery:** its conclusion and those under it are the model as
-   of their date. Open yours under that root (`parents`), do step 1 (every probe at once: cheap), set what it shows
-   beside the earlier conclusions, and explore (step 2) only what changed or what they left open, then say what
-   changed. A tier whose answers match the model gets no subagent. Otherwise open a root (kind discovery, "what runs
-   in this estate?", or on these hosts) and one under it per tier or concern you explore. Ask every survey and run
-   for the most specific investigation it serves, with its `why`; the CLI does not know the ids you opened through
-   `investigate`, so pass them: `@BEAT@ probes run --investigation ID --why "..." <hosts...>`, the same for `@BEAT@
-   run`. Conclude each with what you found (kind model: a sentence, pointing to the `model.md` you wrote). The
-   names you give the estate's things are claims, not types: say what they rest on.
 1. **Context, at once.** Run every probe there is, on every host, in one go: `@BEAT@ probes run <hosts...>` (no
    hosts: every trusted live sensor). That is the estate's `probes/` and beat's default pack (`@BEAT@ probes` lists
    them), all in flight together, in about a minute, and their facts committed. **Tell the SRE what they show
