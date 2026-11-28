@@ -59,7 +59,8 @@ def not_live_reason(host: str, live: list[str]) -> str:
 
 async def ask(name: str, source: str, hosts: list[str] | None = None, timeout: int = 120,
               via: str = "beat ask", wait: float | None = None, profile: bool = False,
-              subjects: list[dict] | None = None, selector: str | None = None, params: dict | None = None) -> dict:
+              subjects: list[dict] | None = None, selector: str | None = None, params: dict | None = None,
+              why: str | None = None) -> dict:
     """Asks every live sensor, or only `hosts`, through the collector, and waits until the survey is sealed (or
     `wait` seconds; without `wait`, past the deadline for as long as the collector is catching up, up to LATE_S).
     Returns the survey: id, question hash, expected, answers {target: {answer_hash, outcome, started, finished,
@@ -69,7 +70,8 @@ async def ask(name: str, source: str, hosts: list[str] | None = None, timeout: i
     with the question); an answer's profiled calls are taken out of its records into its `profile` (split_profile).
     `subjects`: what the question is about (Beat-Subjects: kube.select's pods), for the probe's subjects();
     `selector`: how the targets were chosen, in words, as the survey records it. `params`: the question's arguments
-    (an object, part of its hash), for the probe's params()."""
+    (an object, part of its hash), for the probe's params(). `why`: what the survey is asked for, in a sentence,
+    recorded with it (surveys.why), outside the question and never sent to the sensors."""
     estate.pin_on_first_use()
     try:
         key, cred = seal.member()
@@ -79,7 +81,8 @@ async def ask(name: str, source: str, hosts: list[str] | None = None, timeout: i
                                      "timeout": timeout, **({"profile": True} if profile else {}),
                                      **({"subjects": subjects} if subjects is not None else {}),
                                      **({"selector": selector} if selector else {}),
-                                     **({"params": params} if params else {}), **asker(via)}, 30)
+                                     **({"params": params} if params else {}),
+                                     **({"why": why} if why else {}), **asker(via)}, 30)
     survey = r["survey"]
     signature = sign_envelope(key, r["headers"], wire.question(name, source, params=params), survey, timeout, hosts, cred, profile,
                               subjects)
@@ -367,10 +370,11 @@ def _http(path: str, body: bytes | None, timeout: float, method: str | None = No
 
 async def dataset(name: str, source: str, hosts: list[str] | None = None, timeout: int = 120,
                   via: str = "beat ask", subjects: list[dict] | None = None, selector: str | None = None,
-                  params: dict | None = None) -> dict:
+                  params: dict | None = None, why: str | None = None) -> dict:
     """A question asked of the fleet, answered as a pointer to its dataset (the service's dataset.get): where
     the survey's tables are and their shape, the outcomes counted; never the answers themselves."""
-    s = await ask(name, source, hosts, timeout, via=via, subjects=subjects, selector=selector, params=params)
+    s = await ask(name, source, hosts, timeout, via=via, subjects=subjects, selector=selector, params=params,
+                  why=why)
     if not s["answers"]:
         return {"survey": s["survey"], "asked": len(s["expected"]), "note": "no host answered"}
     return await with_live(await fetch(await api("dataset.get", {"survey": s["survey"]}, timeout=120)))
@@ -487,13 +491,14 @@ async def with_live(p: dict) -> dict:
 
 async def report(name: str, source: str, hosts: list[str] | None = None, timeout: int = 120, history: int = 3,
                  records: bool = False, via: str = "beat ask", subjects: list[dict] | None = None,
-                 selector: str | None = None, params: dict | None = None) -> dict:
+                 selector: str | None = None, params: dict | None = None, why: str | None = None) -> dict:
     """A question asked of the fleet, answered as the comparison rather than the raw answers (MCP `survey`,
     `beat ask --analyze`): who answered what (categories by answer hash, with record counts and errors), the
     analysis across the hosts (analysis.get: groups, dimensions, rare values, inconsistencies, drift since this
     question's previous survey) and, when the probe emitted log summaries, the logs compared across hosts with a
     proposed curated template set (logs.get). Raw records only with `records`."""
-    s = await ask(name, source, hosts, timeout, via=via, subjects=subjects, selector=selector, params=params)
+    s = await ask(name, source, hosts, timeout, via=via, subjects=subjects, selector=selector, params=params,
+                  why=why)
     out: dict = {"survey": s["survey"], "asked": s["expected"], "answers": []}
     if s.get("standing"):
         out["standing"] = s["standing"]

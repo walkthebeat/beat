@@ -43,6 +43,7 @@ def _main() -> None:
     er.add_argument("--stdout", action="store_true", help="also print the probe's text output (print())")
     er.add_argument("--profile", action="store_true", help="also time each host call (osq, journal, read, ...) and "
                     "print the slowest: where a slow run's time went. Not written to the facts")
+    er.add_argument("--why", metavar="TEXT", help="what this survey is asked for, in a sentence: recorded with it")
     pr = sub.add_parser("probes", help="the probes this estate runs: its own (probes/) and beat's default pack; "
                         "`fork NAME`: copy the pack's into probes/ to change it; `run [HOSTS]`: every probe at once on "
                         "the hosts (default: every trusted live sensor; probes that call k8s() on the cluster sensors, the others "
@@ -62,6 +63,8 @@ def _main() -> None:
     ak.add_argument("--param", action="append", default=[], metavar="KEY=VALUE", help="an argument for the probe's "
                     "params() (repeatable): the value as JSON if it parses (200, true, [\"a\"]), else as text. Part of "
                     "the question: the same probe with other arguments is the same code, asked of something else")
+    ak.add_argument("--why", metavar="TEXT", help="what this survey is asked for, in a sentence (the hypothesis it "
+                    "tests): recorded with it, so whoever reads it later knows why it was asked")
     ak.add_argument("--timeout", type=int, default=120, help="the question's time limit on each sensor, seconds")
     ak.add_argument("--show", action="store_true", help="print each distinct answer")
     ak.add_argument("--profile", action="store_true", help="also time each host call on each host, and print where "
@@ -255,7 +258,7 @@ def _main() -> None:
         from . import estate
         failed = False
         try:
-            survey, answers = estate.ask_star(a.probe, a.hosts, profile=a.profile)  # one survey: comparable
+            survey, answers = estate.ask_star(a.probe, a.hosts, profile=a.profile, why=a.why)  # one survey: comparable
         except estate.EstateError as e:
             raise SystemExit(f"error: {e}")
         for host in a.hosts:
@@ -423,7 +426,7 @@ def _target(a) -> dict:
     """`beat ask --cluster C --selector S`: the pods resolved by C's cluster sensor (kube.select), as ask() takes them;
     a.host becomes the nodes that run them. {} when asked by host. With `--param`s, their `params` too."""
     params = {"params": _params(a.param)} if a.param else {}
-    return {**_selected(a), **params}
+    return {**_selected(a), **params, **({"why": a.why} if a.why else {})}
 
 
 def _selected(a) -> dict:
