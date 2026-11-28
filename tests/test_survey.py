@@ -133,7 +133,7 @@ def test_mcp_run_caps_but_catalog_does_not(monkeypatch):
     from beat import mcp
     big = _summary_records("app", 400, 30)
 
-    async def ask_one(host, name, source, timeout=120, profile=False, params=None):
+    async def ask_one(host, name, source, timeout=120, profile=False, params=None, why=None):
         return {"ok": True, "survey": "s1", "records": big}
     monkeypatch.setattr(mcp, "_ask_one", ask_one)
     r = asyncio.run(mcp._call("run", {"host": "a", "source": "x"}))
@@ -278,3 +278,21 @@ def test_param_flags_are_json_else_text():
         assert "KEY=VALUE" in str(e)
     else:
         raise AssertionError("took a param with no value")
+
+
+def test_a_surveys_why_goes_to_prepare_and_never_into_the_question(monkeypatch):
+    from beat import mcp, wire
+    sent = {}
+
+    async def fake_api(method, params=None, timeout=10):
+        sent.setdefault(method, params)
+        raise RuntimeError("stop after prepare")
+
+    monkeypatch.setattr(ask, "api", fake_api)
+    monkeypatch.setattr(ask.seal, "member", lambda: (None, "cred"))
+    monkeypatch.setattr(ask.estate, "pin_on_first_use", lambda: None)
+    import pytest
+    with pytest.raises(RuntimeError, match="stop after prepare"):
+        asyncio.run(mcp._call("run", {"host": "a", "source": "def main():\n    pass\n", "why": "is a's pool exhausted?"}))
+    assert sent["survey.prepare"]["why"] == "is a's pool exhausted?"
+    assert "why" not in wire.question("probe.star", "def main():\n    pass\n").decode()

@@ -34,6 +34,10 @@ PARAMS = {"type": "object", "description": "The probe's arguments, read with par
 
 HOST = {"type": "string", "description": "Target host: a live sensor's name (see `inventory`)."}
 
+WHY = {"type": "string", "description": "What this survey is asked for, in a sentence: the hypothesis it tests (\"is "
+       "the db pool exhausted on the api hosts?\"). Recorded with the survey (surveys.why), so whoever reads it later "
+       "knows why it was asked."}
+
 NO_GUIDE = ("Run a Starlark probe on one host: constants, functions and main(); emit() records. No sensor was live "
             "when this server started, so the builtins guide is missing: call `inventory`, then restart the session.")
 
@@ -120,8 +124,12 @@ QUERY = (
     "sig_version (and those naming a version), sig_kind (every varying part of the subject), context; the same sig in "
     "two surveys is the same fact. `fact_shapes`: how the org's history classed each part (no values).\n"
     "- `runs` (host, probe, survey_id, asked_at, previous run), `surveys` (survey_id, question_hash, selector, "
-    "asked_by, asked_at, deadline), `survey_answers` (survey_id, target: the host, answer_hash, outcome, started, "
-    "finished, sensor_version, phases: milliseconds as queue=N,secrets=N,run=N).\n"
+    "asked_by, asked_at, deadline, why: what it was asked for), `survey_answers` (survey_id, target: the host, "
+    "answer_hash, outcome, started, finished, sensor_version, phases: milliseconds as queue=N,secrets=N,run=N).\n"
+    "- `questions`: every question asked: question_hash, name, source (the probe's code: search it, e.g. for a "
+    "path), params (JSON: `params->>'unit'`), code_hash (the code with comments, docstrings and literals erased: "
+    "the same probe with other constants), params_hash. Same code_hash, other params_hash: the same probe asked of "
+    "something else.\n"
     "Times are UTC timestamps. Some words are reserved as bare aliases or columns (`key`, `at`, `first`, `last`, "
     "`minutes`): write `as` and another name (`key as k`, `min(minute) as first_min`). Returns at most "
     "`limit` rows (default 200) and says when it cut.")
@@ -151,6 +159,7 @@ def tool_defs(guide: str | None, hosts: list[str]) -> list[types.Tool]:
                              "it (none: every pod)."},
                 "namespace": {"type": "string", "description": "With `cluster`: only this namespace."},
                 "params": PARAMS,
+                "why": WHY,
                 "timeout": {"type": "integer", "description": "Seconds per host (default 120, max 300)."},
                 "history": {"type": "integer", "description": "Earlier surveys of this question to learn from and "
                             "compare with (default 3)."},
@@ -164,6 +173,7 @@ def tool_defs(guide: str | None, hosts: list[str]) -> list[types.Tool]:
                            "works on (paths, units, ports, thresholds) from params(), not written in."},
                 "name": {"type": "string", "description": "File name for spans and errors, e.g. nginx.star."},
                 "params": PARAMS,
+                "why": WHY,
                 "timeout": {"type": "integer", "description": "Seconds (default 120, max 300)."},
                 "profile": {"type": "boolean", "description": "Also time each host call (osq, journal, read, ...) "
                             "and return the slowest as `profile`, beside `phases` (where the run's time went). For a "
@@ -221,8 +231,8 @@ RUN_MAX_BYTES = 40_000
 
 
 async def _ask_one(host: str, name: str, source: str, timeout: int = 120, profile: bool = False,
-                   params: dict | None = None) -> dict:
-    s = await ask.ask(name, source, [host], timeout, via="beat-mcp", profile=profile, params=params)
+                   params: dict | None = None, why: str | None = None) -> dict:
+    s = await ask.ask(name, source, [host], timeout, via="beat-mcp", profile=profile, params=params, why=why)
     a = s["answers"].get(host)
     if a is None:
         why = ask.why_not(s, host)
@@ -347,7 +357,7 @@ async def _call(name: str, args: dict) -> dict:
             qname, source = path.name, path.read_text()
         if not source:
             return {"ok": False, "error": "give `probe` (a saved probe's name) or `source`"}
-        target = {"params": args["params"]} if args.get("params") else {}
+        target = {k: args[k] for k in ("params", "why") if args.get(k)}
         if args.get("cluster"):
             if hosts:
                 return {"ok": False, "error": "`cluster` asks the nodes its pods run on: not with `hosts`"}
@@ -365,7 +375,7 @@ async def _call(name: str, args: dict) -> dict:
     if name == "run":
         return _cap_log_summaries(await _ask_one(host, args.get("name") or "probe.star", args.get("source", ""),
                                                  int(args.get("timeout") or 120), bool(args.get("profile")),
-                                                 args.get("params") or None))
+                                                 args.get("params") or None, args.get("why") or None))
     if name == "analyze":
         params = {k: args[k] for k in ("survey", "history") if args.get(k) is not None}
         try:

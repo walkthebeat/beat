@@ -248,7 +248,7 @@ def run_every(hosts: list[str], cluster: set[str] = frozenset(), commit: bool = 
     return out
 
 
-def ask_star(probe: str, hosts: list[str], profile: bool = False) -> tuple[str, dict]:
+def ask_star(probe: str, hosts: list[str], profile: bool = False, why: str | None = None) -> tuple[str, dict]:
     """A .star probe asked of all `hosts` in one survey (ask.py), so the collector has them side by side for
     analysis.get / logs.get. (survey id, {host: answer with "seconds" and "phases", or an EstateError for that host}).
     `profile`: each answer also has "profile", its host calls (ask.split_profile), which never reach the facts."""
@@ -256,7 +256,7 @@ def ask_star(probe: str, hosts: list[str], profile: bool = False) -> tuple[str, 
     from . import ask
     path = probe_path(root(), probe)
     t0 = time.monotonic()
-    s = asyncio.run(ask.ask(path.name, path.read_text(), hosts, via="beat run", profile=profile))
+    s = asyncio.run(ask.ask(path.name, path.read_text(), hosts, via="beat run", profile=profile, why=why))
     secs = round(time.monotonic() - t0, 2)
     out: dict = {}
     for host in hosts:
